@@ -199,15 +199,16 @@ export async function createTask(
   title: string,
   firstStageId: string,
   description: string = "",
+  branchName?: string,
 ): Promise<Task> {
   const db = await getProjectDb(projectId);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [id, projectId, title, description, firstStageId, "pending", now, now],
+    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, now, now],
   );
 
   return {
@@ -217,6 +218,7 @@ export async function createTask(
     description,
     current_stage_id: firstStageId,
     status: "pending",
+    branch_name: branchName ?? null,
     archived: 0,
     created_at: now,
     updated_at: now,
@@ -226,7 +228,7 @@ export async function createTask(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];

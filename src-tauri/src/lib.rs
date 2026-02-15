@@ -48,6 +48,8 @@ pub fn run() {
             commands::process::kill_process,
             commands::process::list_processes,
             commands::process::check_claude_available,
+            commands::git::run_git_command,
+            commands::git::read_file_contents,
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {

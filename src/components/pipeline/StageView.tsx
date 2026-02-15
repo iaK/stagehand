@@ -12,6 +12,7 @@ import {
   LiveStreamBubble,
   ThinkingBubble,
 } from "./StageTimeline";
+import { gitAdd, gitCommit } from "../../lib/git";
 import type { StageTemplate } from "../../lib/types";
 
 interface StageViewProps {
@@ -24,6 +25,8 @@ export function StageView({ stage }: StageViewProps) {
   const { isRunning, streamOutput } = useProcessStore(
     (s) => s.stages[stage.id] ?? DEFAULT_STAGE_STATE,
   );
+  const pendingCommit = useProcessStore((s) => s.pendingCommit);
+  const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
@@ -31,6 +34,39 @@ export function StageView({ stage }: StageViewProps) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+
+  // Sync editable commit message when pending commit appears for this stage
+  useEffect(() => {
+    if (pendingCommit?.stageId === stage.id) {
+      setCommitMessage(pendingCommit.message);
+    }
+  }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
+
+  const handleCommit = async () => {
+    if (!activeProject || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      await gitAdd(activeProject.path);
+      const result = await gitCommit(activeProject.path, commitMessage);
+      // Extract short hash from commit output (e.g. "[main abc1234] message")
+      const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
+      const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
+      useProcessStore.getState().setCommitted(stage.id, shortHash);
+      useProcessStore.getState().clearPendingCommit();
+    } catch (e) {
+      setCommitError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const handleSkipCommit = () => {
+    useProcessStore.getState().clearPendingCommit();
+  };
 
   const stageExecs = useMemo(
     () =>
@@ -136,12 +172,18 @@ export function StageView({ stage }: StageViewProps) {
       {/* ── APPROVED: final result + collapsible timeline ── */}
       {latestExecution && isApproved && (
         <div className="mb-6">
-          {stage.output_format === "research" && (
+          {(stage.output_format === "research" || stage.output_format === "findings") && (
             <div className="mb-4 p-3 bg-emerald-950/30 border border-emerald-800 rounded-lg flex items-center gap-2">
               <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-              <span className="text-sm font-medium text-emerald-300">Research Complete</span>
+              <span className="text-sm font-medium text-emerald-300">
+                {stage.output_format === "research"
+                  ? "Research Complete"
+                  : latestExecution.attempt_number > 1
+                    ? "Findings Applied"
+                    : "Review Complete"}
+              </span>
             </div>
           )}
 
@@ -184,6 +226,68 @@ export function StageView({ stage }: StageViewProps) {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── COMMIT CONFIRMATION ── */}
+      {pendingCommit?.stageId === stage.id && (
+        <div className="mb-6 p-4 bg-zinc-800/50 border border-zinc-700 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span className="text-sm font-medium text-zinc-200">
+              Commit Changes
+            </span>
+          </div>
+
+          {pendingCommit.diffStat && (
+            <pre className="text-xs text-zinc-500 bg-zinc-900 rounded p-2 mb-3 overflow-x-auto">
+              {pendingCommit.diffStat}
+            </pre>
+          )}
+
+          <textarea
+            value={commitMessage}
+            onChange={(e) => setCommitMessage(e.target.value)}
+            rows={3}
+            className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 mb-3 resize-none"
+          />
+
+          {commitError && (
+            <div className="mb-3 p-2 bg-red-950/30 border border-red-900 rounded text-xs text-red-400">
+              {commitError}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleCommit}
+              disabled={committing || !commitMessage.trim()}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded text-sm transition-colors"
+            >
+              {committing ? "Committing..." : "Commit"}
+            </button>
+            <button
+              onClick={handleSkipCommit}
+              disabled={committing}
+              className="px-3 py-1.5 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── COMMITTED BADGE ── */}
+      {committedHash && isApproved && (
+        <div className="mb-6 flex items-center gap-2 p-2 bg-emerald-950/20 border border-emerald-900/30 rounded-lg">
+          <svg className="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <span className="text-xs text-emerald-400">
+            Committed: <code className="font-mono">{committedHash}</code>
+          </span>
         </div>
       )}
 

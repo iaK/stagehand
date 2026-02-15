@@ -55,7 +55,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
       const description = parts.join("\n");
 
       const title = `[${issue.identifier}] ${issue.title}`;
-      await addTask(projectId, title, description);
+      await addTask(projectId, title, description, issue.branchName);
       onClose();
     } finally {
       setImporting(null);

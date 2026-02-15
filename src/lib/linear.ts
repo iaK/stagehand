@@ -57,6 +57,7 @@ interface AssignedIssuesResponse {
         priority: number;
         url: string;
         state: { name: string } | null;
+        branchName: string | null;
       }>;
     };
   };
@@ -81,6 +82,7 @@ export async function fetchMyIssues(
             priority
             url
             state { name }
+            branchName
           }
         }
       }
@@ -95,6 +97,7 @@ export async function fetchMyIssues(
     status: issue.state?.name ?? "Unknown",
     priority: issue.priority,
     url: issue.url,
+    branchName: issue.branchName ?? undefined,
   }));
 }
 

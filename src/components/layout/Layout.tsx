@@ -1,6 +1,5 @@
 import { Sidebar } from "./Sidebar";
 import { PipelineView } from "../pipeline/PipelineView";
-import { TerminalView } from "../pipeline/TerminalView";
 import { StageHistory } from "../pipeline/StageHistory";
 import { useTaskStore } from "../../stores/taskStore";
 import { useState } from "react";
@@ -21,7 +20,6 @@ export function Layout() {
             <StageHistory />
           )}
         </div>
-        <TerminalView />
       </div>
     </div>
   );

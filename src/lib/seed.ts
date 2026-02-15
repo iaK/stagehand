@@ -214,9 +214,25 @@ Follow the plan carefully. Write clean, well-structured code. Run tests if appli
       project_id: projectId,
       name: "Refinement",
       description:
-        "Self-review the implementation: catch oversights, clean up code, and verify codebase consistency.",
+        "Self-review the implementation: identify issues for the developer to select, then apply chosen fixes.",
       sort_order: 4,
-      prompt_template: `You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
+      prompt_template: `{{#if prior_attempt_output}}You are applying selected refinements to an implementation.
+
+Task that was implemented:
+{{task_description}}
+
+Implementation output:
+{{previous_output}}
+
+## Selected Findings to Apply
+
+The developer selected these findings to fix:
+{{prior_attempt_output}}
+
+Apply ONLY these specific fixes. Do not make other changes. For each finding, make the necessary code changes.
+
+Provide a summary of what you changed.
+{{else}}You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
 
 Task that was implemented:
 {{task_description}}
@@ -234,38 +250,84 @@ Critically examine the implementation against each of these:
 4. **Cleanup** — Any leftover debug code, unused imports, commented-out code, or inconsistent naming?
 5. **Simplicity** — Is anything over-engineered or unnecessarily complex? Could it be simplified without losing functionality?
 
-{{#if user_input}}
-## Developer Feedback
-The developer has also provided specific feedback to address:
-{{user_input}}
-{{/if}}
+Be nitpicky. Flag everything you notice, even minor issues — the developer will choose which to fix.
 
-## Instructions
+Do NOT make any code changes. Only identify and report findings.
 
-Based on your review (and any developer feedback above), make all necessary improvements directly in the code. Fix issues, clean up problems, and ensure consistency.
-
-If the implementation is solid and needs no changes, say so explicitly — do not make changes for the sake of making changes.
-
-Provide a summary of what you reviewed and what you changed (or why no changes were needed).`,
-      input_source: "both",
-      output_format: "text",
-      output_schema: null,
+Respond with a JSON object:
+{
+  "summary": "Brief overview of what you reviewed and overall assessment",
+  "findings": [
+    {
+      "id": "f1",
+      "title": "Short title of the finding",
+      "description": "Detailed description of the issue and suggested fix",
+      "severity": "critical|warning|info",
+      "category": "completeness|correctness|consistency|cleanup|simplicity",
+      "file_path": "path/to/file.ts (optional)",
+      "selected": true
+    }
+  ]
+}{{/if}}`,
+      input_source: "previous_stage",
+      output_format: "findings",
+      output_schema: JSON.stringify({
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                title: { type: "string" },
+                description: { type: "string" },
+                severity: {
+                  type: "string",
+                  enum: ["critical", "warning", "info"],
+                },
+                category: { type: "string" },
+                file_path: { type: "string" },
+                selected: { type: "boolean" },
+              },
+              required: ["id", "title", "description", "severity", "selected"],
+            },
+          },
+        },
+        required: ["summary", "findings"],
+      }),
       gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,
       persona_system_prompt: null,
       persona_model: null,
       preparation_prompt: null,
-      allowed_tools: null, // Full tool access
-      result_mode: "replace",
+      allowed_tools: null,
+      result_mode: "append",
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "Security Review",
       description:
-        "Analyze the implementation for security vulnerabilities and best practices.",
+        "Analyze for security vulnerabilities, then apply selected fixes.",
       sort_order: 5,
-      prompt_template: `Perform a thorough security review of the changes made for this task.
+      prompt_template: `{{#if prior_attempt_output}}You are applying selected security fixes to an implementation.
+
+Task: {{task_description}}
+
+Implementation details:
+{{previous_output}}
+
+## Selected Security Findings to Fix
+
+The developer selected these security findings to address:
+{{prior_attempt_output}}
+
+Apply ONLY these specific security fixes. Do not make other changes. For each finding, make the necessary code changes to resolve the security issue.
+
+Provide a summary of what you changed.
+{{else}}Perform a thorough security review of the changes made for this task.
 
 Task: {{task_description}}
 
@@ -281,50 +343,60 @@ Check for:
 6. Configuration security
 7. Error handling that might leak information
 
+Be thorough. Flag everything you notice, even minor concerns — the developer will choose which to fix.
+
+Do NOT make any code changes. Only identify and report findings.
+
 Respond with a JSON object:
 {
-  "items": [
+  "summary": "Brief overview of security posture and key concerns",
+  "findings": [
     {
-      "id": "finding-1",
-      "text": "Description of finding",
+      "id": "sec-1",
+      "title": "Short title of the security finding",
+      "description": "Detailed description of the vulnerability and recommended fix",
       "severity": "critical|warning|info",
-      "checked": false,
-      "notes": ""
+      "category": "validation|auth|injection|exposure|deps|config|error-handling",
+      "file_path": "path/to/file.ts (optional)",
+      "selected": true
     }
   ]
-}`,
+}{{/if}}`,
       input_source: "previous_stage",
-      output_format: "checklist",
+      output_format: "findings",
       output_schema: JSON.stringify({
         type: "object",
         properties: {
-          items: {
+          summary: { type: "string" },
+          findings: {
             type: "array",
             items: {
               type: "object",
               properties: {
                 id: { type: "string" },
-                text: { type: "string" },
+                title: { type: "string" },
+                description: { type: "string" },
                 severity: {
                   type: "string",
                   enum: ["critical", "warning", "info"],
                 },
-                checked: { type: "boolean" },
-                notes: { type: "string" },
+                category: { type: "string" },
+                file_path: { type: "string" },
+                selected: { type: "boolean" },
               },
-              required: ["id", "text", "severity", "checked", "notes"],
+              required: ["id", "title", "description", "severity", "selected"],
             },
           },
         },
-        required: ["items"],
+        required: ["summary", "findings"],
       }),
-      gate_rules: JSON.stringify({ type: "require_all_checked" }),
+      gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,
       persona_system_prompt: null,
       persona_model: null,
       preparation_prompt: null,
-      allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
-      result_mode: "passthrough",
+      allowed_tools: null,
+      result_mode: "append",
     },
     {
       id: crypto.randomUUID(),

@@ -144,11 +144,15 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE stage_templates ADD COLUMN result_mode TEXT NOT NULL DEFAULT 'replace'
   `).catch(() => { /* column already exists */ });
 
+  await db.execute(`
+    ALTER TABLE tasks ADD COLUMN branch_name TEXT
+  `).catch(() => { /* column already exists */ });
+
   // Migrate Research stage: text → research format
   await migrateResearchStage(db);
 
-  // Migrate Refinement stage: passive feedback → active self-review
-  await migrateRefinementStage(db);
+  // Migrate Refinement & Security Review stages: old formats → findings format
+  await migrateFindingsStages(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer researching a task. Analyze the following task thoroughly.
@@ -209,7 +213,50 @@ const RESEARCH_SCHEMA = JSON.stringify({
   required: ["research", "questions"],
 });
 
-const REFINEMENT_PROMPT = `You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
+const FINDINGS_SCHEMA = JSON.stringify({
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          severity: {
+            type: "string",
+            enum: ["critical", "warning", "info"],
+          },
+          category: { type: "string" },
+          file_path: { type: "string" },
+          selected: { type: "boolean" },
+        },
+        required: ["id", "title", "description", "severity", "selected"],
+      },
+    },
+  },
+  required: ["summary", "findings"],
+});
+
+const REFINEMENT_FINDINGS_PROMPT = `{{#if prior_attempt_output}}You are applying selected refinements to an implementation.
+
+Task that was implemented:
+{{task_description}}
+
+Implementation output:
+{{previous_output}}
+
+## Selected Findings to Apply
+
+The developer selected these findings to fix:
+{{prior_attempt_output}}
+
+Apply ONLY these specific fixes. Do not make other changes. For each finding, make the necessary code changes.
+
+Provide a summary of what you changed.
+{{else}}You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
 
 Task that was implemented:
 {{task_description}}
@@ -227,32 +274,120 @@ Critically examine the implementation against each of these:
 4. **Cleanup** — Any leftover debug code, unused imports, commented-out code, or inconsistent naming?
 5. **Simplicity** — Is anything over-engineered or unnecessarily complex? Could it be simplified without losing functionality?
 
-{{#if user_input}}
-## Developer Feedback
-The developer has also provided specific feedback to address:
-{{user_input}}
-{{/if}}
+Be nitpicky. Flag everything you notice, even minor issues — the developer will choose which to fix.
 
-## Instructions
+Do NOT make any code changes. Only identify and report findings.
 
-Based on your review (and any developer feedback above), make all necessary improvements directly in the code. Fix issues, clean up problems, and ensure consistency.
+Respond with a JSON object:
+{
+  "summary": "Brief overview of what you reviewed and overall assessment",
+  "findings": [
+    {
+      "id": "f1",
+      "title": "Short title of the finding",
+      "description": "Detailed description of the issue and suggested fix",
+      "severity": "critical|warning|info",
+      "category": "completeness|correctness|consistency|cleanup|simplicity",
+      "file_path": "path/to/file.ts (optional)",
+      "selected": true
+    }
+  ]
+}{{/if}}`;
 
-If the implementation is solid and needs no changes, say so explicitly — do not make changes for the sake of making changes.
+const SECURITY_FINDINGS_PROMPT = `{{#if prior_attempt_output}}You are applying selected security fixes to an implementation.
 
-Provide a summary of what you reviewed and what you changed (or why no changes were needed).`;
+Task: {{task_description}}
 
-const REFINEMENT_DESCRIPTION = "Self-review the implementation: catch oversights, clean up code, and verify codebase consistency.";
+Implementation details:
+{{previous_output}}
 
-async function migrateRefinementStage(db: Database): Promise<void> {
-  // Update Refinement stages that still have the old passive prompt
-  const rows = await db.select<{ id: string; prompt_template: string }[]>(
-    "SELECT id, prompt_template FROM stage_templates WHERE name = 'Refinement' AND sort_order = 4",
+## Selected Security Findings to Fix
+
+The developer selected these security findings to address:
+{{prior_attempt_output}}
+
+Apply ONLY these specific security fixes. Do not make other changes. For each finding, make the necessary code changes to resolve the security issue.
+
+Provide a summary of what you changed.
+{{else}}Perform a thorough security review of the changes made for this task.
+
+Task: {{task_description}}
+
+Implementation details:
+{{previous_output}}
+
+Check for:
+1. Input validation issues
+2. Authentication/authorization flaws
+3. Injection vulnerabilities (SQL, XSS, command injection)
+4. Data exposure risks
+5. Dependency vulnerabilities
+6. Configuration security
+7. Error handling that might leak information
+
+Be thorough. Flag everything you notice, even minor concerns — the developer will choose which to fix.
+
+Do NOT make any code changes. Only identify and report findings.
+
+Respond with a JSON object:
+{
+  "summary": "Brief overview of security posture and key concerns",
+  "findings": [
+    {
+      "id": "sec-1",
+      "title": "Short title of the security finding",
+      "description": "Detailed description of the vulnerability and recommended fix",
+      "severity": "critical|warning|info",
+      "category": "validation|auth|injection|exposure|deps|config|error-handling",
+      "file_path": "path/to/file.ts (optional)",
+      "selected": true
+    }
+  ]
+}{{/if}}`;
+
+async function migrateFindingsStages(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Migrate Refinement stages that aren't using findings format yet
+  const refinementRows = await db.select<{ id: string; output_format: string }[]>(
+    "SELECT id, output_format FROM stage_templates WHERE name = 'Refinement' AND sort_order = 4",
   );
-  for (const row of rows) {
-    if (row.prompt_template.includes("apply the following feedback/refinements")) {
+  for (const row of refinementRows) {
+    if (row.output_format !== "findings") {
       await db.execute(
-        "UPDATE stage_templates SET prompt_template = $1, description = $2, updated_at = $3 WHERE id = $4",
-        [REFINEMENT_PROMPT, REFINEMENT_DESCRIPTION, new Date().toISOString(), row.id],
+        `UPDATE stage_templates SET
+          output_format = $1, output_schema = $2, prompt_template = $3,
+          gate_rules = $4, allowed_tools = $5, result_mode = $6,
+          description = $7, input_source = $8, updated_at = $9
+        WHERE id = $10`,
+        [
+          "findings", FINDINGS_SCHEMA, REFINEMENT_FINDINGS_PROMPT,
+          JSON.stringify({ type: "require_approval" }), null, "append",
+          "Self-review the implementation: identify issues for the developer to select, then apply chosen fixes.",
+          "previous_stage", now, row.id,
+        ],
+      );
+    }
+  }
+
+  // Migrate Security Review stages that aren't using findings format yet
+  const securityRows = await db.select<{ id: string; output_format: string }[]>(
+    "SELECT id, output_format FROM stage_templates WHERE name = 'Security Review' AND sort_order = 5",
+  );
+  for (const row of securityRows) {
+    if (row.output_format !== "findings") {
+      await db.execute(
+        `UPDATE stage_templates SET
+          output_format = $1, output_schema = $2, prompt_template = $3,
+          gate_rules = $4, allowed_tools = $5, result_mode = $6,
+          description = $7, updated_at = $8
+        WHERE id = $9`,
+        [
+          "findings", FINDINGS_SCHEMA, SECURITY_FINDINGS_PROMPT,
+          JSON.stringify({ type: "require_approval" }), null, "append",
+          "Analyze for security vulnerabilities, then apply selected fixes.",
+          now, row.id,
+        ],
       );
     }
   }

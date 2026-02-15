@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Project } from "../lib/types";
 import * as repo from "../lib/repositories";
+import { scanRepository } from "../lib/repoScanner";
 
 interface ProjectStore {
   projects: Project[];
@@ -54,6 +55,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   addProject: async (name, path) => {
     const project = await repo.createProject(name, path);
+
+    // Scan repository conventions (runs in background, non-blocking for UI)
+    scanRepository(project.id, path).catch(() => {});
+
     const projects = await repo.listProjects();
     set({ projects, activeProject: project });
     return project;

@@ -30,7 +30,7 @@ export function renderPrompt(
     context.priorAttemptOutput ?? "",
   );
 
-  // Handle {{#if variable}} ... {{/if}} blocks
+  // Handle {{#if variable}} ... {{else}} ... {{/if}} blocks
   result = result.replace(
     /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
     (_match, varName: string, content: string) => {
@@ -44,7 +44,13 @@ export function renderPrompt(
               : varName === "prior_attempt_output"
                 ? context.priorAttemptOutput
                 : undefined;
-      return value ? content : "";
+      // Split on {{else}} — first part for truthy, second for falsy
+      const parts = content.split(/\{\{else\}\}/);
+      if (value) {
+        return parts[0];
+      } else {
+        return parts.length > 1 ? parts[1] : "";
+      }
     },
   );
 

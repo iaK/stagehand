@@ -4,6 +4,14 @@ import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore } from "../stores/processStore";
 import { spawnClaude, killProcess } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
+import {
+  hasUncommittedChanges,
+  gitDiffStat,
+  isGitRepo,
+  gitCreateBranch,
+  gitCheckoutBranch,
+  gitBranchExists,
+} from "../lib/git";
 import * as repo from "../lib/repositories";
 import type {
   Task,
@@ -23,6 +31,48 @@ export function useStageExecution() {
   const runStage = useCallback(
     async (task: Task, stage: StageTemplate, userInput?: string) => {
       if (!activeProject) return;
+
+      // Create branch on first stage execution if task has no branch yet
+      if (stage.sort_order === 0 && !task.branch_name) {
+        try {
+          const gitRepo = await isGitRepo(activeProject.path);
+          if (gitRepo) {
+            let branchName: string;
+            // Use Linear branch name if available, otherwise generate from title
+            const commitRules = await repo.getProjectSetting(
+              activeProject.id,
+              "github_commit_rules",
+            );
+            // Simple slug generation from task title
+            const slug = task.title
+              .toLowerCase()
+              .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "")
+              .slice(0, 50);
+            branchName = `feature/${slug}`;
+
+            // Check if branch naming convention is specified
+            if (commitRules?.toLowerCase().includes("branch")) {
+              // Keep the generated name — convention will be followed
+              // as much as possible from the slug
+            }
+
+            const exists = await gitBranchExists(activeProject.path, branchName);
+            if (exists) {
+              await gitCheckoutBranch(activeProject.path, branchName);
+            } else {
+              await gitCreateBranch(activeProject.path, branchName);
+            }
+
+            await updateTask(activeProject.id, task.id, { branch_name: branchName });
+            // Update local task reference
+            task = { ...task, branch_name: branchName };
+          }
+        } catch {
+          // Branch creation is non-critical — continue with stage execution
+        }
+      }
 
       clearOutput(stage.id);
       setRunning(stage.id, "spawning");
@@ -58,10 +108,18 @@ export function useStageExecution() {
           priorAttemptOutput =
             latestAttempt.parsed_output ?? latestAttempt.raw_output ?? undefined;
 
-          // Preserve original user input from the first attempt
-          const firstAttempt = prevAttempts[0];
-          if (firstAttempt.user_input && userInput) {
-            effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+          if (stage.output_format === "findings") {
+            // For findings redo: userInput contains the selected findings text.
+            // Route it into priorAttemptOutput so {{#if prior_attempt_output}} activates
+            // with the selected items, and clear effectiveUserInput.
+            priorAttemptOutput = userInput;
+            effectiveUserInput = undefined;
+          } else {
+            // Preserve original user input from the first attempt
+            const firstAttempt = prevAttempts[0];
+            if (firstAttempt.user_input && userInput) {
+              effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+            }
           }
         }
 
@@ -181,6 +239,7 @@ export function useStageExecution() {
                 resultText,
                 event.exit_code,
                 thinkingText,
+                attemptNumber,
               );
               break;
             case "error":
@@ -205,7 +264,9 @@ export function useStageExecution() {
             outputFormat: "stream-json",
             allowedTools: allowedTools,
             jsonSchema:
-              stage.output_format !== "text" && stage.output_schema
+              stage.output_format !== "text" &&
+              stage.output_schema &&
+              !(stage.output_format === "findings" && attemptNumber > 1)
                 ? stage.output_schema
                 : undefined,
           },
@@ -238,6 +299,7 @@ export function useStageExecution() {
       resultText: string,
       exitCode: number | null,
       thinkingText?: string,
+      attemptNumber?: number,
     ) => {
       if (!activeProject) return;
       const task = useTaskStore.getState().activeTask;
@@ -259,7 +321,8 @@ export function useStageExecution() {
       } else {
         // Try to parse structured output
         let parsedOutput = resultText;
-        if (stage.output_format !== "text") {
+        const isFindingsPhase2 = stage.output_format === "findings" && (attemptNumber ?? 1) > 1;
+        if (stage.output_format !== "text" && !isFindingsPhase2) {
           parsedOutput = extractJson(resultText) ?? extractJson(rawOutput) ?? resultText;
         }
 
@@ -332,6 +395,12 @@ export function useStageExecution() {
         stage_result: stageResult,
       });
 
+      // Check if this is a commit-eligible stage (Implementation, Refinement, Security Review)
+      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+      if (commitEligibleStages.includes(stage.name)) {
+        generatePendingCommit(task, stage).catch(() => {});
+      }
+
       // Advance to next stage
       const nextStage = stageTemplates.find(
         (s) => s.sort_order === stage.sort_order + 1,
@@ -350,6 +419,78 @@ export function useStageExecution() {
       await loadExecutions(activeProject.id, task.id);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
+  );
+
+  const generatePendingCommit = useCallback(
+    async (task: Task, stage: StageTemplate) => {
+      if (!activeProject) return;
+
+      // Check if the project is a git repo with uncommitted changes
+      const gitRepo = await isGitRepo(activeProject.path);
+      if (!gitRepo) return;
+
+      const hasChanges = await hasUncommittedChanges(activeProject.path);
+      if (!hasChanges) return;
+
+      const diffStat = await gitDiffStat(activeProject.path).catch(() => "");
+
+      // Generate commit message using Claude (lightweight one-shot)
+      let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
+      try {
+        const commitRules = await repo.getProjectSetting(
+          activeProject.id,
+          "github_commit_rules",
+        );
+
+        const prompt = `Generate a concise git commit message for the following changes.
+
+Task: ${task.title}
+Stage: ${stage.name}
+
+Changes (git diff --stat):
+${diffStat}
+
+${commitRules ? `Repository commit conventions:\n${commitRules}\n\n` : ""}
+Return ONLY the commit message text, nothing else. No quotes, no markdown, no explanation.
+Keep it under 72 characters for the first line. Add a blank line and body if needed.`;
+
+        let resultText = "";
+        await new Promise<void>((resolve) => {
+          spawnClaude(
+            {
+              prompt,
+              workingDirectory: activeProject.path,
+              maxTurns: 1,
+              allowedTools: [],
+              outputFormat: "text",
+              noSessionPersistence: true,
+            },
+            (event: ClaudeStreamEvent) => {
+              if (event.type === "stdout_line") {
+                resultText += event.line + "\n";
+              } else if (event.type === "completed" || event.type === "error") {
+                resolve();
+              }
+            },
+          ).catch(() => resolve());
+        });
+
+        const cleaned = resultText.trim();
+        if (cleaned.length > 0) {
+          commitMessage = cleaned;
+        }
+      } catch {
+        // Use fallback message
+      }
+
+      useProcessStore.getState().setPendingCommit({
+        stageId: stage.id,
+        stageName: stage.name,
+        message: commitMessage,
+        diffStat,
+      });
+    },
+    [activeProject],
   );
 
   const redoStage = useCallback(
@@ -444,6 +585,17 @@ function extractStageOutput(
     case "options": {
       // The stage's value is the user's selection, not the full options list
       if (decision) return formatSelectedApproach(decision);
+      return raw;
+    }
+    case "findings": {
+      // Phase 1 (skip all): extract summary from JSON
+      // Phase 2 (applied fixes): raw text output
+      try {
+        const data = JSON.parse(raw);
+        if (data.summary) return data.summary;
+      } catch {
+        // Parse failed — this is phase 2 text output
+      }
       return raw;
     }
     default:

@@ -19,11 +19,12 @@ interface TaskStore {
     projectId: string,
     title: string,
     description?: string,
+    branchName?: string,
   ) => Promise<Task>;
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
@@ -88,7 +89,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   setActiveTask: (task) => set({ activeTask: task }),
 
-  addTask: async (projectId, title, description) => {
+  addTask: async (projectId, title, description, branchName) => {
     const templates = get().stageTemplates;
     const firstStage = templates.length > 0 ? templates[0].id : "";
     const task = await repo.createTask(
@@ -96,6 +97,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       title,
       firstStage,
       description,
+      branchName,
     );
     const tasks = await repo.listTasks(projectId);
     set({ tasks, activeTask: task });

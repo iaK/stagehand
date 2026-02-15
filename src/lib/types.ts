@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings";
 export type ResultMode = "replace" | "append" | "passthrough";
 
 export interface Task {
@@ -41,6 +41,7 @@ export interface Task {
   description: string;
   current_stage_id: string | null;
   status: TaskStatus;
+  branch_name: string | null;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -112,6 +113,21 @@ export interface StructuredOutput {
   fields: Record<string, string>;
 }
 
+export interface FindingItem {
+  id: string;
+  title: string;
+  description: string;
+  severity: "critical" | "warning" | "info";
+  category?: string;
+  file_path?: string;
+  selected: boolean;
+}
+
+export interface FindingsOutput {
+  summary: string;
+  findings: FindingItem[];
+}
+
 export interface ResearchQuestion {
   id: string;
   question: string;
@@ -124,6 +140,19 @@ export interface ResearchOutput {
   questions: ResearchQuestion[];
 }
 
+// === GitHub ===
+
+export interface GitHubRepo {
+  id: number;
+  full_name: string;       // "owner/repo"
+  name: string;
+  owner: string;
+  description: string | null;
+  default_branch: string;
+  private: boolean;
+  html_url: string;
+}
+
 // === Linear ===
 
 export interface LinearIssue {
@@ -134,6 +163,7 @@ export interface LinearIssue {
   status: string;
   priority: number;
   url: string;
+  branchName: string | undefined;
 }
 
 // === Claude Stream Events ===
