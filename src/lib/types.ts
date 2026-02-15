@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan";
 export type ResultMode = "replace" | "append" | "passthrough";
 
 export interface Task {

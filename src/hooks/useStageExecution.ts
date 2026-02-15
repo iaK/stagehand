@@ -408,28 +408,17 @@ export function useStageExecution() {
         stage_result: stageResult,
       });
 
-      // Check if this is a commit-eligible stage (Implementation, Refinement, Security Review)
+      // For commit-eligible stages, generate pending commit and wait for user decision
+      // (advanceFromStage will be called after the user commits or skips)
       const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
       if (commitEligibleStages.includes(stage.name)) {
-        generatePendingCommit(task, stage).catch(() => {});
+        await generatePendingCommit(task, stage);
+        await loadExecutions(activeProject.id, task.id);
+        return;
       }
 
-      // Advance to next stage (using filtered list)
-      const nextStage = taskStageTemplates
-        .filter((s) => s.sort_order > stage.sort_order)
-        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
-
-      if (nextStage) {
-        await updateTask(activeProject.id, task.id, {
-          current_stage_id: nextStage.id,
-        });
-      } else {
-        await updateTask(activeProject.id, task.id, {
-          status: "completed",
-        });
-      }
-
-      await loadExecutions(activeProject.id, task.id);
+      // Non-commit stages: advance immediately
+      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
   );
@@ -438,12 +427,21 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate) => {
       if (!activeProject) return;
 
-      // Check if the project is a git repo with uncommitted changes
       const gitRepo = await isGitRepo(activeProject.path);
-      if (!gitRepo) return;
+      if (!gitRepo) {
+        // Not a git repo — skip commit, advance directly
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+        return;
+      }
 
       const hasChanges = await hasUncommittedChanges(activeProject.path);
-      if (!hasChanges) return;
+      if (!hasChanges) {
+        // No changes to commit — advance directly
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+        return;
+      }
 
       const diffStat = await gitDiffStat(activeProject.path).catch(() => "");
 
@@ -496,6 +494,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         // Use fallback message
       }
 
+      // Set pending commit — StageView will show the approval dialog
       useProcessStore.getState().setPendingCommit({
         stageId: stage.id,
         stageName: stage.name,
@@ -504,6 +503,36 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       });
     },
     [activeProject],
+  );
+
+  const advanceFromStageInner = useCallback(
+    async (projectId: string, task: Task, stage: StageTemplate, taskStageTemplates: StageTemplate[]) => {
+      const nextStage = taskStageTemplates
+        .filter((s) => s.sort_order > stage.sort_order)
+        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
+
+      if (nextStage) {
+        await updateTask(projectId, task.id, {
+          current_stage_id: nextStage.id,
+        });
+      } else {
+        await updateTask(projectId, task.id, {
+          status: "completed",
+        });
+      }
+
+      await loadExecutions(projectId, task.id);
+    },
+    [updateTask, loadExecutions],
+  );
+
+  const advanceFromStage = useCallback(
+    async (task: Task, stage: StageTemplate) => {
+      if (!activeProject) return;
+      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+    },
+    [activeProject, advanceFromStageInner],
   );
 
   const redoStage = useCallback(
@@ -526,7 +555,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     }
   }, []);
 
-  return { runStage, approveStage, redoStage, killCurrent };
+  return { runStage, approveStage, advanceFromStage, redoStage, killCurrent };
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
@@ -590,6 +619,16 @@ function extractStageOutput(
       try {
         const data = JSON.parse(raw);
         if (data.research) return data.research;
+      } catch {
+        // fall through
+      }
+      return raw;
+    }
+    case "plan": {
+      // Extract the plan text from the JSON envelope
+      try {
+        const data = JSON.parse(raw);
+        if (data.plan) return data.plan;
       } catch {
         // fall through
       }

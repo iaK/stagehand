@@ -5,6 +5,45 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StageExecution, StageTemplate } from "../../lib/types";
 import { TextOutput } from "../output/TextOutput";
 
+// -- Collapsible input bubble (for "Input from previous stage") --
+
+export function CollapsibleInputBubble({
+  text,
+  label,
+}: {
+  text: string;
+  label: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
+        </svg>
+      </div>
+      <Collapsible open={expanded} onOpenChange={setExpanded} className="flex-1 min-w-0 pb-4 pt-0.5">
+        <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+          <svg
+            className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+          {label}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 p-3 bg-zinc-50 border border-border rounded-lg text-sm text-zinc-700">
+            <TextOutput content={text} />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
 // -- Shared bubble primitives --
 
 export function UserBubble({
@@ -163,50 +202,74 @@ export function StageTimeline({ executions, stage }: StageTimelineProps) {
       <div className="absolute left-3 top-3 bottom-3 w-px bg-border" />
       <div className="space-y-1">
         {executions.map((exec) => (
-          <TimelineEntry key={exec.id} execution={exec} stage={stage} />
+          <CollapsibleTimelineEntry key={exec.id} execution={exec} stage={stage} />
         ))}
       </div>
     </div>
   );
 }
 
-function TimelineEntry({
+function CollapsibleTimelineEntry({
   execution,
   stage,
 }: {
   execution: StageExecution;
   stage: StageTemplate;
 }) {
-  const userInput = execution.user_input;
+  const [expanded, setExpanded] = useState(false);
   const output = execution.parsed_output ?? execution.raw_output ?? "";
-  const isFirst = execution.attempt_number === 1;
+  const hasOutput = output && execution.status !== "running" && execution.status !== "pending";
 
   return (
-    <>
-      {userInput && (
-        <UserBubble
-          text={userInput}
-          label={
-            stage.input_source === "previous_stage"
-              ? `Input from previous stage #${execution.attempt_number}`
-              : `${isFirst ? "Your input" : "Your answers"} #${execution.attempt_number}`
-          }
-        />
-      )}
+    <div className="flex gap-3 items-start">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg className="w-3 h-3 text-zinc-600" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+        </svg>
+      </div>
+      <Collapsible open={expanded} onOpenChange={setExpanded} className="flex-1 min-w-0 pb-4 pt-0.5">
+        <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+          <svg
+            className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+          {stage.name} round #{execution.attempt_number}
+          {execution.status === "approved" && (
+            <span className="text-emerald-600 ml-1">&#10003;</span>
+          )}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-2 space-y-1">
+            {execution.user_input && (
+              <CollapsibleInputBubble
+                text={execution.user_input}
+                label={
+                  stage.input_source === "previous_stage"
+                    ? `Input from previous stage #${execution.attempt_number}`
+                    : `${execution.attempt_number === 1 ? "Your input" : "Your answers"} #${execution.attempt_number}`
+                }
+              />
+            )}
 
-      {execution.thinking_output && (
-        <ThinkingBubble
-          text={execution.thinking_output}
-          label={`Thinking #${execution.attempt_number}`}
-        />
-      )}
+            {execution.thinking_output && (
+              <ThinkingBubble
+                text={execution.thinking_output}
+                label={`Thinking #${execution.attempt_number}`}
+              />
+            )}
 
-      {output && execution.status !== "running" && execution.status !== "pending" && (
-        <AiBubble label={`${stage.name} response #${execution.attempt_number}`}>
-          <TimelineOutput output={output} stage={stage} />
-        </AiBubble>
-      )}
-    </>
+            {hasOutput && (
+              <AiBubble label={`${stage.name} response #${execution.attempt_number}`}>
+                <TimelineOutput output={output} stage={stage} />
+              </AiBubble>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }
 
@@ -217,30 +280,34 @@ function TimelineOutput({
   output: string;
   stage: StageTemplate;
 }) {
-  if (stage.output_format === "research") {
+  if (stage.output_format === "research" || stage.output_format === "plan" || stage.output_format === "options") {
     try {
       const parsed = JSON.parse(output);
-      const research: string = parsed.research ?? "";
+      const content: string = parsed.research ?? parsed.plan ?? "";
       const questions: { id: string; question: string; proposed_answer: string }[] =
         parsed.questions ?? [];
 
-      return (
-        <div className="p-3">
-          <div className="text-sm">
-            <TextOutput content={research} />
+      if (content || questions.length > 0) {
+        return (
+          <div className="p-3">
+            {content && (
+              <div className="text-sm">
+                <TextOutput content={content} />
+              </div>
+            )}
+            {questions.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border space-y-2">
+                <p className="text-xs text-muted-foreground">Questions asked ({questions.length})</p>
+                {questions.map((q) => (
+                  <div key={q.id} className="text-xs text-zinc-600">
+                    <span className="text-foreground">Q: </span>{q.question}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {questions.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border space-y-2">
-              <p className="text-xs text-muted-foreground">Questions asked ({questions.length})</p>
-              {questions.map((q) => (
-                <div key={q.id} className="text-xs text-zinc-600">
-                  <span className="text-foreground">Q: </span>{q.question}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
+        );
+      }
     } catch {
       // fall through to text
     }

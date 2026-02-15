@@ -209,12 +209,14 @@ function StageSelectionPanel({
   );
 }
 
-function QuestionCards({
+export function QuestionCards({
   questions,
   onSubmit,
+  submitLabel = "Submit Answers & Continue Research",
 }: {
   questions: ResearchQuestion[];
   onSubmit: (answers: string) => void;
+  submitLabel?: string;
 }) {
   const [selections, setSelections] = useState<Record<string, string | null>>(() => {
     const initial: Record<string, string | null> = {};
@@ -355,7 +357,7 @@ function QuestionCards({
       })}
 
       <Button onClick={handleSubmit}>
-        Submit Answers & Continue Research
+        {submitLabel}
       </Button>
     </div>
   );

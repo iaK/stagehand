@@ -162,6 +162,7 @@ export function StageTemplateEditorContent() {
                 <SelectItem value="checklist">Checklist</SelectItem>
                 <SelectItem value="structured">Structured</SelectItem>
                 <SelectItem value="research">Research (Q&A)</SelectItem>
+                <SelectItem value="plan">Plan (Q&A)</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -9,6 +9,7 @@ import { StageOutput } from "./StageOutput";
 import {
   StageTimeline,
   UserBubble,
+  CollapsibleInputBubble,
   LiveStreamBubble,
   ThinkingBubble,
 } from "./StageTimeline";
@@ -32,7 +33,7 @@ export function StageView({ stage }: StageViewProps) {
   );
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
-  const { runStage, approveStage, redoStage, killCurrent } =
+  const { runStage, approveStage, advanceFromStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
   const [userInput, setUserInput] = useState("");
@@ -51,17 +52,17 @@ export function StageView({ stage }: StageViewProps) {
   }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
 
   const handleCommit = async () => {
-    if (!activeProject || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !activeTask || !pendingCommit || pendingCommit.stageId !== stage.id) return;
     setCommitting(true);
     setCommitError(null);
     try {
       await gitAdd(activeProject.path);
       const result = await gitCommit(activeProject.path, commitMessage);
-      // Extract short hash from commit output (e.g. "[main abc1234] message")
       const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
       const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
       useProcessStore.getState().setCommitted(stage.id, shortHash);
       useProcessStore.getState().clearPendingCommit();
+      await advanceFromStage(activeTask, stage);
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -69,8 +70,10 @@ export function StageView({ stage }: StageViewProps) {
     }
   };
 
-  const handleSkipCommit = () => {
+  const handleSkipCommit = async () => {
+    if (!activeTask) return;
     useProcessStore.getState().clearPendingCommit();
+    await advanceFromStage(activeTask, stage);
   };
 
   const stageExecs = useMemo(
@@ -242,7 +245,7 @@ export function StageView({ stage }: StageViewProps) {
         </div>
       )}
 
-      {/* COMMIT CONFIRMATION */}
+      {/* COMMIT CONFIRMATION — shown after approval, blocks advancement */}
       {pendingCommit?.stageId === stage.id && (
         <div className="mb-6 p-4 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center gap-2 mb-3">
@@ -255,7 +258,7 @@ export function StageView({ stage }: StageViewProps) {
           </div>
 
           {pendingCommit.diffStat && (
-            <pre className="text-xs text-muted-foreground bg-zinc-50 border border-border rounded p-2 mb-3 overflow-x-auto">
+            <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
               {pendingCommit.diffStat}
             </pre>
           )}
@@ -318,16 +321,21 @@ export function StageView({ stage }: StageViewProps) {
 
           {/* Current round: user input */}
           {latestExecution.user_input && (
-            <UserBubble
-              text={latestExecution.user_input}
-              label={
-                stage.input_source === "previous_stage"
-                  ? "Input from previous stage"
-                  : latestExecution.attempt_number === 1
+            stage.input_source === "previous_stage" ? (
+              <CollapsibleInputBubble
+                text={latestExecution.user_input}
+                label="Input from previous stage"
+              />
+            ) : (
+              <UserBubble
+                text={latestExecution.user_input}
+                label={
+                  latestExecution.attempt_number === 1
                     ? "Your input"
                     : "Your answers"
-              }
-            />
+                }
+              />
+            )
           )}
 
           {/* Current round: RUNNING -- live stream */}
@@ -354,10 +362,10 @@ export function StageView({ stage }: StageViewProps) {
                 execution={latestExecution}
                 stage={stage}
                 onApprove={handleApprove}
-                onApproveWithStages={handleApproveWithStages}
+                onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
                 isApproved={false}
-                stageTemplates={stageTemplates}
+                stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
               />
 
               {/* Redo actions */}

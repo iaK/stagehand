@@ -168,9 +168,12 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   // Migrate Research stage: add suggested_stages to prompt/schema
   await migrateResearchStageSuggestions(db);
+
+  // Migrate stages to support questions in High-Level Approaches and Planning
+  await migrateInteractiveStages(db);
 }
 
-const RESEARCH_PROMPT = `You are a senior software engineer researching a task. Analyze the following task thoroughly.
+const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
 
 Task: {{task_description}}
 
@@ -184,13 +187,21 @@ Your previous research output (build on this, do NOT repeat questions that have 
 {{prior_attempt_output}}
 {{/if}}
 
-Provide a comprehensive analysis including:
-1. Understanding of the problem
-2. Key technical considerations
-3. Relevant existing code/patterns to be aware of
-4. Potential challenges and risks
+Investigate the codebase and provide a factual analysis:
+1. **Problem understanding** — What exactly needs to happen? What is the current behavior vs desired behavior?
+2. **Relevant code** — Which files, functions, components, and patterns are involved? Quote key code snippets.
+3. **Dependencies & constraints** — What does this code depend on? What depends on it? Are there tests, types, or contracts to respect?
+4. **Codebase conventions** — What patterns, naming conventions, and architectural decisions does the project follow that are relevant?
 
-If you have questions that need the developer's input before the research is complete, include them in the "questions" array. For each question:
+Do NOT:
+- Suggest how to implement the solution
+- Propose architectural approaches
+- Discuss trade-offs between implementation options
+- Make recommendations about what approach to take
+
+Your questions should ONLY be about clarifying requirements and scope — what the developer wants, not how to build it.
+
+If you have questions, include them in the "questions" array. For each question:
 - Provide a "proposed_answer" with your best guess
 - Provide an "options" array with 2-4 selectable choices the developer can pick from (the developer can also write a custom answer)
 - Do NOT re-ask questions the developer has already answered above
@@ -210,7 +221,7 @@ Include your suggestions in the "suggested_stages" array.
 
 Respond with a JSON object matching this structure:
 {
-  "research": "Your full research analysis in Markdown...",
+  "research": "Your factual research analysis in Markdown (NO implementation suggestions)...",
   "questions": [
     {
       "id": "q1",
@@ -476,6 +487,225 @@ async function migrateResearchStage(db: Database): Promise<void> {
       await db.execute(
         "UPDATE stage_templates SET output_schema = $1, prompt_template = $2, updated_at = $3 WHERE id = $4",
         [RESEARCH_SCHEMA, RESEARCH_PROMPT, new Date().toISOString(), row.id],
+      );
+    }
+  }
+}
+
+const APPROACHES_PROMPT = `You are a senior software architect proposing implementation approaches for a task.
+
+Task: {{task_description}}
+
+Research findings:
+{{previous_output}}
+
+{{#if user_input}}
+Developer's answers to your questions:
+{{user_input}}
+{{/if}}
+
+{{#if prior_attempt_output}}
+Your previous output (incorporate the developer's answers above and refine your thinking):
+{{prior_attempt_output}}
+{{/if}}
+
+Before proposing approaches, you may ask the developer clarifying questions about implementation preferences, trade-offs they care about, or constraints that affect the approach. These should be questions about HOW to build it (not WHAT to build — that was covered in research).
+
+If you need more information, include questions in the "questions" array and leave "options" empty.
+If you have enough information, provide 2-4 distinct approaches in "options" with an empty "questions" array.
+
+For each question:
+- Provide a "proposed_answer" with your best guess
+- Provide an "options" array with 2-4 selectable choices
+- Do NOT re-ask questions the developer has already answered above
+
+For each approach, provide:
+- A clear title
+- Description of the approach
+- Pros (advantages)
+- Cons (disadvantages)
+
+Respond with a JSON object matching this structure:
+{
+  "options": [
+    {
+      "id": "approach-1",
+      "title": "Approach Title",
+      "description": "Detailed description",
+      "pros": ["pro 1", "pro 2"],
+      "cons": ["con 1", "con 2"]
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Your question here?",
+      "proposed_answer": "Your best-guess answer",
+      "options": ["Option A", "Option B"]
+    }
+  ]
+}`;
+
+const APPROACHES_SCHEMA = JSON.stringify({
+  type: "object",
+  properties: {
+    options: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          pros: { type: "array", items: { type: "string" } },
+          cons: { type: "array", items: { type: "string" } },
+        },
+        required: ["id", "title", "description", "pros", "cons"],
+      },
+    },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          question: { type: "string" },
+          proposed_answer: { type: "string" },
+          options: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["id", "question", "proposed_answer"],
+      },
+    },
+  },
+  required: ["options", "questions"],
+});
+
+const PLANNING_PROMPT = `You are a senior software engineer creating a detailed implementation plan.
+
+Task: {{task_description}}
+
+Selected approach:
+{{user_decision}}
+
+Previous research and context:
+{{previous_output}}
+
+{{#if user_input}}
+Developer's answers to your questions:
+{{user_input}}
+{{/if}}
+
+{{#if prior_attempt_output}}
+Your previous output (incorporate the developer's answers above and refine your plan):
+{{prior_attempt_output}}
+{{/if}}
+
+Before writing the plan, you may ask the developer clarifying questions about implementation details — e.g. naming preferences, testing expectations, specific behaviors for edge cases, or anything that would change the plan.
+
+If you need more information, include questions in the "questions" array and set "plan" to a brief summary of what you know so far.
+If you have enough information, provide the full plan in "plan" with an empty "questions" array.
+
+For each question:
+- Provide a "proposed_answer" with your best guess
+- Provide an "options" array with 2-4 selectable choices
+- Do NOT re-ask questions the developer has already answered above
+
+The plan should include:
+1. Step-by-step implementation plan
+2. Files that need to be created or modified
+3. Dependencies or prerequisites
+4. Testing strategy
+5. Potential edge cases to handle
+
+Respond with a JSON object matching this structure:
+{
+  "plan": "Your detailed implementation plan in Markdown...",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Your question here?",
+      "proposed_answer": "Your best-guess answer",
+      "options": ["Option A", "Option B"]
+    }
+  ]
+}`;
+
+const PLANNING_SCHEMA = JSON.stringify({
+  type: "object",
+  properties: {
+    plan: { type: "string" },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          question: { type: "string" },
+          proposed_answer: { type: "string" },
+          options: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["id", "question", "proposed_answer"],
+      },
+    },
+  },
+  required: ["plan", "questions"],
+});
+
+async function migrateInteractiveStages(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Migrate Research stage prompt to pure research (no implementation planning)
+  const researchRows = await db.select<{ id: string; prompt_template: string }[]>(
+    "SELECT id, prompt_template FROM stage_templates WHERE name = 'Research' AND output_format = 'research' AND sort_order = 0",
+  );
+  for (const row of researchRows) {
+    if (!row.prompt_template.includes("Your ONLY job is to investigate")) {
+      await db.execute(
+        "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
+        [RESEARCH_PROMPT, now, row.id],
+      );
+    }
+  }
+
+  // Migrate High-Level Approaches to support questions
+  const approachRows = await db.select<{ id: string; output_schema: string | null }[]>(
+    "SELECT id, output_schema FROM stage_templates WHERE name = 'High-Level Approaches' AND output_format = 'options' AND sort_order = 1",
+  );
+  for (const row of approachRows) {
+    if (!row.output_schema || !row.output_schema.includes('"questions"')) {
+      await db.execute(
+        "UPDATE stage_templates SET prompt_template = $1, output_schema = $2, updated_at = $3 WHERE id = $4",
+        [APPROACHES_PROMPT, APPROACHES_SCHEMA, now, row.id],
+      );
+    }
+  }
+
+  // Migrate Planning stage: text → plan format with questions
+  const planningTextRows = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Planning' AND output_format = 'text' AND sort_order = 2",
+  );
+  for (const row of planningTextRows) {
+    await db.execute(
+      "UPDATE stage_templates SET output_format = $1, output_schema = $2, prompt_template = $3, updated_at = $4 WHERE id = $5",
+      ["plan", PLANNING_SCHEMA, PLANNING_PROMPT, now, row.id],
+    );
+  }
+
+  // Also update Planning stages that are already 'plan' format but lack questions in schema
+  const planningPlanRows = await db.select<{ id: string; output_schema: string | null }[]>(
+    "SELECT id, output_schema FROM stage_templates WHERE name = 'Planning' AND output_format = 'plan' AND sort_order = 2",
+  );
+  for (const row of planningPlanRows) {
+    if (!row.output_schema || !row.output_schema.includes('"questions"')) {
+      await db.execute(
+        "UPDATE stage_templates SET output_schema = $1, prompt_template = $2, updated_at = $3 WHERE id = $4",
+        [PLANNING_SCHEMA, PLANNING_PROMPT, now, row.id],
       );
     }
   }
