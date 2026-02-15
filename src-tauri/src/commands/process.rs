@@ -30,6 +30,7 @@ pub async fn spawn_claude(
     let process_id = uuid::Uuid::new_v4().to_string();
 
     let mut cmd = Command::new("claude");
+    cmd.arg("--dangerously-skip-permissions");
     cmd.arg("-p").arg(&args.prompt);
 
     let output_format = args.output_format.as_deref().unwrap_or("stream-json");

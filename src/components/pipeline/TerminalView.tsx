@@ -1,8 +1,14 @@
 import { useRef, useEffect, useState } from "react";
-import { useProcessStore } from "../../stores/processStore";
+import { useProcessStore, DEFAULT_STAGE_STATE } from "../../stores/processStore";
 
 export function TerminalView() {
-  const { streamOutput, isRunning } = useProcessStore();
+  const viewingStageId = useProcessStore((s) => s.viewingStageId);
+  const { streamOutput, isRunning } = useProcessStore(
+    (s) => (viewingStageId ? s.stages[viewingStageId] ?? DEFAULT_STAGE_STATE : DEFAULT_STAGE_STATE),
+  );
+  const anyRunning = useProcessStore((s) =>
+    Object.values(s.stages).some((st) => st.isRunning),
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -13,7 +19,7 @@ export function TerminalView() {
     }
   }, [streamOutput]);
 
-  // Auto-expand when process starts
+  // Auto-expand when any process starts
   useEffect(() => {
     if (isRunning) setCollapsed(false);
   }, [isRunning]);
@@ -31,7 +37,7 @@ export function TerminalView() {
       >
         <div
           className={`w-2 h-2 rounded-full ${
-            isRunning ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"
+            anyRunning ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"
           }`}
         />
         <span className="text-zinc-500 uppercase tracking-wider">

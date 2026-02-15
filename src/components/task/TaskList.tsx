@@ -10,14 +10,36 @@ const statusColors: Record<string, string> = {
   failed: "bg-red-500",
 };
 
+const pipelineColors: Record<string, string> = {
+  running: "bg-blue-500 animate-pulse",
+  awaiting_user: "bg-amber-500",
+  approved: "bg-emerald-500",
+  failed: "bg-red-500",
+  pending: "bg-zinc-600",
+};
+
 interface TaskListProps {
   onEdit: (task: Task) => void;
 }
 
 export function TaskList({ onEdit }: TaskListProps) {
-  const { tasks, activeTask, setActiveTask, updateTask } = useTaskStore();
+  const { tasks, activeTask, setActiveTask, updateTask, executions } = useTaskStore();
   const activeProject = useProjectStore((s) => s.activeProject);
   const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
+
+  // For the active task, derive color from the latest execution on its current stage
+  const getTaskDotClass = (task: Task) => {
+    if (task.id === activeTask?.id && task.current_stage_id && executions.length > 0) {
+      const stageExecs = executions.filter(
+        (e) => e.stage_template_id === task.current_stage_id,
+      );
+      const latestExec = stageExecs[stageExecs.length - 1];
+      if (latestExec) {
+        return pipelineColors[latestExec.status] ?? statusColors[task.status] ?? "bg-zinc-600";
+      }
+    }
+    return statusColors[task.status] ?? "bg-zinc-600";
+  };
 
   if (tasks.length === 0) {
     return (
@@ -59,7 +81,7 @@ export function TaskList({ onEdit }: TaskListProps) {
             >
               <div className="flex items-center gap-2">
                 <div
-                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColors[task.status] ?? "bg-zinc-600"}`}
+                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${getTaskDotClass(task)}`}
                 />
                 <span className="truncate">{task.title}</span>
               </div>

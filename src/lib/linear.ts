@@ -1,0 +1,143 @@
+import type { LinearIssue } from "./types";
+
+const LINEAR_API = "https://api.linear.app/graphql";
+
+async function gql<T>(apiKey: string, query: string): Promise<T> {
+  const res = await fetch(LINEAR_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Invalid API key");
+    throw new Error(`Linear API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  if (json.errors?.length) {
+    throw new Error(json.errors[0].message);
+  }
+  return json.data as T;
+}
+
+interface ViewerResponse {
+  viewer: {
+    name: string;
+    organization: { id: string; name: string };
+  };
+}
+
+export async function verifyApiKey(
+  apiKey: string,
+): Promise<{ valid: boolean; name: string; orgName: string; error?: string }> {
+  try {
+    const data = await gql<ViewerResponse>(
+      apiKey,
+      `{ viewer { name organization { id name } } }`,
+    );
+    return { valid: true, name: data.viewer.name, orgName: data.viewer.organization.name };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { valid: false, name: "", orgName: "", error: message };
+  }
+}
+
+interface AssignedIssuesResponse {
+  viewer: {
+    assignedIssues: {
+      nodes: Array<{
+        id: string;
+        identifier: string;
+        title: string;
+        description: string | null;
+        priority: number;
+        url: string;
+        state: { name: string } | null;
+      }>;
+    };
+  };
+}
+
+export async function fetchMyIssues(
+  apiKey: string,
+): Promise<LinearIssue[]> {
+  const data = await gql<AssignedIssuesResponse>(
+    apiKey,
+    `{
+      viewer {
+        assignedIssues(
+          filter: { state: { type: { nin: ["completed", "canceled"] } } }
+          first: 50
+        ) {
+          nodes {
+            id
+            identifier
+            title
+            description
+            priority
+            url
+            state { name }
+          }
+        }
+      }
+    }`,
+  );
+
+  return data.viewer.assignedIssues.nodes.map((issue) => ({
+    id: issue.id,
+    identifier: issue.identifier,
+    title: issue.title,
+    description: issue.description ?? undefined,
+    status: issue.state?.name ?? "Unknown",
+    priority: issue.priority,
+    url: issue.url,
+  }));
+}
+
+interface IssueDetailResponse {
+  issue: {
+    description: string | null;
+    comments: {
+      nodes: Array<{
+        body: string;
+        user: { name: string } | null;
+        createdAt: string;
+      }>;
+    };
+  };
+}
+
+export async function fetchIssueDetail(
+  apiKey: string,
+  issueId: string,
+): Promise<{ description: string | undefined; comments: string[] }> {
+  const data = await gql<IssueDetailResponse>(
+    apiKey,
+    `{
+      issue(id: "${issueId}") {
+        description
+        comments(first: 50) {
+          nodes {
+            body
+            user { name }
+            createdAt
+          }
+        }
+      }
+    }`,
+  );
+
+  const comments = data.issue.comments.nodes.map((c) => {
+    const author = c.user?.name ?? "Unknown";
+    return `${author}: ${c.body}`;
+  });
+
+  return {
+    description: data.issue.description ?? undefined,
+    comments,
+  };
+}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { TextOutput } from "./TextOutput";
+import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import type { ResearchQuestion } from "../../lib/types";
 
 interface ResearchOutputProps {
@@ -166,18 +167,18 @@ function QuestionCards({
                 <div className="flex-1">
                   <span className="text-sm text-zinc-400">Other</span>
                   {selections[q.id] === null && (
-                    <textarea
+                    <MarkdownTextarea
                       value={customText[q.id] ?? ""}
-                      onChange={(e) =>
+                      onChange={(v) =>
                         setCustomText((prev) => ({
                           ...prev,
-                          [q.id]: e.target.value,
+                          [q.id]: v,
                         }))
                       }
                       rows={2}
-                      className="mt-2 w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
                       placeholder="Type your answer..."
                       autoFocus
+                      className="mt-2"
                     />
                   )}
                 </div>
@@ -186,16 +187,15 @@ function QuestionCards({
           ) : (
             /* Fallback: free text only (backward compat for questions without options) */
             <div>
-              <textarea
+              <MarkdownTextarea
                 value={customText[q.id] ?? ""}
-                onChange={(e) =>
+                onChange={(v) =>
                   setCustomText((prev) => ({
                     ...prev,
-                    [q.id]: e.target.value,
+                    [q.id]: v,
                   }))
                 }
                 rows={2}
-                className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
               />
               {customText[q.id] !== q.proposed_answer && (
                 <button

@@ -43,6 +43,20 @@ async function initAppSchema(db: Database): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+  `).catch(() => { /* column already exists */ });
+
+  // Clean up orphaned global linear_api_key (now per-project)
+  await db.execute("DELETE FROM settings WHERE key = 'linear_api_key'");
 }
 
 async function initProjectSchema(db: Database): Promise<void> {
@@ -108,6 +122,13 @@ async function initProjectSchema(db: Database): Promise<void> {
   `);
 
   await db.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
     ALTER TABLE stage_executions ADD COLUMN user_input TEXT
   `).catch(() => { /* column already exists */ });
 
@@ -115,8 +136,19 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE stage_executions ADD COLUMN thinking_output TEXT
   `).catch(() => { /* column already exists */ });
 
+  await db.execute(`
+    ALTER TABLE stage_executions ADD COLUMN stage_result TEXT
+  `).catch(() => { /* column already exists */ });
+
+  await db.execute(`
+    ALTER TABLE stage_templates ADD COLUMN result_mode TEXT NOT NULL DEFAULT 'replace'
+  `).catch(() => { /* column already exists */ });
+
   // Migrate Research stage: text → research format
   await migrateResearchStage(db);
+
+  // Migrate Refinement stage: passive feedback → active self-review
+  await migrateRefinementStage(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer researching a task. Analyze the following task thoroughly.
@@ -176,6 +208,55 @@ const RESEARCH_SCHEMA = JSON.stringify({
   },
   required: ["research", "questions"],
 });
+
+const REFINEMENT_PROMPT = `You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
+
+Task that was implemented:
+{{task_description}}
+
+Implementation output:
+{{previous_output}}
+
+## Review Checklist
+
+Critically examine the implementation against each of these:
+
+1. **Completeness** — Does the implementation fully address the task? Are there overlooked edge cases, missing error handling, or incomplete features?
+2. **Correctness** — Does the logic actually work for all expected inputs? Any bugs, race conditions, off-by-one errors, or type mismatches?
+3. **Codebase Consistency** — Does the new code follow the same patterns, conventions, and style as the existing codebase? Are similar things done in similar ways?
+4. **Cleanup** — Any leftover debug code, unused imports, commented-out code, or inconsistent naming?
+5. **Simplicity** — Is anything over-engineered or unnecessarily complex? Could it be simplified without losing functionality?
+
+{{#if user_input}}
+## Developer Feedback
+The developer has also provided specific feedback to address:
+{{user_input}}
+{{/if}}
+
+## Instructions
+
+Based on your review (and any developer feedback above), make all necessary improvements directly in the code. Fix issues, clean up problems, and ensure consistency.
+
+If the implementation is solid and needs no changes, say so explicitly — do not make changes for the sake of making changes.
+
+Provide a summary of what you reviewed and what you changed (or why no changes were needed).`;
+
+const REFINEMENT_DESCRIPTION = "Self-review the implementation: catch oversights, clean up code, and verify codebase consistency.";
+
+async function migrateRefinementStage(db: Database): Promise<void> {
+  // Update Refinement stages that still have the old passive prompt
+  const rows = await db.select<{ id: string; prompt_template: string }[]>(
+    "SELECT id, prompt_template FROM stage_templates WHERE name = 'Refinement' AND sort_order = 4",
+  );
+  for (const row of rows) {
+    if (row.prompt_template.includes("apply the following feedback/refinements")) {
+      await db.execute(
+        "UPDATE stage_templates SET prompt_template = $1, description = $2, updated_at = $3 WHERE id = $4",
+        [REFINEMENT_PROMPT, REFINEMENT_DESCRIPTION, new Date().toISOString(), row.id],
+      );
+    }
+  }
+}
 
 async function migrateResearchStage(db: Database): Promise<void> {
   // Find Research stages still using old text format

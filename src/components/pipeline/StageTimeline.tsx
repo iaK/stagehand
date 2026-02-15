@@ -114,12 +114,12 @@ export function ThinkingBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-zinc-500" fill="currentColor" viewBox="0 0 20 20">
           <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" />
         </svg>
       </div>
-      <div className="flex-1 min-w-0 pb-4">
+      <div className="flex-1 min-w-0 pb-4 pt-1">
         <button
           onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-1"
@@ -183,7 +183,11 @@ function TimelineEntry({
       {userInput && (
         <UserBubble
           text={userInput}
-          label={`${isFirst ? "Your input" : "Your answers"} #${execution.attempt_number}`}
+          label={
+            stage.input_source === "previous_stage"
+              ? `Input from previous stage #${execution.attempt_number}`
+              : `${isFirst ? "Your input" : "Your answers"} #${execution.attempt_number}`
+          }
         />
       )}
 

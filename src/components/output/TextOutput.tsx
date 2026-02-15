@@ -68,7 +68,7 @@ const components: Components = {
 
 export function TextOutput({ content }: TextOutputProps) {
   return (
-    <div className="max-w-none">
+    <div className="max-w-none [&>:first-child]:!mt-0 [&>:last-child]:!mb-0">
       <Markdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </Markdown>

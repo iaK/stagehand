@@ -7,12 +7,67 @@ import type {
   StageExecution,
 } from "./types";
 
+// === Settings ===
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getAppDb();
+  const rows = await db.select<{ value: string }[]>(
+    "SELECT value FROM settings WHERE key = $1",
+    [key],
+  );
+  return rows[0]?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await getAppDb();
+  await db.execute(
+    "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
+    [key, value],
+  );
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  const db = await getAppDb();
+  await db.execute("DELETE FROM settings WHERE key = $1", [key]);
+}
+
+// === Per-Project Settings ===
+
+export async function getProjectSetting(projectId: string, key: string): Promise<string | null> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ value: string }[]>(
+    "SELECT value FROM settings WHERE key = $1",
+    [key],
+  );
+  return rows[0]?.value ?? null;
+}
+
+export async function setProjectSetting(projectId: string, key: string, value: string): Promise<void> {
+  const db = await getProjectDb(projectId);
+  await db.execute(
+    "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
+    [key, value],
+  );
+}
+
+export async function deleteProjectSetting(projectId: string, key: string): Promise<void> {
+  const db = await getProjectDb(projectId);
+  await db.execute("DELETE FROM settings WHERE key = $1", [key]);
+}
+
 // === Projects ===
 
 export async function listProjects(): Promise<Project[]> {
   const db = await getAppDb();
   return db.select<Project[]>(
-    "SELECT * FROM projects ORDER BY updated_at DESC",
+    "SELECT * FROM projects WHERE archived = 0 ORDER BY updated_at DESC",
+  );
+}
+
+export async function listArchivedProjects(): Promise<Project[]> {
+  const db = await getAppDb();
+  return db.select<Project[]>(
+    "SELECT * FROM projects WHERE archived = 1 ORDER BY updated_at DESC",
   );
 }
 
@@ -31,24 +86,50 @@ export async function createProject(name: string, path: string): Promise<Project
   const templates = getDefaultStageTemplates(id);
   for (const t of templates) {
     await projectDb.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
-        t.allowed_tools,
+        t.allowed_tools, t.result_mode,
       ],
     );
   }
 
-  return { id, name, path, created_at: now, updated_at: now };
+  return { id, name, path, archived: 0, created_at: now, updated_at: now };
 }
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await getAppDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
+}
+
+export async function updateProject(
+  id: string,
+  updates: Partial<Pick<Project, "name" | "archived">>,
+): Promise<void> {
+  const db = await getAppDb();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(updates)) {
+    sets.push(`${key} = $${idx}`);
+    values.push(value);
+    idx++;
+  }
+
+  sets.push(`updated_at = $${idx}`);
+  values.push(new Date().toISOString());
+  idx++;
+
+  values.push(id);
+  await db.execute(
+    `UPDATE projects SET ${sets.join(", ")} WHERE id = $${idx}`,
+    values,
+  );
 }
 
 // === Stage Templates ===
@@ -117,21 +198,23 @@ export async function createTask(
   projectId: string,
   title: string,
   firstStageId: string,
+  description: string = "",
 ): Promise<Task> {
   const db = await getProjectDb(projectId);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, current_stage_id, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [id, projectId, title, firstStageId, "pending", now, now],
+    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [id, projectId, title, description, firstStageId, "pending", now, now],
   );
 
   return {
     id,
     project_id: projectId,
     title,
+    description,
     current_stage_id: firstStageId,
     status: "pending",
     archived: 0,
@@ -199,8 +282,8 @@ export async function createStageExecution(
 ): Promise<StageExecution> {
   const db = await getProjectDb(projectId);
   await db.execute(
-    `INSERT INTO stage_executions (id, task_id, stage_template_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, started_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO stage_executions (id, task_id, stage_template_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, stage_result, started_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [
       execution.id,
       execution.task_id,
@@ -215,6 +298,7 @@ export async function createStageExecution(
       execution.session_id,
       execution.error_message,
       execution.thinking_output,
+      execution.stage_result,
       execution.started_at,
     ],
   );
@@ -234,6 +318,7 @@ export async function updateStageExecution(
       | "user_decision"
       | "error_message"
       | "thinking_output"
+      | "stage_result"
       | "completed_at"
     >
   >,

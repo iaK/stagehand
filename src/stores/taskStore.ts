@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
+import { listProcesses } from "../lib/claude";
 import { useProcessStore } from "./processStore";
 
 interface TaskStore {
@@ -17,6 +18,7 @@ interface TaskStore {
   addTask: (
     projectId: string,
     title: string,
+    description?: string,
   ) => Promise<Task>;
   updateTask: (
     projectId: string,
@@ -55,18 +57,28 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   loadExecutions: async (projectId, taskId) => {
     const executions = await repo.listStageExecutions(projectId, taskId);
 
-    // Clean up stale "running" executions (process died on quit/reload)
-    const isRunning = useProcessStore.getState().isRunning;
-    if (!isRunning) {
+    // Check the backend for actually running processes
+    let runningProcessIds: string[] | null = null;
+    try {
+      runningProcessIds = await listProcesses();
+    } catch {
+      // If we can't reach the backend, don't assume anything about running state
+    }
+
+    // Clean up stale "running" executions whose process is no longer alive
+    // Only do this when we could actually reach the backend
+    if (runningProcessIds !== null && runningProcessIds.length === 0) {
       for (const exec of executions) {
         if (exec.status === "running") {
           await repo.updateStageExecution(projectId, exec.id, {
             status: "failed",
-            error_message: "Process interrupted (app was closed)",
+            error_message: "Process crashed or was interrupted",
             completed_at: new Date().toISOString(),
           });
           exec.status = "failed";
-          exec.error_message = "Process interrupted (app was closed)";
+          exec.error_message = "Process crashed or was interrupted";
+          // Also reset the process store so the Retry button isn't stuck disabled
+          useProcessStore.getState().setStopped(exec.stage_template_id);
         }
       }
     }
@@ -76,13 +88,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   setActiveTask: (task) => set({ activeTask: task }),
 
-  addTask: async (projectId, title) => {
+  addTask: async (projectId, title, description) => {
     const templates = get().stageTemplates;
     const firstStage = templates.length > 0 ? templates[0].id : "";
     const task = await repo.createTask(
       projectId,
       title,
       firstStage,
+      description,
     );
     const tasks = await repo.listTasks(projectId);
     set({ tasks, activeTask: task });

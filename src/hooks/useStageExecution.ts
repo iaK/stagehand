@@ -24,145 +24,177 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate, userInput?: string) => {
       if (!activeProject) return;
 
-      clearOutput();
-      setRunning("spawning");
-
-      // Find previous completed execution
-      const prevExec = await repo.getPreviousStageExecution(
-        activeProject.id,
-        task.id,
-        stage.sort_order,
-        stageTemplates,
-      );
-
-      // Render prompt
-      const prompt = renderPrompt(stage.prompt_template, {
-        taskDescription: task.title,
-        previousOutput: prevExec?.parsed_output ?? prevExec?.raw_output ?? undefined,
-        userInput,
-        userDecision: prevExec?.user_decision ?? undefined,
-      });
-
-      // Count previous attempts
-      const prevAttempts = executions.filter(
-        (e) => e.stage_template_id === stage.id,
-      );
-      const attemptNumber = prevAttempts.length + 1;
-
-      // Always use a fresh session — context is passed via the prompt template
-      const sessionId = crypto.randomUUID();
-
-      // Create execution record
-      const executionId = crypto.randomUUID();
-      const execution: Omit<StageExecution, "completed_at"> = {
-        id: executionId,
-        task_id: task.id,
-        stage_template_id: stage.id,
-        attempt_number: attemptNumber,
-        status: "running",
-        input_prompt: prompt,
-        user_input: userInput ?? null,
-        raw_output: null,
-        parsed_output: null,
-        user_decision: null,
-        session_id: sessionId,
-        error_message: null,
-        thinking_output: null,
-        started_at: new Date().toISOString(),
-      };
-
-      await repo.createStageExecution(activeProject.id, execution);
-      await updateTask(activeProject.id, task.id, { status: "in_progress" });
-
-      // Build allowed tools
-      let allowedTools: string[] | undefined;
-      if (stage.allowed_tools) {
-        try {
-          allowedTools = JSON.parse(stage.allowed_tools);
-        } catch {
-          // ignore
-        }
-      }
-
-      // Collect output
-      let rawOutput = "";
-      let resultText = "";
-      let thinkingText = "";
-
-      const onEvent = (event: ClaudeStreamEvent) => {
-        switch (event.type) {
-          case "started":
-            setRunning(event.process_id);
-            appendOutput(`[Process started: ${event.process_id}]`);
-            break;
-          case "stdout_line":
-            rawOutput += event.line + "\n";
-            // Try to parse stream-json events
-            try {
-              const parsed = JSON.parse(event.line);
-              if (parsed.type === "assistant" && parsed.message?.content) {
-                for (const block of parsed.message.content) {
-                  if (block.type === "text") {
-                    appendOutput(block.text);
-                    resultText += block.text;
-                    thinkingText += block.text;
-                  }
-                }
-              } else if (parsed.type === "result") {
-                // With --json-schema, the output is in structured_output, not result
-                const output = parsed.structured_output ?? parsed.result;
-                if (output != null && output !== "") {
-                  const text =
-                    typeof output === "string"
-                      ? output
-                      : JSON.stringify(output);
-                  resultText = text;
-                  appendOutput(text);
-                }
-                // Don't add result to thinkingText — it's the final structured output
-              } else if (parsed.type === "content_block_delta") {
-                if (parsed.delta?.text) {
-                  appendOutput(parsed.delta.text);
-                  resultText += parsed.delta.text;
-                  thinkingText += parsed.delta.text;
-                }
-              }
-            } catch {
-              // Not JSON, just append as-is
-              appendOutput(event.line);
-            }
-            break;
-          case "stderr_line":
-            appendOutput(`[stderr] ${event.line}`);
-            break;
-          case "completed":
-            setStopped();
-            appendOutput(
-              `[Process completed with exit code: ${event.exit_code}]`,
-            );
-            // Update execution in DB
-            finalizeExecution(
-              executionId,
-              stage,
-              rawOutput,
-              resultText,
-              event.exit_code,
-              thinkingText,
-            );
-            break;
-          case "error":
-            setStopped();
-            appendOutput(`[Error] ${event.message}`);
-            repo.updateStageExecution(activeProject!.id, executionId, {
-              status: "failed",
-              error_message: event.message,
-              completed_at: new Date().toISOString(),
-            }).then(() => loadExecutions(activeProject!.id, task.id));
-            break;
-        }
-      };
+      clearOutput(stage.id);
+      setRunning(stage.id, "spawning");
 
       try {
+        // Find previous completed execution
+        const prevExec = await repo.getPreviousStageExecution(
+          activeProject.id,
+          task.id,
+          stage.sort_order,
+          stageTemplates,
+        );
+
+        // Use the previous stage's composed result as input context
+        const previousOutput =
+          prevExec?.stage_result ??
+          prevExec?.parsed_output ??
+          prevExec?.raw_output ??
+          undefined;
+
+        // Count previous attempts and gather prior context for re-runs
+        const prevAttempts = executions
+          .filter((e) => e.stage_template_id === stage.id)
+          .sort((a, b) => a.attempt_number - b.attempt_number);
+        const attemptNumber = prevAttempts.length + 1;
+
+        // For re-runs: include prior attempt output so the agent knows what
+        // it already researched/asked, and preserve the original user input
+        let priorAttemptOutput: string | undefined;
+        let effectiveUserInput = userInput;
+        if (prevAttempts.length > 0) {
+          const latestAttempt = prevAttempts[prevAttempts.length - 1];
+          priorAttemptOutput =
+            latestAttempt.parsed_output ?? latestAttempt.raw_output ?? undefined;
+
+          // Preserve original user input from the first attempt
+          const firstAttempt = prevAttempts[0];
+          if (firstAttempt.user_input && userInput) {
+            effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+          }
+        }
+
+        // Render prompt
+        const prompt = renderPrompt(stage.prompt_template, {
+          taskDescription: task.title,
+          previousOutput,
+          userInput: effectiveUserInput,
+          userDecision: prevExec?.user_decision ?? undefined,
+          priorAttemptOutput,
+        });
+
+        // Always use a fresh session — context is passed via the prompt template
+        const sessionId = crypto.randomUUID();
+
+        // Create execution record
+        const executionId = crypto.randomUUID();
+        const execution: Omit<StageExecution, "completed_at"> = {
+          id: executionId,
+          task_id: task.id,
+          stage_template_id: stage.id,
+          attempt_number: attemptNumber,
+          status: "running",
+          input_prompt: prompt,
+          user_input:
+            userInput ??
+            (stage.input_source === "previous_stage"
+              ? (previousOutput ?? null)
+              : null),
+          raw_output: null,
+          parsed_output: null,
+          user_decision: null,
+          session_id: sessionId,
+          error_message: null,
+          thinking_output: null,
+          stage_result: null,
+          started_at: new Date().toISOString(),
+        };
+
+        await repo.createStageExecution(activeProject.id, execution);
+        await updateTask(activeProject.id, task.id, { status: "in_progress" });
+
+        // Build allowed tools
+        let allowedTools: string[] | undefined;
+        if (stage.allowed_tools) {
+          try {
+            allowedTools = JSON.parse(stage.allowed_tools);
+          } catch {
+            // ignore
+          }
+        }
+
+        // Collect output
+        let rawOutput = "";
+        let resultText = "";
+        let thinkingText = "";
+
+        const onEvent = (event: ClaudeStreamEvent) => {
+          switch (event.type) {
+            case "started":
+              setRunning(stage.id, event.process_id);
+              appendOutput(stage.id, `[Process started: ${event.process_id}]`);
+              // Refresh executions so the UI transitions to show the live stream
+              loadExecutions(activeProject!.id, task.id);
+              break;
+            case "stdout_line":
+              rawOutput += event.line + "\n";
+              // Try to parse stream-json events
+              try {
+                const parsed = JSON.parse(event.line);
+                if (parsed.type === "assistant" && parsed.message?.content) {
+                  for (const block of parsed.message.content) {
+                    if (block.type === "text") {
+                      appendOutput(stage.id, block.text);
+                      resultText += block.text;
+                      thinkingText += block.text;
+                    }
+                  }
+                } else if (parsed.type === "result") {
+                  // With --json-schema, the output is in structured_output, not result
+                  const output = parsed.structured_output ?? parsed.result;
+                  if (output != null && output !== "") {
+                    const text =
+                      typeof output === "string"
+                        ? output
+                        : JSON.stringify(output);
+                    resultText = text;
+                    appendOutput(stage.id, text);
+                  }
+                  // Don't add result to thinkingText — it's the final structured output
+                } else if (parsed.type === "content_block_delta") {
+                  if (parsed.delta?.text) {
+                    appendOutput(stage.id, parsed.delta.text);
+                    resultText += parsed.delta.text;
+                    thinkingText += parsed.delta.text;
+                  }
+                }
+              } catch {
+                // Not JSON, just append as-is
+                appendOutput(stage.id, event.line);
+              }
+              break;
+            case "stderr_line":
+              appendOutput(stage.id, `[stderr] ${event.line}`);
+              break;
+            case "completed":
+              setStopped(stage.id);
+              appendOutput(
+                stage.id,
+                `[Process completed with exit code: ${event.exit_code}]`,
+              );
+              // Update execution in DB
+              finalizeExecution(
+                executionId,
+                stage,
+                rawOutput,
+                resultText,
+                event.exit_code,
+                thinkingText,
+              );
+              break;
+            case "error":
+              setStopped(stage.id);
+              appendOutput(stage.id, `[Error] ${event.message}`);
+              repo.updateStageExecution(activeProject!.id, executionId, {
+                status: "failed",
+                error_message: event.message,
+                completed_at: new Date().toISOString(),
+              }).then(() => loadExecutions(activeProject!.id, task.id));
+              break;
+          }
+        };
+
         await spawnClaude(
           {
             prompt,
@@ -180,14 +212,9 @@ export function useStageExecution() {
           onEvent,
         );
       } catch (err) {
-        setStopped();
-        appendOutput(`[Failed to spawn] ${err}`);
-        await repo.updateStageExecution(activeProject.id, executionId, {
-          status: "failed",
-          error_message: String(err),
-          completed_at: new Date().toISOString(),
-        });
-        await loadExecutions(activeProject.id, task.id);
+        setStopped(stage.id);
+        appendOutput(stage.id, `[Failed] ${err}`);
+        await loadExecutions(activeProject.id, task.id).catch(() => {});
       }
     },
     [
@@ -216,7 +243,7 @@ export function useStageExecution() {
       const task = useTaskStore.getState().activeTask;
       if (!task) return;
 
-      const wasKilled = useProcessStore.getState().killed;
+      const wasKilled = useProcessStore.getState().stages[stage.id]?.killed ?? false;
 
       const savedThinking = thinkingText?.trim() || null;
 
@@ -268,24 +295,41 @@ export function useStageExecution() {
         return;
       }
 
-      // For research format, extract clean markdown for downstream stages
-      let parsedOutputOverride: string | undefined;
-      if (stage.output_format === "research" && latest.parsed_output) {
-        try {
-          const researchData = JSON.parse(latest.parsed_output);
-          if (researchData.research) {
-            parsedOutputOverride = researchData.research;
-          }
-        } catch {
-          // keep existing parsed_output
-        }
+      // Get the previous stage's result (for append/passthrough)
+      const prevExec = await repo.getPreviousStageExecution(
+        activeProject.id,
+        task.id,
+        stage.sort_order,
+        stageTemplates,
+      );
+      const prevResult = prevExec?.stage_result ?? null;
+
+      // Extract this stage's own contribution
+      const ownOutput = extractStageOutput(stage, latest, decision);
+
+      // Compose stage_result based on result_mode
+      const resultMode = stage.result_mode ?? "replace";
+      let stageResult: string;
+      switch (resultMode) {
+        case "append":
+          stageResult = prevResult
+            ? `${prevResult}\n\n---\n\n${ownOutput}`
+            : ownOutput;
+          break;
+        case "passthrough":
+          stageResult = prevResult ?? ownOutput;
+          break;
+        case "replace":
+        default:
+          stageResult = ownOutput;
+          break;
       }
 
-      // Update execution
+      // Update execution with decision and computed stage_result
       await repo.updateStageExecution(activeProject.id, latest.id, {
         status: "approved",
         user_decision: decision ?? null,
-        ...(parsedOutputOverride !== undefined && { parsed_output: parsedOutputOverride }),
+        stage_result: stageResult,
       });
 
       // Advance to next stage
@@ -316,11 +360,11 @@ export function useStageExecution() {
     [activeProject, runStage],
   );
 
-  const killCurrent = useCallback(async () => {
-    const processId = useProcessStore.getState().currentProcessId;
+  const killCurrent = useCallback(async (stageId: string) => {
+    const processId = useProcessStore.getState().stages[stageId]?.processId;
     if (!processId) return;
     // Mark as killed before sending the signal so finalizeExecution knows
-    useProcessStore.getState().markKilled();
+    useProcessStore.getState().markKilled(stageId);
     try {
       await killProcess(processId);
     } catch {
@@ -376,6 +420,53 @@ function extractJson(text: string): string | null {
   }
 
   return null;
+}
+
+/** Extract a clean, human-readable output from a stage for its stage_result. */
+function extractStageOutput(
+  stage: StageTemplate,
+  execution: StageExecution,
+  decision?: string,
+): string {
+  const raw = execution.parsed_output ?? execution.raw_output ?? "";
+
+  switch (stage.output_format) {
+    case "research": {
+      // Extract the markdown research text from the JSON envelope
+      try {
+        const data = JSON.parse(raw);
+        if (data.research) return data.research;
+      } catch {
+        // fall through
+      }
+      return raw;
+    }
+    case "options": {
+      // The stage's value is the user's selection, not the full options list
+      if (decision) return formatSelectedApproach(decision);
+      return raw;
+    }
+    default:
+      return raw;
+  }
+}
+
+function formatSelectedApproach(decision: string): string {
+  try {
+    const selected = JSON.parse(decision);
+    if (!Array.isArray(selected) || selected.length === 0) return decision;
+    const approach = selected[0];
+    let text = `## Selected Approach: ${approach.title}\n\n${approach.description}`;
+    if (approach.pros?.length) {
+      text += `\n\n**Pros:**\n${approach.pros.map((p: string) => `- ${p}`).join("\n")}`;
+    }
+    if (approach.cons?.length) {
+      text += `\n\n**Cons:**\n${approach.cons.map((c: string) => `- ${c}`).join("\n")}`;
+    }
+    return text;
+  } catch {
+    return decision;
+  }
 }
 
 function validateGate(

@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProcessStore } from "../../stores/processStore";
+import { useProcessStore, DEFAULT_STAGE_STATE } from "../../stores/processStore";
 import { useStageExecution } from "../../hooks/useStageExecution";
+import { MarkdownTextarea } from "../ui/MarkdownTextarea";
+import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
 import {
   StageTimeline,
@@ -19,9 +21,12 @@ interface StageViewProps {
 export function StageView({ stage }: StageViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const { activeTask, executions } = useTaskStore();
-  const { isRunning, streamOutput } = useProcessStore();
+  const { isRunning, streamOutput } = useProcessStore(
+    (s) => s.stages[stage.id] ?? DEFAULT_STAGE_STATE,
+  );
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
+  useProcessHealthCheck(stage.id);
   const [userInput, setUserInput] = useState("");
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
@@ -46,6 +51,13 @@ export function StageView({ stage }: StageViewProps) {
   const hasHistory = stageExecs.length > 1;
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
+
+  // Pre-fill research input with task description (e.g. from Linear import)
+  useEffect(() => {
+    if (activeTask?.description && needsUserInput && !latestExecution) {
+      setUserInput(activeTask.description);
+    }
+  }, [activeTask?.id]);
 
   // Past completed rounds (everything except the latest)
   const pastExecs = useMemo(
@@ -103,11 +115,10 @@ export function StageView({ stage }: StageViewProps) {
                   ? "Additional context or feedback"
                   : "Describe what you need"}
               </label>
-              <textarea
+              <MarkdownTextarea
                 value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
+                onChange={setUserInput}
                 rows={4}
-                className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none"
                 placeholder="Enter additional context..."
               />
             </div>
@@ -191,7 +202,13 @@ export function StageView({ stage }: StageViewProps) {
           {latestExecution.user_input && (
             <UserBubble
               text={latestExecution.user_input}
-              label={latestExecution.attempt_number === 1 ? "Your input" : "Your answers"}
+              label={
+                stage.input_source === "previous_stage"
+                  ? "Input from previous stage"
+                  : latestExecution.attempt_number === 1
+                    ? "Your input"
+                    : "Your answers"
+              }
             />
           )}
 
@@ -200,7 +217,7 @@ export function StageView({ stage }: StageViewProps) {
             <LiveStreamBubble
               streamLines={streamOutput}
               label={`${stage.name} working...`}
-              onStop={killCurrent}
+              onStop={() => killCurrent(stage.id)}
             />
           )}
 
@@ -236,13 +253,13 @@ export function StageView({ stage }: StageViewProps) {
                   )}
                   {showFeedback && (
                     <div className="flex-1 max-w-lg">
-                      <textarea
+                      <MarkdownTextarea
                         value={feedback}
-                        onChange={(e) => setFeedback(e.target.value)}
+                        onChange={setFeedback}
                         rows={3}
-                        className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none mb-2"
                         placeholder="What should be changed?"
                         autoFocus
+                        className="mb-2"
                       />
                       <div className="flex gap-2">
                         <button

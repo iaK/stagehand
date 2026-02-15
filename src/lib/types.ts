@@ -4,6 +4,7 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  archived: number;
   created_at: string;
   updated_at: string;
 }
@@ -24,17 +25,20 @@ export interface StageTemplate {
   persona_model: string | null;
   preparation_prompt: string | null;
   allowed_tools: string | null; // JSON array of tool names
+  result_mode: ResultMode;
   created_at: string;
   updated_at: string;
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
 export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research";
+export type ResultMode = "replace" | "append" | "passthrough";
 
 export interface Task {
   id: string;
   project_id: string;
   title: string;
+  description: string;
   current_stage_id: string | null;
   status: TaskStatus;
   archived: number;
@@ -58,6 +62,7 @@ export interface StageExecution {
   session_id: string | null;
   error_message: string | null;
   thinking_output: string | null;
+  stage_result: string | null;
   started_at: string;
   completed_at: string | null;
 }
@@ -117,6 +122,18 @@ export interface ResearchQuestion {
 export interface ResearchOutput {
   research: string;
   questions: ResearchQuestion[];
+}
+
+// === Linear ===
+
+export interface LinearIssue {
+  id: string;
+  identifier: string; // e.g. "ENG-123"
+  title: string;
+  description: string | undefined;
+  status: string;
+  priority: number;
+  url: string;
 }
 
 // === Claude Stream Events ===

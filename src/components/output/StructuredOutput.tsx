@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import type { StageTemplate, GateRule } from "../../lib/types";
 
 interface StructuredOutputProps {
@@ -71,12 +72,11 @@ export function StructuredOutput({
                 )}
               </label>
               {isLong ? (
-                <textarea
+                <MarkdownTextarea
                   value={value}
-                  onChange={(e) => updateField(key, e.target.value)}
+                  onChange={(v) => updateField(key, v)}
                   readOnly={isApproved}
                   rows={6}
-                  className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none"
                 />
               ) : (
                 <input

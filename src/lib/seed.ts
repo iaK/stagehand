@@ -20,6 +20,11 @@ Additional context / answers from the developer:
 {{user_input}}
 {{/if}}
 
+{{#if prior_attempt_output}}
+Your previous research output (build on this, do NOT repeat questions that have already been answered):
+{{prior_attempt_output}}
+{{/if}}
+
 Provide a comprehensive analysis including:
 1. Understanding of the problem
 2. Key technical considerations
@@ -29,6 +34,7 @@ Provide a comprehensive analysis including:
 If you have questions that need the developer's input before the research is complete, include them in the "questions" array. For each question:
 - Provide a "proposed_answer" with your best guess
 - Provide an "options" array with 2-4 selectable choices the developer can pick from (the developer can also write a custom answer)
+- Do NOT re-ask questions the developer has already answered above
 
 If all questions have been answered and the research is complete, return an empty "questions" array.
 
@@ -75,6 +81,7 @@ Respond with a JSON object matching this structure:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
+      result_mode: "replace",
     },
     {
       id: crypto.randomUUID(),
@@ -140,6 +147,7 @@ Respond with a JSON object matching this structure:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      result_mode: "append",
     },
     {
       id: crypto.randomUUID(),
@@ -173,6 +181,7 @@ Provide:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      result_mode: "replace",
     },
     {
       id: crypto.randomUUID(),
@@ -198,27 +207,46 @@ Follow the plan carefully. Write clean, well-structured code. Run tests if appli
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: null, // Full tool access
+      result_mode: "replace",
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "Refinement",
       description:
-        "Review implementation and incorporate developer feedback for improvements.",
+        "Self-review the implementation: catch oversights, clean up code, and verify codebase consistency.",
       sort_order: 4,
-      prompt_template: `Review the implementation and apply the following feedback/refinements.
+      prompt_template: `You are performing a critical self-review of an implementation that was just completed. Act as a thorough code reviewer who questions the work before it ships.
 
-Task: {{task_description}}
+Task that was implemented:
+{{task_description}}
 
-Previous implementation output:
+Implementation output:
 {{previous_output}}
 
+## Review Checklist
+
+Critically examine the implementation against each of these:
+
+1. **Completeness** — Does the implementation fully address the task? Are there overlooked edge cases, missing error handling, or incomplete features?
+2. **Correctness** — Does the logic actually work for all expected inputs? Any bugs, race conditions, off-by-one errors, or type mismatches?
+3. **Codebase Consistency** — Does the new code follow the same patterns, conventions, and style as the existing codebase? Are similar things done in similar ways?
+4. **Cleanup** — Any leftover debug code, unused imports, commented-out code, or inconsistent naming?
+5. **Simplicity** — Is anything over-engineered or unnecessarily complex? Could it be simplified without losing functionality?
+
 {{#if user_input}}
-Developer feedback:
+## Developer Feedback
+The developer has also provided specific feedback to address:
 {{user_input}}
 {{/if}}
 
-Make the requested improvements while maintaining code quality and consistency.`,
+## Instructions
+
+Based on your review (and any developer feedback above), make all necessary improvements directly in the code. Fix issues, clean up problems, and ensure consistency.
+
+If the implementation is solid and needs no changes, say so explicitly — do not make changes for the sake of making changes.
+
+Provide a summary of what you reviewed and what you changed (or why no changes were needed).`,
       input_source: "both",
       output_format: "text",
       output_schema: null,
@@ -228,6 +256,7 @@ Make the requested improvements while maintaining code quality and consistency.`
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: null, // Full tool access
+      result_mode: "replace",
     },
     {
       id: crypto.randomUUID(),
@@ -295,6 +324,7 @@ Respond with a JSON object:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      result_mode: "passthrough",
     },
     {
       id: crypto.randomUUID(),
@@ -349,6 +379,7 @@ Respond with a JSON object:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      result_mode: "replace",
     },
   ];
 }

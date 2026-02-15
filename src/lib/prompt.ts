@@ -3,6 +3,7 @@ interface PromptContext {
   previousOutput?: string;
   userInput?: string;
   userDecision?: string;
+  priorAttemptOutput?: string;
 }
 
 export function renderPrompt(
@@ -24,6 +25,10 @@ export function renderPrompt(
     /\{\{user_decision\}\}/g,
     context.userDecision ?? "",
   );
+  result = result.replace(
+    /\{\{prior_attempt_output\}\}/g,
+    context.priorAttemptOutput ?? "",
+  );
 
   // Handle {{#if variable}} ... {{/if}} blocks
   result = result.replace(
@@ -36,7 +41,9 @@ export function renderPrompt(
             ? context.previousOutput
             : varName === "user_decision"
               ? context.userDecision
-              : undefined;
+              : varName === "prior_attempt_output"
+                ? context.priorAttemptOutput
+                : undefined;
       return value ? content : "";
     },
   );

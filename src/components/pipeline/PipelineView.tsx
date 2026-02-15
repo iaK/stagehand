@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
+import { useProcessStore } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import type { StageTemplate } from "../../lib/types";
@@ -33,6 +34,11 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
       setViewingStage(null);
     }
   }, [activeTask, stageTemplates]);
+
+  // Sync viewed stage to process store so TerminalView can show the right output
+  useEffect(() => {
+    useProcessStore.getState().setViewingStageId(viewingStage?.id ?? null);
+  }, [viewingStage]);
 
   if (!activeProject) {
     return (
@@ -77,7 +83,7 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
       {/* Stage Content */}
       <div className="flex-1 overflow-y-auto">
         {viewingStage ? (
-          <StageView stage={viewingStage} />
+          <StageView key={viewingStage.id} stage={viewingStage} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-zinc-600">No stage selected</p>
