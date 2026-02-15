@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "../../stores/projectStore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface ProjectCreateProps {
   onClose: () => void;
@@ -43,69 +48,58 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[480px] max-w-[90vw]">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">
-          New Project
-        </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>New Project</DialogTitle>
+        </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm text-zinc-400 mb-1">
-              Project Name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-              placeholder="My Project"
-              autoFocus
-            />
-          </div>
-          <div className="mb-6">
-            <label className="block text-sm text-zinc-400 mb-1">
-              Project Directory
-            </label>
-            <div className="flex gap-2">
-              <input
+          <div className="space-y-4">
+            <div>
+              <Label>Project Name</Label>
+              <Input
                 type="text"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                className="flex-1 bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                placeholder="/path/to/project"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Project"
+                autoFocus
+                className="mt-1"
               />
-              <button
-                type="button"
-                onClick={handleBrowse}
-                className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg text-sm transition-colors"
-              >
-                Browse
-              </button>
+            </div>
+            <div>
+              <Label>Project Directory</Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  type="text"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder="/path/to/project"
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" onClick={handleBrowse}>
+                  Browse
+                </Button>
+              </div>
             </div>
           </div>
           {error && (
-            <div className="mb-4 p-3 bg-red-950/30 border border-red-900 rounded-lg text-sm text-red-400">
-              {error}
-            </div>
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-            >
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={!name.trim() || !path.trim() || creating}
-              className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
             >
               {creating ? "Creating..." : "Create Project"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

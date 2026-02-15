@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { useLinearStore } from "../../stores/linearStore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 interface LinearSettingsProps {
   projectId: string;
@@ -8,23 +12,19 @@ interface LinearSettingsProps {
 
 export function LinearSettings({ projectId, onClose }: LinearSettingsProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[480px] max-w-[90vw]">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">
-          Linear Integration
-        </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Linear Integration</DialogTitle>
+        </DialogHeader>
         <LinearSettingsContent projectId={projectId} />
-        <div className="flex justify-end mt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
             Close
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -49,22 +49,19 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
   if (connected) {
     return (
       <div>
-        <div className="flex items-center gap-2 mb-4 p-3 bg-zinc-800 rounded-lg">
+        <div className="flex items-center gap-2 mb-4 p-3 bg-muted rounded-lg">
           <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm text-zinc-300">
-            Connected as <span className="font-medium text-zinc-100">{userName}</span>
+          <span className="text-sm text-muted-foreground">
+            Connected as <span className="font-medium text-foreground">{userName}</span>
             {orgName && (
-              <span className="text-zinc-400"> ({orgName})</span>
+              <span className="text-muted-foreground"> ({orgName})</span>
             )}
           </span>
         </div>
         <div className="flex justify-end">
-          <button
-            onClick={handleDisconnect}
-            className="px-4 py-2 text-sm bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors"
-          >
+          <Button variant="destructive" onClick={handleDisconnect}>
             Disconnect
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -73,38 +70,32 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
   return (
     <form onSubmit={handleConnect}>
       <div className="mb-4">
-        <label className="block text-sm text-zinc-400 mb-1">
-          Personal API Key
-        </label>
-        <input
+        <Label>Personal API Key</Label>
+        <Input
           type="password"
           value={keyInput}
           onChange={(e) => {
             setKeyInput(e.target.value);
             if (error) clearError();
           }}
-          className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
           placeholder="lin_api_..."
           autoFocus
+          className="mt-1"
         />
         {error && (
-          <p className="text-xs text-red-400 mt-1">{error}</p>
+          <p className="text-xs text-destructive mt-1">{error}</p>
         )}
-        <p className="text-xs text-zinc-500 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           Generate a key at{" "}
-          <span className="text-zinc-400">
+          <span className="text-foreground">
             Linear Settings &gt; API &gt; Personal API keys
           </span>
         </p>
       </div>
       <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={!keyInput.trim() || loading}
-          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
-        >
+        <Button type="submit" disabled={!keyInput.trim() || loading}>
           {loading ? "Verifying..." : "Connect"}
-        </button>
+        </Button>
       </div>
     </form>
   );

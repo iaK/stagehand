@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { useTaskStore } from "../../stores/taskStore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import type { Task } from "../../lib/types";
 
 interface TaskCreateProps {
@@ -27,41 +31,33 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[480px] max-w-[90vw]">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">
-          {isEditing ? "Edit Task" : "New Task"}
-        </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Edit Task" : "New Task"}</DialogTitle>
+        </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="mb-6">
-            <label className="block text-sm text-zinc-400 mb-1">Title</label>
-            <input
+          <div>
+            <Label>Title</Label>
+            <Input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
               placeholder="What needs to be done?"
               autoFocus
+              className="mt-1"
             />
           </div>
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-            >
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!title.trim()}
-              className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
-            >
+            </Button>
+            <Button type="submit" disabled={!title.trim()}>
               {isEditing ? "Save" : "Create Task"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

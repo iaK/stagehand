@@ -5,6 +5,8 @@ import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
 import { GitHubSettingsContent } from "../github/GitHubSettings";
 import { GitHubConventionsContent } from "../github/GitHubConventions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Section =
   | "archived"
@@ -24,7 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { section: "templates", label: "Stage Templates", projectRequired: true },
   { header: "INTEGRATIONS" },
   { section: "linear", label: "Linear", projectRequired: true },
-  { section: "github", label: "GitHub", projectRequired: true },
+  { section: "github", label: "Git", projectRequired: true },
   { header: "WORKFLOW" },
   { section: "conventions", label: "Conventions", projectRequired: true },
 ];
@@ -44,14 +46,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const needsProject = currentItem?.projectRequired && !activeProject;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-[800px] max-w-[90vw] max-h-[85vh] flex flex-col">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[800px] max-h-[85vh] flex flex-col p-0" showCloseButton={false}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-100">Settings</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <DialogHeader className="p-0">
+            <DialogTitle>Settings</DialogTitle>
+          </DialogHeader>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -62,13 +66,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         {/* Body */}
         <div className="flex flex-1 min-h-0">
           {/* Left Nav */}
-          <nav className="w-48 border-r border-zinc-800 py-2 overflow-y-auto flex-shrink-0">
+          <nav className="w-48 border-r border-border py-2 overflow-y-auto flex-shrink-0">
             {NAV_ITEMS.map((item, i) => {
               if ("header" in item) {
                 return (
                   <div
                     key={i}
-                    className="px-4 pt-4 pb-1 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider"
+                    className="px-4 pt-4 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
                   >
                     {item.header}
                   </div>
@@ -83,8 +87,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   onClick={() => setActiveSection(item.section)}
                   className={`w-full text-left px-4 py-1.5 text-sm transition-colors ${
                     isActive
-                      ? "bg-zinc-800 text-zinc-100"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                   }`}
                 >
                   {item.label}
@@ -94,25 +98,27 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </nav>
 
           {/* Right Content */}
-          <div className="flex-1 overflow-y-auto p-6 min-h-0">
-            {needsProject ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <p className="text-sm text-zinc-500">
-                    Select a project to configure these settings
-                  </p>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-6">
+              {needsProject ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Select a project to configure these settings
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <SectionContent
-                section={activeSection}
-                projectId={activeProject?.id}
-              />
-            )}
-          </div>
+              ) : (
+                <SectionContent
+                  section={activeSection}
+                  projectId={activeProject?.id}
+                />
+              )}
+            </div>
+          </ScrollArea>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

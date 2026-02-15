@@ -10,10 +10,14 @@ interface TaskStore {
   stageTemplates: StageTemplate[];
   executions: StageExecution[];
   loading: boolean;
+  taskStages: Record<string, string[]>; // taskId → stageTemplateId[]
 
   loadTasks: (projectId: string) => Promise<void>;
   loadStageTemplates: (projectId: string) => Promise<void>;
   loadExecutions: (projectId: string, taskId: string) => Promise<void>;
+  loadTaskStages: (projectId: string, taskId: string) => Promise<void>;
+  setTaskStages: (projectId: string, taskId: string, stages: { stageTemplateId: string; sortOrder: number }[]) => Promise<void>;
+  getActiveTaskStageTemplates: () => StageTemplate[];
   setActiveTask: (task: Task | null) => void;
   addTask: (
     projectId: string,
@@ -38,6 +42,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   stageTemplates: [],
   executions: [],
   loading: false,
+  taskStages: {},
 
   loadTasks: async (projectId) => {
     const tasks = await repo.listTasks(projectId);
@@ -85,6 +90,30 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
 
     set({ executions });
+  },
+
+  loadTaskStages: async (projectId, taskId) => {
+    const stageIds = await repo.getTaskStages(projectId, taskId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: stageIds },
+    }));
+  },
+
+  setTaskStages: async (projectId, taskId, stages) => {
+    await repo.setTaskStages(projectId, taskId, stages);
+    const stageIds = stages.map((s) => s.stageTemplateId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: stageIds },
+    }));
+  },
+
+  getActiveTaskStageTemplates: () => {
+    const { activeTask, stageTemplates, taskStages } = get();
+    if (!activeTask) return stageTemplates;
+    const selectedIds = taskStages[activeTask.id];
+    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    const idSet = new Set(selectedIds);
+    return stageTemplates.filter((t) => idSet.has(t.id));
   },
 
   setActiveTask: (task) => set({ activeTask: task }),

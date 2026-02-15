@@ -38,6 +38,17 @@ If you have questions that need the developer's input before the research is com
 
 If all questions have been answered and the research is complete, return an empty "questions" array.
 
+Additionally, suggest which pipeline stages this task needs. The available stages are:
+- "High-Level Approaches": Brainstorm and compare multiple approaches (useful for complex tasks with multiple viable solutions)
+- "Planning": Create a detailed implementation plan (useful for non-trivial changes)
+- "Implementation": Write the actual code changes (almost always needed)
+- "Refinement": Self-review the implementation for quality issues (useful for larger changes)
+- "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
+- "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
+
+For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
+Include your suggestions in the "suggested_stages" array.
+
 Respond with a JSON object matching this structure:
 {
   "research": "Your full research analysis in Markdown...",
@@ -48,6 +59,10 @@ Respond with a JSON object matching this structure:
       "proposed_answer": "Your best-guess answer",
       "options": ["Option A", "Option B", "Option C"]
     }
+  ],
+  "suggested_stages": [
+    { "name": "Implementation", "reason": "Code changes are needed" },
+    { "name": "PR Preparation", "reason": "Changes should be submitted as a PR" }
   ]
 }`,
       input_source: "user",
@@ -72,8 +87,19 @@ Respond with a JSON object matching this structure:
               required: ["id", "question", "proposed_answer"],
             },
           },
+          suggested_stages: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                reason: { type: "string" },
+              },
+              required: ["name", "reason"],
+            },
+          },
         },
-        required: ["research", "questions"],
+        required: ["research", "questions", "suggested_stages"],
       }),
       gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,

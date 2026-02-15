@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { TextOutput } from "./TextOutput";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { FindingItem } from "../../lib/types";
 
 interface FindingsOutputProps {
@@ -9,22 +13,16 @@ interface FindingsOutputProps {
   isApproved: boolean;
 }
 
-const severityColors = {
-  critical: {
-    border: "border-red-800",
-    bg: "bg-red-950/30",
-    badge: "bg-red-900 text-red-300",
-  },
-  warning: {
-    border: "border-amber-800",
-    bg: "bg-amber-950/30",
-    badge: "bg-amber-900 text-amber-300",
-  },
-  info: {
-    border: "border-blue-800",
-    bg: "bg-blue-950/30",
-    badge: "bg-blue-900 text-blue-300",
-  },
+const severityVariant: Record<string, "critical" | "warning" | "info"> = {
+  critical: "critical",
+  warning: "warning",
+  info: "info",
+};
+
+const severityCardColors = {
+  critical: { border: "border-red-200", bg: "bg-red-50", bgDeselected: "bg-zinc-50 opacity-60" },
+  warning: { border: "border-amber-200", bg: "bg-amber-50", bgDeselected: "bg-zinc-50 opacity-60" },
+  info: { border: "border-blue-200", bg: "bg-blue-50", bgDeselected: "bg-zinc-50 opacity-60" },
 };
 
 export function FindingsOutput({
@@ -48,12 +46,9 @@ export function FindingsOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <button
-            onClick={onSkipAll}
-            className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
-          >
+          <Button variant="success" onClick={onSkipAll} className="mt-4">
             Approve & Continue
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -66,17 +61,16 @@ export function FindingsOutput({
       <div>
         <TextOutput content={summary} />
         {!isApproved && (
-          <div className="mt-6 p-4 bg-emerald-950/30 border border-emerald-800 rounded-lg">
-            <p className="text-sm text-emerald-300 font-medium mb-3">
-              No findings — everything looks good.
-            </p>
-            <button
-              onClick={onSkipAll}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              Approve & Continue
-            </button>
-          </div>
+          <Alert className="mt-6 border-emerald-200 bg-emerald-50 text-emerald-800">
+            <AlertDescription className="text-emerald-800">
+              <p className="text-sm font-medium mb-3">
+                No findings — everything looks good.
+              </p>
+              <Button variant="success" onClick={onSkipAll}>
+                Approve & Continue
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
     );
@@ -137,25 +131,22 @@ function FindingsCards({
 
   return (
     <div className="mt-6">
-      {/* Select All / Deselect All toggle */}
       {!isApproved && (
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-zinc-300">
+          <h3 className="text-sm font-medium text-foreground">
             {findings.length} finding{findings.length !== 1 ? "s" : ""}
           </h3>
-          <button
-            onClick={toggleAll}
-            className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
+          <Button variant="ghost" size="sm" onClick={toggleAll}>
             {allSelected ? "Deselect All" : "Select All"}
-          </button>
+          </Button>
         </div>
       )}
 
       <div className="space-y-3">
         {findings.map((finding) => {
           const colors =
-            severityColors[finding.severity] ?? severityColors.info;
+            severityCardColors[finding.severity] ?? severityCardColors.info;
+          const badgeVar = severityVariant[finding.severity] ?? "info";
           return (
             <div
               key={finding.id}
@@ -163,40 +154,37 @@ function FindingsCards({
               className={`rounded-lg border p-4 transition-colors ${
                 isApproved ? "" : "cursor-pointer"
               } ${colors.border} ${
-                finding.selected ? colors.bg : "bg-zinc-900/50 opacity-60"
+                finding.selected ? colors.bg : colors.bgDeselected
               }`}
             >
               <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={finding.selected}
-                  onChange={() => toggleFinding(finding.id)}
+                  onCheckedChange={() => toggleFinding(finding.id)}
                   disabled={isApproved}
                   onClick={(e) => e.stopPropagation()}
-                  className="mt-0.5 accent-emerald-500"
+                  className="mt-0.5"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span
-                      className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${colors.badge}`}
-                    >
+                    <Badge variant={badgeVar} className="text-[10px] uppercase font-bold">
                       {finding.severity}
-                    </span>
+                    </Badge>
                     {finding.category && (
-                      <span className="text-[10px] uppercase font-medium px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                      <Badge variant="secondary" className="text-[10px] uppercase font-medium">
                         {finding.category}
-                      </span>
+                      </Badge>
                     )}
                     {finding.file_path && (
-                      <span className="text-xs text-zinc-500 font-mono truncate">
+                      <span className="text-xs text-muted-foreground font-mono truncate">
                         {finding.file_path}
                       </span>
                     )}
                   </div>
-                  <p className="text-sm font-medium text-zinc-200">
+                  <p className="text-sm font-medium text-foreground">
                     {finding.title}
                   </p>
-                  <p className="text-sm text-zinc-400 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     {finding.description}
                   </p>
                 </div>
@@ -206,22 +194,18 @@ function FindingsCards({
         })}
       </div>
 
-      {/* Action buttons */}
       {!isApproved && (
         <div className="flex items-center gap-3 mt-4">
-          <button
+          <Button
+            variant="success"
             onClick={handleApply}
             disabled={selectedCount === 0}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             Apply Selected ({selectedCount})
-          </button>
-          <button
-            onClick={onSkipAll}
-            className="px-4 py-2 border border-zinc-700 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm transition-colors"
-          >
+          </Button>
+          <Button variant="outline" onClick={onSkipAll}>
             Skip All
-          </button>
+          </Button>
         </div>
       )}
     </div>

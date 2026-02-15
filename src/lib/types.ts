@@ -138,19 +138,12 @@ export interface ResearchQuestion {
 export interface ResearchOutput {
   research: string;
   questions: ResearchQuestion[];
+  suggested_stages?: StageSuggestion[];
 }
 
-// === GitHub ===
-
-export interface GitHubRepo {
-  id: number;
-  full_name: string;       // "owner/repo"
+export interface StageSuggestion {
   name: string;
-  owner: string;
-  description: string | null;
-  default_branch: string;
-  private: boolean;
-  html_url: string;
+  reason: string;
 }
 
 // === Linear ===

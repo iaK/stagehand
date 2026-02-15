@@ -1,94 +1,83 @@
 import { create } from "zustand";
 import * as repo from "../lib/repositories";
-import * as github from "../lib/github";
-
-const KEY_TOKEN = "github_token";
-const KEY_LOGIN = "github_login";
-const KEY_USER_NAME = "github_user_name";
+import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
 
 interface GitHubStore {
   projectId: string | null;
-  token: string | null;
-  login: string | null;
-  userName: string | null;
+  remoteUrl: string | null;
+  repoFullName: string | null;
+  defaultBranch: string | null;
   loading: boolean;
   error: string | null;
 
-  loadForProject: (projectId: string) => Promise<void>;
-  saveToken: (projectId: string, token: string) => Promise<boolean>;
-  disconnect: (projectId: string) => Promise<void>;
-  clearError: () => void;
+  loadForProject: (projectId: string, projectPath: string) => Promise<void>;
+  refresh: (projectId: string, projectPath: string) => Promise<void>;
+}
+
+async function detectGitRemote(projectId: string, projectPath: string) {
+  const url = await gitRemoteUrl(projectPath);
+  if (!url) return { remoteUrl: null, repoFullName: null, defaultBranch: null };
+
+  const parsed = parseGitRemote(url);
+  const branch = await gitDefaultBranch(projectPath);
+
+  const repoFullName = parsed ? `${parsed.owner}/${parsed.repo}` : null;
+  const defaultBranch = branch ?? "main";
+
+  // Persist to project settings
+  if (parsed) {
+    await repo.setProjectSetting(projectId, "github_repo_owner", parsed.owner);
+    await repo.setProjectSetting(projectId, "github_repo_name", parsed.repo);
+    await repo.setProjectSetting(projectId, "github_repo_full_name", repoFullName!);
+  }
+  await repo.setProjectSetting(projectId, "github_default_branch", defaultBranch);
+
+  return { remoteUrl: url, repoFullName, defaultBranch };
 }
 
 export const useGitHubStore = create<GitHubStore>((set, get) => ({
   projectId: null,
-  token: null,
-  login: null,
-  userName: null,
+  remoteUrl: null,
+  repoFullName: null,
+  defaultBranch: null,
   loading: false,
   error: null,
 
-  loadForProject: async (projectId: string) => {
-    // Reset immediately to prevent stale data flash
-    set({ projectId, token: null, login: null, userName: null, error: null });
+  loadForProject: async (projectId: string, projectPath: string) => {
+    set({
+      projectId,
+      remoteUrl: null,
+      repoFullName: null,
+      defaultBranch: null,
+      loading: true,
+      error: null,
+    });
 
-    const token = await repo.getProjectSetting(projectId, KEY_TOKEN);
-    if (!token) return;
-
-    // Guard against project switch during async work
-    if (get().projectId !== projectId) return;
-
-    set({ token });
-
-    const result = await github.verifyToken(token);
-    if (get().projectId !== projectId) return;
-
-    if (result.valid) {
-      set({ login: result.login, userName: result.name });
-      await repo.setProjectSetting(projectId, KEY_LOGIN, result.login);
-      await repo.setProjectSetting(projectId, KEY_USER_NAME, result.name);
-    } else {
-      // Token is stored but invalid — clear it
-      await repo.deleteProjectSetting(projectId, KEY_TOKEN);
-      await repo.deleteProjectSetting(projectId, KEY_LOGIN);
-      await repo.deleteProjectSetting(projectId, KEY_USER_NAME);
-      set({ token: null, login: null, userName: null });
+    try {
+      const result = await detectGitRemote(projectId, projectPath);
+      if (get().projectId !== projectId) return;
+      set({ ...result, loading: false });
+    } catch (e) {
+      if (get().projectId !== projectId) return;
+      set({
+        loading: false,
+        error: e instanceof Error ? e.message : "Failed to detect git remote",
+      });
     }
   },
 
-  saveToken: async (projectId: string, token: string) => {
+  refresh: async (projectId: string, projectPath: string) => {
     set({ loading: true, error: null });
     try {
-      const result = await github.verifyToken(token);
-      if (!result.valid) {
-        set({ loading: false, error: result.error ?? "Invalid token" });
-        return false;
-      }
-      await repo.setProjectSetting(projectId, KEY_TOKEN, token);
-      await repo.setProjectSetting(projectId, KEY_LOGIN, result.login);
-      await repo.setProjectSetting(projectId, KEY_USER_NAME, result.name);
-      set({
-        token,
-        login: result.login,
-        userName: result.name,
-        loading: false,
-      });
-      return true;
+      const result = await detectGitRemote(projectId, projectPath);
+      if (get().projectId !== projectId) return;
+      set({ ...result, loading: false });
     } catch (e) {
+      if (get().projectId !== projectId) return;
       set({
         loading: false,
-        error: e instanceof Error ? e.message : "Failed to save token",
+        error: e instanceof Error ? e.message : "Failed to detect git remote",
       });
-      return false;
     }
   },
-
-  disconnect: async (projectId: string) => {
-    await repo.deleteProjectSetting(projectId, KEY_TOKEN);
-    await repo.deleteProjectSetting(projectId, KEY_LOGIN);
-    await repo.deleteProjectSetting(projectId, KEY_USER_NAME);
-    set({ token: null, login: null, userName: null, error: null });
-  },
-
-  clearError: () => set({ error: null }),
 }));

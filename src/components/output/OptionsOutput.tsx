@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { OptionItem } from "../../lib/types";
 
 interface OptionsOutputProps {
@@ -20,11 +21,11 @@ export function OptionsOutput({
     options = parsed.options ?? [];
   } catch {
     return (
-      <div className="text-sm text-zinc-400">
-        <p className="text-amber-400 mb-2">
+      <div className="text-sm text-muted-foreground">
+        <p className="text-amber-600 mb-2">
           Could not parse options output. Raw output:
         </p>
-        <pre className="bg-zinc-900 p-3 rounded text-xs whitespace-pre-wrap">
+        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>
@@ -48,30 +49,30 @@ export function OptionsOutput({
             disabled={isApproved}
             className={`text-left p-4 rounded-lg border transition-all ${
               selectedId === option.id
-                ? "border-blue-500 bg-blue-950/30"
+                ? "border-blue-500 bg-blue-50"
                 : isApproved
-                  ? "border-zinc-800 bg-zinc-900/50"
-                  : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                  ? "border-border bg-zinc-50"
+                  : "border-border bg-white hover:border-zinc-400"
             }`}
           >
-            <h4 className="text-sm font-medium text-zinc-200 mb-1">
+            <h4 className="text-sm font-medium text-foreground mb-1">
               {option.title}
             </h4>
-            <p className="text-xs text-zinc-400 mb-3">{option.description}</p>
+            <p className="text-xs text-muted-foreground mb-3">{option.description}</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-emerald-500 font-medium mb-1">
+                <p className="text-xs text-emerald-600 font-medium mb-1">
                   Pros
                 </p>
-                <ul className="text-xs text-zinc-400 space-y-0.5">
+                <ul className="text-xs text-muted-foreground space-y-0.5">
                   {option.pros.map((pro, i) => (
                     <li key={i}>+ {pro}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <p className="text-xs text-red-400 font-medium mb-1">Cons</p>
-                <ul className="text-xs text-zinc-400 space-y-0.5">
+                <p className="text-xs text-red-600 font-medium mb-1">Cons</p>
+                <ul className="text-xs text-muted-foreground space-y-0.5">
                   {option.cons.map((con, i) => (
                     <li key={i}>- {con}</li>
                   ))}
@@ -83,13 +84,14 @@ export function OptionsOutput({
       </div>
 
       {!isApproved && (
-        <button
+        <Button
+          variant="success"
           onClick={handleSelect}
           disabled={!selectedId}
-          className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg text-sm font-medium transition-colors"
+          className="mt-4"
         >
           Select Approach
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -5,21 +5,26 @@ import { ChecklistOutput } from "../output/ChecklistOutput";
 import { StructuredOutput } from "../output/StructuredOutput";
 import { ResearchOutput } from "../output/ResearchOutput";
 import { FindingsOutput } from "../output/FindingsOutput";
+import { Button } from "@/components/ui/button";
 
 interface StageOutputProps {
   execution: StageExecution;
   stage: StageTemplate;
   onApprove: (decision?: string) => void;
+  onApproveWithStages?: (selectedStageIds: string[]) => void;
   onSubmitAnswers?: (answers: string) => void;
   isApproved: boolean;
+  stageTemplates?: StageTemplate[];
 }
 
 export function StageOutput({
   execution,
   stage,
   onApprove,
+  onApproveWithStages,
   onSubmitAnswers,
   isApproved,
+  stageTemplates,
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
@@ -29,12 +34,13 @@ export function StageOutput({
         <div>
           <TextOutput content={output} />
           {!isApproved && (
-            <button
+            <Button
+              variant="success"
               onClick={() => onApprove()}
-              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+              className="mt-4"
             >
               Approve & Continue
-            </button>
+            </Button>
           )}
         </div>
       );
@@ -72,8 +78,10 @@ export function StageOutput({
         <ResearchOutput
           output={output}
           onApprove={() => onApprove()}
+          onApproveWithStages={onApproveWithStages}
           onSubmitAnswers={onSubmitAnswers ?? (() => {})}
           isApproved={isApproved}
+          stageTemplates={stageTemplates}
         />
       );
 
@@ -84,12 +92,13 @@ export function StageOutput({
           <div>
             <TextOutput content={output} />
             {!isApproved && (
-              <button
+              <Button
+                variant="success"
                 onClick={() => onApprove()}
-                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                className="mt-4"
               >
                 Approve & Continue
-              </button>
+              </Button>
             )}
           </div>
         );

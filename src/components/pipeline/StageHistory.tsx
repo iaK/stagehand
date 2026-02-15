@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { TextOutput } from "../output/TextOutput";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
 export function StageHistory() {
   const { stageTemplates, executions } = useTaskStore();
@@ -14,11 +16,11 @@ export function StageHistory() {
 
   if (completedStages.length === 0) {
     return (
-      <div className="w-80 border-l border-zinc-800 bg-zinc-900 p-4">
-        <h3 className="text-sm font-medium text-zinc-400 mb-3">
+      <div className="w-80 border-l border-border bg-muted/30 p-4">
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">
           Completed Stages
         </h3>
-        <p className="text-xs text-zinc-600 italic">
+        <p className="text-xs text-muted-foreground italic">
           No completed stages yet
         </p>
       </div>
@@ -26,13 +28,13 @@ export function StageHistory() {
   }
 
   return (
-    <div className="w-80 border-l border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto">
-      <div className="p-4 border-b border-zinc-800">
-        <h3 className="text-sm font-medium text-zinc-400">
+    <div className="w-80 border-l border-border bg-muted/30 flex flex-col">
+      <div className="p-4 border-b border-border">
+        <h3 className="text-sm font-medium text-muted-foreground">
           Completed Stages
         </h3>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <ScrollArea className="flex-1">
         {completedStages.map((stage) => {
           const latestApproved = executions
             .filter(
@@ -44,34 +46,37 @@ export function StageHistory() {
           const isExpanded = expandedStage === stage.id;
 
           return (
-            <div key={stage.id} className="border-b border-zinc-800">
-              <button
-                onClick={() =>
-                  setExpandedStage(isExpanded ? null : stage.id)
-                }
-                className="w-full text-left px-4 py-3 hover:bg-zinc-800/50 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-300">{stage.name}</span>
-                  <span className="text-xs text-zinc-600">
-                    {isExpanded ? "▼" : "▶"}
-                  </span>
-                </div>
-                {!isExpanded && latestApproved?.parsed_output && (
-                  <p className="text-xs text-zinc-600 mt-1 line-clamp-2">
-                    {latestApproved.parsed_output.slice(0, 120)}...
-                  </p>
-                )}
-              </button>
-              {isExpanded && latestApproved?.parsed_output && (
-                <div className="px-4 pb-4 max-h-96 overflow-y-auto">
-                  <TextOutput content={latestApproved.parsed_output} />
-                </div>
-              )}
-            </div>
+            <Collapsible
+              key={stage.id}
+              open={isExpanded}
+              onOpenChange={(open) => setExpandedStage(open ? stage.id : null)}
+            >
+              <div className="border-b border-border">
+                <CollapsibleTrigger className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">{stage.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {isExpanded ? "\u25BC" : "\u25B6"}
+                    </span>
+                  </div>
+                  {!isExpanded && latestApproved?.parsed_output && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      {latestApproved.parsed_output.slice(0, 120)}...
+                    </p>
+                  )}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  {latestApproved?.parsed_output && (
+                    <div className="px-4 pb-4 max-h-96 overflow-y-auto">
+                      <TextOutput content={latestApproved.parsed_output} />
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           );
         })}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

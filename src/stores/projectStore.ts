@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Project } from "../lib/types";
 import * as repo from "../lib/repositories";
 import { scanRepository } from "../lib/repoScanner";
+import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
 
 interface ProjectStore {
   projects: Project[];
@@ -58,6 +59,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     // Scan repository conventions (runs in background, non-blocking for UI)
     scanRepository(project.id, path).catch(() => {});
+
+    // Auto-detect git remote info (runs in background, non-blocking for UI)
+    (async () => {
+      const url = await gitRemoteUrl(path);
+      if (!url) return;
+      const parsed = parseGitRemote(url);
+      const branch = await gitDefaultBranch(path);
+      if (parsed) {
+        await repo.setProjectSetting(project.id, "github_repo_owner", parsed.owner);
+        await repo.setProjectSetting(project.id, "github_repo_name", parsed.repo);
+        await repo.setProjectSetting(project.id, "github_repo_full_name", `${parsed.owner}/${parsed.repo}`);
+      }
+      await repo.setProjectSetting(project.id, "github_default_branch", branch ?? "main");
+    })().catch(() => {});
 
     const projects = await repo.listProjects();
     set({ projects, activeProject: project });

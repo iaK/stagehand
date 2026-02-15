@@ -129,6 +129,18 @@ async function initProjectSchema(db: Database): Promise<void> {
   `);
 
   await db.execute(`
+    CREATE TABLE IF NOT EXISTS task_stages (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      stage_template_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id),
+      FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id),
+      UNIQUE(task_id, stage_template_id)
+    )
+  `);
+
+  await db.execute(`
     ALTER TABLE stage_executions ADD COLUMN user_input TEXT
   `).catch(() => { /* column already exists */ });
 
@@ -153,6 +165,9 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   // Migrate Refinement & Security Review stages: old formats → findings format
   await migrateFindingsStages(db);
+
+  // Migrate Research stage: add suggested_stages to prompt/schema
+  await migrateResearchStageSuggestions(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer researching a task. Analyze the following task thoroughly.
@@ -164,6 +179,11 @@ Additional context / answers from the developer:
 {{user_input}}
 {{/if}}
 
+{{#if prior_attempt_output}}
+Your previous research output (build on this, do NOT repeat questions that have already been answered):
+{{prior_attempt_output}}
+{{/if}}
+
 Provide a comprehensive analysis including:
 1. Understanding of the problem
 2. Key technical considerations
@@ -173,8 +193,20 @@ Provide a comprehensive analysis including:
 If you have questions that need the developer's input before the research is complete, include them in the "questions" array. For each question:
 - Provide a "proposed_answer" with your best guess
 - Provide an "options" array with 2-4 selectable choices the developer can pick from (the developer can also write a custom answer)
+- Do NOT re-ask questions the developer has already answered above
 
 If all questions have been answered and the research is complete, return an empty "questions" array.
+
+Additionally, suggest which pipeline stages this task needs. The available stages are:
+- "High-Level Approaches": Brainstorm and compare multiple approaches (useful for complex tasks with multiple viable solutions)
+- "Planning": Create a detailed implementation plan (useful for non-trivial changes)
+- "Implementation": Write the actual code changes (almost always needed)
+- "Refinement": Self-review the implementation for quality issues (useful for larger changes)
+- "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
+- "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
+
+For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
+Include your suggestions in the "suggested_stages" array.
 
 Respond with a JSON object matching this structure:
 {
@@ -186,6 +218,10 @@ Respond with a JSON object matching this structure:
       "proposed_answer": "Your best-guess answer",
       "options": ["Option A", "Option B", "Option C"]
     }
+  ],
+  "suggested_stages": [
+    { "name": "Implementation", "reason": "Code changes are needed" },
+    { "name": "PR Preparation", "reason": "Changes should be submitted as a PR" }
   ]
 }`;
 
@@ -209,8 +245,19 @@ const RESEARCH_SCHEMA = JSON.stringify({
         required: ["id", "question", "proposed_answer"],
       },
     },
+    suggested_stages: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["name", "reason"],
+      },
+    },
   },
-  required: ["research", "questions"],
+  required: ["research", "questions", "suggested_stages"],
 });
 
 const FINDINGS_SCHEMA = JSON.stringify({
@@ -388,6 +435,21 @@ async function migrateFindingsStages(db: Database): Promise<void> {
           "Analyze for security vulnerabilities, then apply selected fixes.",
           now, row.id,
         ],
+      );
+    }
+  }
+}
+
+async function migrateResearchStageSuggestions(db: Database): Promise<void> {
+  // Migrate Research stages that don't have suggested_stages in their schema
+  const rows = await db.select<{ id: string; output_schema: string }[]>(
+    "SELECT id, output_schema FROM stage_templates WHERE name = 'Research' AND output_format = 'research' AND sort_order = 0",
+  );
+  for (const row of rows) {
+    if (row.output_schema && !row.output_schema.includes('"suggested_stages"')) {
+      await db.execute(
+        "UPDATE stage_templates SET output_schema = $1, prompt_template = $2, updated_at = $3 WHERE id = $4",
+        [RESEARCH_SCHEMA, RESEARCH_PROMPT, new Date().toISOString(), row.id],
       );
     }
   }

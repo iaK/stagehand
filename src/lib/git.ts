@@ -66,6 +66,38 @@ export async function isGitRepo(workingDir: string): Promise<boolean> {
   }
 }
 
+export async function gitRemoteUrl(workingDir: string): Promise<string | null> {
+  try {
+    const url = await runGit(workingDir, "remote", "get-url", "origin");
+    return url.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseGitRemote(url: string): { owner: string; repo: string } | null {
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = url.match(/git@[^:]+:([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = url.match(/https?:\/\/[^/]+\/([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
+
+  return null;
+}
+
+export async function gitDefaultBranch(workingDir: string): Promise<string | null> {
+  try {
+    const ref = await runGit(workingDir, "symbolic-ref", "refs/remotes/origin/HEAD");
+    // Returns e.g. "refs/remotes/origin/main"
+    const branch = ref.trim().replace("refs/remotes/origin/", "");
+    return branch || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function readFileContents(path: string): Promise<string | null> {
   return invoke<string | null>("read_file_contents", { path });
 }

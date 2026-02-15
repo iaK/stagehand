@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import type { StageTemplate, GateRule } from "../../lib/types";
 
 interface StructuredOutputProps {
@@ -21,11 +24,11 @@ export function StructuredOutput({
     initialFields = parsed.fields ?? parsed;
   } catch {
     return (
-      <div className="text-sm text-zinc-400">
-        <p className="text-amber-400 mb-2">
+      <div className="text-sm text-muted-foreground">
+        <p className="text-amber-600 mb-2">
           Could not parse structured output.
         </p>
-        <pre className="bg-zinc-900 p-3 rounded text-xs whitespace-pre-wrap">
+        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>
@@ -65,26 +68,27 @@ export function StructuredOutput({
 
           return (
             <div key={key}>
-              <label className="block text-sm text-zinc-400 mb-1">
+              <Label>
                 {label}
                 {isRequired && (
-                  <span className="text-red-400 ml-1">*</span>
+                  <span className="text-destructive ml-1">*</span>
                 )}
-              </label>
+              </Label>
               {isLong ? (
                 <MarkdownTextarea
                   value={value}
                   onChange={(v) => updateField(key, v)}
                   readOnly={isApproved}
                   rows={6}
+                  className="mt-2"
                 />
               ) : (
-                <input
+                <Input
                   type="text"
                   value={value}
                   onChange={(e) => updateField(key, e.target.value)}
                   readOnly={isApproved}
-                  className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                  className="mt-2"
                 />
               )}
             </div>
@@ -93,13 +97,14 @@ export function StructuredOutput({
       </div>
 
       {!isApproved && (
-        <button
+        <Button
+          variant="success"
           onClick={() => onSubmit(fields)}
           disabled={!allFieldsFilled}
-          className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg text-sm font-medium transition-colors"
+          className="mt-4"
         >
           Approve & Continue
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { ChecklistItem } from "../../lib/types";
 
 interface ChecklistOutputProps {
@@ -7,22 +11,16 @@ interface ChecklistOutputProps {
   isApproved: boolean;
 }
 
-const severityColors = {
-  critical: {
-    border: "border-red-800",
-    bg: "bg-red-950/30",
-    badge: "bg-red-900 text-red-300",
-  },
-  warning: {
-    border: "border-amber-800",
-    bg: "bg-amber-950/30",
-    badge: "bg-amber-900 text-amber-300",
-  },
-  info: {
-    border: "border-blue-800",
-    bg: "bg-blue-950/30",
-    badge: "bg-blue-900 text-blue-300",
-  },
+const severityVariant: Record<string, "critical" | "warning" | "info"> = {
+  critical: "critical",
+  warning: "warning",
+  info: "info",
+};
+
+const severityCardColors = {
+  critical: "border-red-200 bg-red-50",
+  warning: "border-amber-200 bg-amber-50",
+  info: "border-blue-200 bg-blue-50",
 };
 
 export function ChecklistOutput({
@@ -36,9 +34,9 @@ export function ChecklistOutput({
     initialItems = parsed.items ?? [];
   } catch {
     return (
-      <div className="text-sm text-zinc-400">
-        <p className="text-amber-400 mb-2">Could not parse checklist output.</p>
-        <pre className="bg-zinc-900 p-3 rounded text-xs whitespace-pre-wrap">
+      <div className="text-sm text-muted-foreground">
+        <p className="text-amber-600 mb-2">Could not parse checklist output.</p>
+        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>
@@ -69,40 +67,38 @@ export function ChecklistOutput({
     <div>
       <div className="space-y-3">
         {items.map((item) => {
-          const colors = severityColors[item.severity] ?? severityColors.info;
+          const colors = severityCardColors[item.severity] ?? severityCardColors.info;
+          const badgeVar = severityVariant[item.severity] ?? "info";
           return (
             <div
               key={item.id}
-              className={`rounded-lg border p-4 ${colors.border} ${colors.bg}`}
+              className={`rounded-lg border p-4 ${colors}`}
             >
               <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={item.checked}
-                  onChange={() => toggleItem(item.id)}
+                  onCheckedChange={() => toggleItem(item.id)}
                   disabled={isApproved}
-                  className="mt-0.5 accent-emerald-500"
+                  className="mt-0.5"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span
-                      className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${colors.badge}`}
-                    >
+                    <Badge variant={badgeVar} className="text-[10px] uppercase font-bold">
                       {item.severity}
-                    </span>
+                    </Badge>
                   </div>
-                  <p className="text-sm text-zinc-200">{item.text}</p>
+                  <p className="text-sm text-zinc-700">{item.text}</p>
                   {!isApproved && (
-                    <input
+                    <Input
                       type="text"
                       value={item.notes}
                       onChange={(e) => updateNotes(item.id, e.target.value)}
                       placeholder="Notes..."
-                      className="mt-2 w-full bg-transparent border-b border-zinc-700 text-xs text-zinc-400 pb-1 focus:outline-none focus:border-zinc-500"
+                      className="mt-2 h-7 text-xs bg-transparent border-0 border-b border-zinc-300 rounded-none shadow-none focus-visible:ring-0 focus-visible:border-zinc-500 px-0"
                     />
                   )}
                   {isApproved && item.notes && (
-                    <p className="mt-1 text-xs text-zinc-500 italic">
+                    <p className="mt-1 text-xs text-muted-foreground italic">
                       {item.notes}
                     </p>
                   )}
@@ -114,13 +110,14 @@ export function ChecklistOutput({
       </div>
 
       {!isApproved && (
-        <button
+        <Button
+          variant="success"
           onClick={() => onComplete(items)}
           disabled={!allChecked}
-          className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg text-sm font-medium transition-colors"
+          className="mt-4"
         >
           {allChecked ? "All Items Reviewed" : "Review All Items to Continue"}
-        </button>
+        </Button>
       )}
     </div>
   );

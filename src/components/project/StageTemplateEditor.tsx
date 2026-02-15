@@ -2,6 +2,12 @@ import { useState, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { updateStageTemplate } from "../../lib/repositories";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import type { StageTemplate, InputSource, OutputFormat } from "../../lib/types";
 
 interface StageTemplateEditorProps {
@@ -10,23 +16,23 @@ interface StageTemplateEditorProps {
 
 export function StageTemplateEditor({ onClose }: StageTemplateEditorProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-[800px] max-w-[90vw] max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-100">
-            Stage Templates
-          </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[800px] max-h-[80vh] flex flex-col p-0" showCloseButton={false}>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <DialogHeader className="p-0">
+            <DialogTitle>Stage Templates</DialogTitle>
+          </DialogHeader>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300"
+            className="text-muted-foreground hover:text-foreground"
           >
             &times;
           </button>
         </div>
 
         <StageTemplateEditorContent />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -68,15 +74,15 @@ export function StageTemplateEditorContent() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Stage List */}
-      <div className="w-48 border-r border-zinc-800 overflow-y-auto">
+      <div className="w-48 border-r border-border overflow-y-auto">
         {stageTemplates.map((t) => (
           <button
             key={t.id}
             onClick={() => setSelectedId(t.id)}
             className={`w-full text-left px-3 py-2 text-sm ${
               selectedId === t.id
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-400 hover:bg-zinc-800/50"
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent/50"
             }`}
           >
             {t.name}
@@ -87,8 +93,8 @@ export function StageTemplateEditorContent() {
       {/* Edit Form */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">Name</label>
-          <input
+          <Label>Name</Label>
+          <Input
             value={editingTemplate.name}
             onChange={(e) =>
               setEditingTemplate({
@@ -96,15 +102,13 @@ export function StageTemplateEditorContent() {
                 name: e.target.value,
               })
             }
-            className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="mt-1"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">
-            Description
-          </label>
-          <input
+          <Label>Description</Label>
+          <Input
             value={editingTemplate.description}
             onChange={(e) =>
               setEditingTemplate({
@@ -112,58 +116,60 @@ export function StageTemplateEditorContent() {
                 description: e.target.value,
               })
             }
-            className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="mt-1"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">
-              Input Source
-            </label>
-            <select
+            <Label>Input Source</Label>
+            <Select
               value={editingTemplate.input_source}
-              onChange={(e) =>
+              onValueChange={(value) =>
                 setEditingTemplate({
                   ...editingTemplate,
-                  input_source: e.target.value as InputSource,
+                  input_source: value as InputSource,
                 })
               }
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-1.5 text-sm"
             >
-              <option value="user">User</option>
-              <option value="previous_stage">Previous Stage</option>
-              <option value="both">Both</option>
-            </select>
+              <SelectTrigger className="w-full mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="previous_stage">Previous Stage</SelectItem>
+                <SelectItem value="both">Both</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
-            <label className="block text-xs text-zinc-500 mb-1">
-              Output Format
-            </label>
-            <select
+            <Label>Output Format</Label>
+            <Select
               value={editingTemplate.output_format}
-              onChange={(e) =>
+              onValueChange={(value) =>
                 setEditingTemplate({
                   ...editingTemplate,
-                  output_format: e.target.value as OutputFormat,
+                  output_format: value as OutputFormat,
                 })
               }
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-1.5 text-sm"
             >
-              <option value="text">Text</option>
-              <option value="options">Options</option>
-              <option value="checklist">Checklist</option>
-              <option value="structured">Structured</option>
-              <option value="research">Research (Q&A)</option>
-            </select>
+              <SelectTrigger className="w-full mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">Text</SelectItem>
+                <SelectItem value="options">Options</SelectItem>
+                <SelectItem value="checklist">Checklist</SelectItem>
+                <SelectItem value="structured">Structured</SelectItem>
+                <SelectItem value="research">Research (Q&A)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs text-zinc-500 mb-1">
-            Prompt Template
-          </label>
-          <textarea
+          <Label>Prompt Template</Label>
+          <Textarea
             value={editingTemplate.prompt_template}
             onChange={(e) =>
               setEditingTemplate({
@@ -172,9 +178,9 @@ export function StageTemplateEditorContent() {
               })
             }
             rows={12}
-            className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-blue-500 resize-none"
+            className="mt-1 font-mono text-xs resize-none"
           />
-          <p className="text-[10px] text-zinc-600 mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             Variables: {"{{task_description}}"}, {"{{previous_output}}"},
             {"{{user_input}}"}, {"{{user_decision}}"}
           </p>
@@ -182,14 +188,11 @@ export function StageTemplateEditorContent() {
 
         <div className="flex items-center justify-end gap-3">
           {saved && (
-            <span className="text-xs text-emerald-400">Saved</span>
+            <span className="text-xs text-emerald-600">Saved</span>
           )}
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-colors"
-          >
+          <Button onClick={handleSave}>
             Save Changes
-          </button>
+          </Button>
         </div>
       </div>
     </div>

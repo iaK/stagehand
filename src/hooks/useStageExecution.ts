@@ -33,7 +33,7 @@ export function useStageExecution() {
       if (!activeProject) return;
 
       // Create branch on first stage execution if task has no branch yet
-      if (stage.sort_order === 0 && !task.branch_name) {
+      if (stage.output_format === "research" && !task.branch_name) {
         try {
           const gitRepo = await isGitRepo(activeProject.path);
           if (gitRepo) {
@@ -74,16 +74,26 @@ export function useStageExecution() {
         }
       }
 
+      // Clear task_stages when re-running Research so user re-selects stages
+      if (stage.output_format === "research") {
+        const prevAttemptCheck = executions.filter((e) => e.stage_template_id === stage.id);
+        if (prevAttemptCheck.length > 0) {
+          await repo.setTaskStages(activeProject.id, task.id, []);
+          await useTaskStore.getState().loadTaskStages(activeProject.id, task.id);
+        }
+      }
+
       clearOutput(stage.id);
       setRunning(stage.id, "spawning");
 
       try {
-        // Find previous completed execution
+        // Find previous completed execution (using filtered stage list from store)
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
         const prevExec = await repo.getPreviousStageExecution(
           activeProject.id,
           task.id,
           stage.sort_order,
-          stageTemplates,
+          taskStageTemplates,
         );
 
         // Use the previous stage's composed result as input context
@@ -358,12 +368,15 @@ export function useStageExecution() {
         return;
       }
 
+      // Use filtered stage templates from store (avoids redundant DB call)
+      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+
       // Get the previous stage's result (for append/passthrough)
       const prevExec = await repo.getPreviousStageExecution(
         activeProject.id,
         task.id,
         stage.sort_order,
-        stageTemplates,
+        taskStageTemplates,
       );
       const prevResult = prevExec?.stage_result ?? null;
 
@@ -401,10 +414,10 @@ export function useStageExecution() {
         generatePendingCommit(task, stage).catch(() => {});
       }
 
-      // Advance to next stage
-      const nextStage = stageTemplates.find(
-        (s) => s.sort_order === stage.sort_order + 1,
-      );
+      // Advance to next stage (using filtered list)
+      const nextStage = taskStageTemplates
+        .filter((s) => s.sort_order > stage.sort_order)
+        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 
       if (nextStage) {
         await updateTask(activeProject.id, task.id, {

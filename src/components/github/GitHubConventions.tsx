@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 import * as repo from "../../lib/repositories";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 
 interface GitHubConventionsProps {
   projectId: string;
@@ -8,23 +13,20 @@ interface GitHubConventionsProps {
 
 export function GitHubConventions({ projectId, onClose }: GitHubConventionsProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[560px] max-w-[90vw] max-h-[85vh] flex flex-col">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">
-          Project Conventions
-        </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Project Conventions</DialogTitle>
+        </DialogHeader>
         <GitHubConventionsContent projectId={projectId} />
-        <div className="flex justify-end mt-4 pt-3 border-t border-zinc-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
+        <Separator />
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
             Close
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -100,79 +102,71 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <p className="text-xs text-zinc-500 mb-4">
+      <p className="text-xs text-muted-foreground mb-4">
         Define how commits, branches, and PRs should be formatted. These rules are used when generating commit messages and creating branches.
       </p>
 
       {loading ? (
-        <div className="text-sm text-zinc-500 text-center py-8">Loading...</div>
+        <div className="text-sm text-muted-foreground text-center py-8">Loading...</div>
       ) : (
         <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">
-              Commit Message Format
-            </label>
-            <textarea
+            <Label>Commit Message Format</Label>
+            <Textarea
               value={commitFormat}
               onChange={(e) => setCommitFormat(e.target.value)}
               rows={4}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 resize-none"
+              className="mt-1 font-mono resize-none"
               placeholder={"e.g. Conventional Commits:\n<type>(<scope>): <description>\n\nTypes: feat, fix, refactor, docs, test, chore"}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">
-              Branch Naming
-            </label>
-            <textarea
+            <Label>Branch Naming</Label>
+            <Textarea
               value={branchNaming}
               onChange={(e) => setBranchNaming(e.target.value)}
               rows={3}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 resize-none"
+              className="mt-1 font-mono resize-none"
               placeholder={"e.g. feature/<ticket>-<short-description>\n    fix/<ticket>-<short-description>"}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">
-              PR Description Template
-            </label>
-            <textarea
+            <Label>PR Description Template</Label>
+            <Textarea
               value={prTemplate}
               onChange={(e) => setPrTemplate(e.target.value)}
               rows={4}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 resize-none"
+              className="mt-1 font-mono resize-none"
               placeholder={"e.g.\n## Summary\n\n## Changes\n\n## Testing"}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">
-              Additional Rules
-            </label>
-            <textarea
+            <Label>Additional Rules</Label>
+            <Textarea
               value={extraRules}
               onChange={(e) => setExtraRules(e.target.value)}
               rows={3}
-              className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 resize-none"
+              className="mt-1 font-mono resize-none"
               placeholder="Any other conventions or rules for this project..."
             />
           </div>
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-3 mt-4 pt-3 border-t border-zinc-800">
+      <Separator />
+      <div className="flex items-center justify-end gap-3">
         {saved && (
-          <span className="text-xs text-emerald-400">Saved</span>
+          <span className="text-xs text-emerald-600">Saved</span>
         )}
-        <button
+        <Button
           onClick={handleSave}
           disabled={saving || loading}
-          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
         >
           {saving ? "Saving..." : "Save"}
-        </button>
+        </Button>
       </div>
     </>
   );

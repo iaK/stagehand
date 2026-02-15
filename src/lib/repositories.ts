@@ -363,9 +363,9 @@ export async function getPreviousStageExecution(
 ): Promise<StageExecution | null> {
   if (currentSortOrder <= 0) return null;
 
-  const previousTemplate = stageTemplates.find(
-    (t) => t.sort_order === currentSortOrder - 1,
-  );
+  const previousTemplate = stageTemplates
+    .filter((t) => t.sort_order < currentSortOrder)
+    .sort((a, b) => b.sort_order - a.sort_order)[0] ?? null;
   if (!previousTemplate) return null;
 
   const db = await getProjectDb(projectId);
@@ -374,4 +374,52 @@ export async function getPreviousStageExecution(
     [taskId, previousTemplate.id],
   );
   return results[0] ?? null;
+}
+
+// === Task Stages ===
+
+export async function getTaskStages(
+  projectId: string,
+  taskId: string,
+): Promise<string[]> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ stage_template_id: string }[]>(
+    "SELECT stage_template_id FROM task_stages WHERE task_id = $1 ORDER BY sort_order ASC",
+    [taskId],
+  );
+  return rows.map((r) => r.stage_template_id);
+}
+
+export async function setTaskStages(
+  projectId: string,
+  taskId: string,
+  stages: { stageTemplateId: string; sortOrder: number }[],
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+  await db.execute("BEGIN TRANSACTION");
+  try {
+    await db.execute("DELETE FROM task_stages WHERE task_id = $1", [taskId]);
+    for (const s of stages) {
+      await db.execute(
+        "INSERT INTO task_stages (id, task_id, stage_template_id, sort_order) VALUES ($1, $2, $3, $4)",
+        [crypto.randomUUID(), taskId, s.stageTemplateId, s.sortOrder],
+      );
+    }
+    await db.execute("COMMIT");
+  } catch (err) {
+    await db.execute("ROLLBACK");
+    throw err;
+  }
+}
+
+export async function getFilteredStageTemplates(
+  projectId: string,
+  taskId: string,
+  allTemplates: StageTemplate[],
+): Promise<StageTemplate[]> {
+  const selectedIds = await getTaskStages(projectId, taskId);
+  if (selectedIds.length === 0) return allTemplates;
+
+  const idSet = new Set(selectedIds);
+  return allTemplates.filter((t) => idSet.has(t.id));
 }
