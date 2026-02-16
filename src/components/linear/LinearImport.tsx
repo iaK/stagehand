@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { sendNotification } from "../../lib/notifications";
 import type { LinearIssue } from "../../lib/types";
 
@@ -28,6 +29,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
   const addTask = useTaskStore((s) => s.addTask);
   const [filter, setFilter] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchIssues();
@@ -47,6 +49,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
   const handleImport = async (issue: LinearIssue) => {
     if (!apiKey) return;
     setImporting(issue.id);
+    setImportError(null);
     try {
       const detail = await fetchIssueDetail(apiKey, issue.id);
 
@@ -64,6 +67,8 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
       await addTask(projectId, title, description, issue.branchName);
       sendNotification("Task imported", title);
       onClose();
+    } catch (err) {
+      setImportError(`Failed to import issue: ${err}`);
     } finally {
       setImporting(null);
     }
@@ -83,6 +88,12 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
           placeholder="Filter issues..."
           autoFocus
         />
+
+        {importError && (
+          <Alert variant="destructive">
+            <AlertDescription>{importError}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           {loading && (

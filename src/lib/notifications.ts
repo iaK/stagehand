@@ -8,7 +8,7 @@ export function requestNotificationPermission() {
 
 export function sendNotification(title: string, body?: string) {
   if (document.hidden) {
-    // Window not focused — native OS notification
+    // Window not focused — try native OS notification
     if (
       "Notification" in window &&
       Notification.permission === "granted"
@@ -18,6 +18,9 @@ export function sendNotification(title: string, body?: string) {
         window.focus();
         n.close();
       };
+    } else {
+      // Permission not granted — fall back to toast (visible when user returns)
+      toast(title, { description: body });
     }
   } else {
     // Window focused — in-app toast

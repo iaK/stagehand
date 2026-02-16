@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { sendNotification } from "../../lib/notifications";
 import type { Task } from "../../lib/types";
 
@@ -15,6 +16,7 @@ interface TaskCreateProps {
 
 export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
   const [title, setTitle] = useState(task?.title ?? "");
+  const [error, setError] = useState<string | null>(null);
   const addTask = useTaskStore((s) => s.addTask);
   const updateTask = useTaskStore((s) => s.updateTask);
 
@@ -23,14 +25,19 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    if (isEditing) {
-      await updateTask(projectId, task.id, { title: title.trim() });
-      sendNotification("Task updated", title.trim());
-    } else {
-      await addTask(projectId, title.trim());
-      sendNotification("Task created", title.trim());
+    setError(null);
+    try {
+      if (isEditing) {
+        await updateTask(projectId, task.id, { title: title.trim() });
+        sendNotification("Task updated", title.trim());
+      } else {
+        await addTask(projectId, title.trim());
+        sendNotification("Task created", title.trim());
+      }
+      onClose();
+    } catch (err) {
+      setError(`Failed to ${isEditing ? "update" : "create"} task: ${err}`);
     }
-    onClose();
   };
 
   return (
@@ -51,6 +58,11 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
               className="mt-1"
             />
           </div>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
           <DialogFooter className="mt-6">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel

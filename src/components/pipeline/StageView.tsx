@@ -147,7 +147,11 @@ export function StageView({ stage }: StageViewProps) {
     setStageError(null);
     try {
       await approveStage(activeTask, stage, decision);
-      sendNotification("Stage approved", stage.name);
+      // Commit-eligible stages already send a "Ready to commit" notification
+      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+      if (!commitEligibleStages.includes(stage.name)) {
+        sendNotification("Stage approved", stage.name);
+      }
     } catch (err) {
       console.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
