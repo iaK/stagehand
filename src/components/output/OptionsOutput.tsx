@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import type { OptionItem } from "../../lib/types";
 
@@ -58,7 +60,9 @@ export function OptionsOutput({
             <h4 className="text-base font-medium text-foreground mb-2">
               {option.title}
             </h4>
-            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">{option.description}</p>
+            <div className="text-sm text-muted-foreground mb-4 leading-relaxed prose prose-sm max-w-none [&>:first-child]:!mt-0 [&>:last-child]:!mb-0 [&_code]:mx-0.5 [&_code]:my-0.5 [&_code]:inline-block">
+              <Markdown remarkPlugins={[remarkGfm]}>{option.description}</Markdown>
+            </div>
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <p className="text-sm text-emerald-600 font-medium mb-2">
@@ -66,7 +70,7 @@ export function OptionsOutput({
                 </p>
                 <ul className="text-sm text-muted-foreground space-y-1.5">
                   {option.pros.map((pro, i) => (
-                    <li key={i}>+ {pro}</li>
+                    <li key={i} className="[&>p]:inline">+ <Markdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <>{children}</> }}>{pro}</Markdown></li>
                   ))}
                 </ul>
               </div>
@@ -74,7 +78,7 @@ export function OptionsOutput({
                 <p className="text-sm text-red-600 font-medium mb-2">Cons</p>
                 <ul className="text-sm text-muted-foreground space-y-1.5">
                   {option.cons.map((con, i) => (
-                    <li key={i}>- {con}</li>
+                    <li key={i} className="[&>p]:inline">- <Markdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <>{children}</> }}>{con}</Markdown></li>
                   ))}
                 </ul>
               </div>
