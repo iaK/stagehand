@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { sendNotification } from "../../lib/notifications";
 
 interface GitHubConventionsProps {
   projectId: string;
@@ -37,7 +38,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
   const [extraRules, setExtraRules] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -57,7 +57,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
   const handleSave = async () => {
     setSaving(true);
-    setSaved(false);
 
     const settings: [string, string][] = [
       ["conv_commit_format", commitFormat],
@@ -96,8 +95,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
     }
 
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    sendNotification("Conventions saved");
   };
 
   return (
@@ -158,9 +156,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
       <Separator />
       <div className="flex items-center justify-end gap-3">
-        {saved && (
-          <span className="text-xs text-emerald-600">Saved</span>
-        )}
         <Button
           onClick={handleSave}
           disabled={saving || loading}

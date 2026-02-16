@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { sendNotification } from "../../lib/notifications";
 
 interface LinearSettingsProps {
   projectId: string;
@@ -39,11 +40,15 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
     e.preventDefault();
     if (!keyInput.trim()) return;
     const ok = await saveApiKey(projectId, keyInput.trim());
-    if (ok) setKeyInput("");
+    if (ok) {
+      setKeyInput("");
+      sendNotification("Linear connected", `Signed in successfully`);
+    }
   };
 
   const handleDisconnect = async () => {
     await disconnect(projectId);
+    sendNotification("Linear disconnected");
   };
 
   if (connected) {

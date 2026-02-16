@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { sendNotification } from "../../lib/notifications";
 import type { StageTemplate, InputSource, OutputFormat } from "../../lib/types";
 
 interface StageTemplateEditorProps {
@@ -43,8 +44,6 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
   const [editingTemplate, setEditingTemplate] = useState<StageTemplate | null>(
     null,
   );
-  const [saved, setSaved] = useState(false);
-
   useEffect(() => {
     const template = stageTemplates.find((t) => t.id === templateId);
     if (template) {
@@ -63,8 +62,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       gate_rules: editingTemplate.gate_rules,
     });
     await loadStageTemplates(activeProject.id);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    sendNotification("Template saved", editingTemplate.name);
   };
 
   if (!editingTemplate) return null;
@@ -169,9 +167,6 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       </div>
 
       <div className="flex items-center justify-end gap-3">
-        {saved && (
-          <span className="text-xs text-emerald-600">Saved</span>
-        )}
         <Button onClick={handleSave}>
           Save Changes
         </Button>

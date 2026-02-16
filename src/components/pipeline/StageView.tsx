@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { sendNotification } from "../../lib/notifications";
 import type { StageTemplate } from "../../lib/types";
 
 interface StageViewProps {
@@ -75,6 +76,7 @@ export function StageView({ stage }: StageViewProps) {
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
         useProcessStore.getState().setCommitted(stage.id, shortHash);
         useProcessStore.getState().clearPendingCommit();
+        sendNotification("Changes committed", shortHash);
         await advanceFromStage(activeTask, stage);
       }
     } catch (e) {
@@ -91,6 +93,7 @@ export function StageView({ stage }: StageViewProps) {
       await prReview.skipFixCommit(pendingCommit.fixId);
     } else {
       useProcessStore.getState().clearPendingCommit();
+      sendNotification("Commit skipped", stage.name);
       await advanceFromStage(activeTask, stage);
     }
   };
@@ -144,6 +147,7 @@ export function StageView({ stage }: StageViewProps) {
     setStageError(null);
     try {
       await approveStage(activeTask, stage, decision);
+      sendNotification("Stage approved", stage.name);
     } catch (err) {
       console.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));

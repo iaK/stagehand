@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { sendNotification } from "../../lib/notifications";
 import type { Task } from "../../lib/types";
 
 interface TaskCreateProps {
@@ -24,8 +25,10 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
     if (!title.trim()) return;
     if (isEditing) {
       await updateTask(projectId, task.id, { title: title.trim() });
+      sendNotification("Task updated", title.trim());
     } else {
       await addTask(projectId, title.trim());
+      sendNotification("Task created", title.trim());
     }
     onClose();
   };

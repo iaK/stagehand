@@ -593,6 +593,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       // Save PR URL to the task
       if (prUrl) {
         await updateTask(activeProject.id, task.id, { pr_url: prUrl.trim() });
+        sendNotification("PR created", title);
       }
     },
     [activeProject, updateTask],

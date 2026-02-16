@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { sendNotification } from "../../lib/notifications";
 
 interface ProjectCreateProps {
   onClose: () => void;
@@ -40,6 +41,7 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
     setCreating(true);
     try {
       await addProject(name.trim(), path.trim());
+      sendNotification("Project created", name.trim());
       onClose();
     } catch (err) {
       setError(`Failed to create project: ${err}`);

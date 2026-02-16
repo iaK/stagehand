@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { Button } from "@/components/ui/button";
+import { sendNotification } from "../../lib/notifications";
 
 export function ArchivedProjectsSettings() {
   const { archivedProjects, loadArchivedProjects, unarchiveProject } =
@@ -34,7 +35,10 @@ export function ArchivedProjectsSettings() {
               <Button
                 variant="outline"
                 size="xs"
-                onClick={() => unarchiveProject(p.id)}
+                onClick={async () => {
+                  await unarchiveProject(p.id);
+                  sendNotification("Project unarchived", p.name);
+                }}
                 className="opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 Unarchive

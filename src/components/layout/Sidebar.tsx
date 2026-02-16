@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { sendNotification } from "../../lib/notifications";
 import type { Project, Task } from "../../lib/types";
 
 export function Sidebar() {
@@ -53,6 +54,7 @@ export function Sidebar() {
   const confirmArchive = async () => {
     if (!archiveTarget) return;
     await archiveProject(archiveTarget.id);
+    sendNotification("Project archived", archiveTarget.name);
     setArchiveTarget(null);
   };
 

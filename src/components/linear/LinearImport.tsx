@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { sendNotification } from "../../lib/notifications";
 import type { LinearIssue } from "../../lib/types";
 
 interface LinearImportProps {
@@ -61,6 +62,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
 
       const title = `[${issue.identifier}] ${issue.title}`;
       await addTask(projectId, title, description, issue.branchName);
+      sendNotification("Task imported", title);
       onClose();
     } finally {
       setImporting(null);
