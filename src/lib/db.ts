@@ -11,26 +11,37 @@ async function getDevflowDir(): Promise<string> {
 }
 
 const connections: Record<string, Database> = {};
+const connectionPromises: Record<string, Promise<Database>> = {};
 
 export async function getAppDb(): Promise<Database> {
-  if (!connections["app"]) {
-    const dir = await getDevflowDir();
-    connections["app"] = await Database.load(`sqlite:${dir}/app.db`);
-    await initAppSchema(connections["app"]);
+  if (connections["app"]) return connections["app"];
+  if (!connectionPromises["app"]) {
+    connectionPromises["app"] = (async () => {
+      const dir = await getDevflowDir();
+      const db = await Database.load(`sqlite:${dir}/app.db`);
+      await initAppSchema(db);
+      connections["app"] = db;
+      return db;
+    })();
   }
-  return connections["app"];
+  return connectionPromises["app"];
 }
 
 export async function getProjectDb(projectId: string): Promise<Database> {
   const key = `project:${projectId}`;
-  if (!connections[key]) {
-    const dir = await getDevflowDir();
-    connections[key] = await Database.load(
-      `sqlite:${dir}/data/${projectId}.db`,
-    );
-    await initProjectSchema(connections[key]);
+  if (connections[key]) return connections[key];
+  if (!connectionPromises[key]) {
+    connectionPromises[key] = (async () => {
+      const dir = await getDevflowDir();
+      const db = await Database.load(
+        `sqlite:${dir}/data/${projectId}.db`,
+      );
+      await initProjectSchema(db);
+      connections[key] = db;
+      return db;
+    })();
   }
-  return connections[key];
+  return connectionPromises[key];
 }
 
 async function initAppSchema(db: Database): Promise<void> {
@@ -157,7 +168,15 @@ async function initProjectSchema(db: Database): Promise<void> {
   `).catch(() => { /* column already exists */ });
 
   await db.execute(`
+    ALTER TABLE stage_executions ADD COLUMN stage_summary TEXT
+  `).catch(() => { /* column already exists */ });
+
+  await db.execute(`
     ALTER TABLE tasks ADD COLUMN branch_name TEXT
+  `).catch(() => { /* column already exists */ });
+
+  await db.execute(`
+    ALTER TABLE tasks ADD COLUMN pr_url TEXT
   `).catch(() => { /* column already exists */ });
 
   // Migrate Research stage: text → research format
@@ -171,6 +190,34 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   // Migrate stages to support questions in High-Level Approaches and Planning
   await migrateInteractiveStages(db);
+
+  // Migrate PR Preparation to use {{stage_summaries}}
+  await migratePrPrepSummaries(db);
+
+  // Add pr_review_fixes table and PR Review stage template
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS pr_review_fixes (
+      id TEXT PRIMARY KEY,
+      execution_id TEXT NOT NULL,
+      comment_id INTEGER NOT NULL,
+      comment_type TEXT NOT NULL DEFAULT 'inline',
+      author TEXT NOT NULL DEFAULT '',
+      author_avatar_url TEXT,
+      body TEXT NOT NULL DEFAULT '',
+      file_path TEXT,
+      line INTEGER,
+      diff_hunk TEXT,
+      state TEXT NOT NULL DEFAULT 'COMMENTED',
+      fix_status TEXT NOT NULL DEFAULT 'pending',
+      fix_commit_hash TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (execution_id) REFERENCES stage_executions(id),
+      UNIQUE(execution_id, comment_id)
+    )
+  `);
+
+  await migratePrReviewStage(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
@@ -215,6 +262,7 @@ Additionally, suggest which pipeline stages this task needs. The available stage
 - "Refinement": Self-review the implementation for quality issues (useful for larger changes)
 - "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
 - "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
+- "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
 
 For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
 Include your suggestions in the "suggested_stages" array.
@@ -657,6 +705,51 @@ const PLANNING_SCHEMA = JSON.stringify({
   required: ["plan", "questions"],
 });
 
+async function migratePrPrepSummaries(db: Database): Promise<void> {
+  const rows = await db.select<{ id: string; prompt_template: string }[]>(
+    "SELECT id, prompt_template FROM stage_templates WHERE name = 'PR Preparation' AND sort_order = 6",
+  );
+  for (const row of rows) {
+    if (!row.prompt_template.includes("{{stage_summaries}}")) {
+      await db.execute(
+        "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
+        [
+          `Prepare a pull request for the following completed task.
+
+Task: {{task_description}}
+
+{{#if stage_summaries}}
+## Stage Summaries
+
+{{stage_summaries}}
+{{/if}}
+
+{{#if previous_output}}
+Full implementation details (for reference):
+{{previous_output}}
+{{/if}}
+
+Generate:
+1. A concise PR title
+2. A detailed description explaining the changes
+3. A test plan describing how to verify the changes
+
+Respond with a JSON object:
+{
+  "fields": {
+    "title": "PR title here",
+    "description": "PR description here",
+    "test_plan": "Test plan here"
+  }
+}`,
+          new Date().toISOString(),
+          row.id,
+        ],
+      );
+    }
+  }
+}
+
 async function migrateInteractiveStages(db: Database): Promise<void> {
   const now = new Date().toISOString();
 
@@ -708,5 +801,47 @@ async function migrateInteractiveStages(db: Database): Promise<void> {
         [PLANNING_SCHEMA, PLANNING_PROMPT, now, row.id],
       );
     }
+  }
+}
+
+async function migratePrReviewStage(db: Database): Promise<void> {
+  // Check if PR Review already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'PR Review' AND sort_order = 7",
+  );
+  if (existing.length > 0) return;
+
+  // Only add if PR Preparation exists at sort_order 6
+  const prPrepRows = await db.select<{ id: string; project_id: string }[]>(
+    "SELECT id, project_id FROM stage_templates WHERE name = 'PR Preparation' AND sort_order = 6",
+  );
+  if (prPrepRows.length === 0) return;
+
+  const now = new Date().toISOString();
+  for (const row of prPrepRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "PR Review",
+        "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
+        7,
+        "",
+        "previous_stage",
+        "pr_review",
+        null,
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        null,
+        "replace",
+        now,
+        now,
+      ],
+    );
   }
 }

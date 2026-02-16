@@ -15,6 +15,7 @@ interface StageOutputProps {
   onSubmitAnswers?: (answers: string) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
+  approving?: boolean;
 }
 
 export function StageOutput({
@@ -25,6 +26,7 @@ export function StageOutput({
   onSubmitAnswers,
   isApproved,
   stageTemplates,
+  approving,
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
@@ -37,9 +39,10 @@ export function StageOutput({
             <Button
               variant="success"
               onClick={() => onApprove()}
+              disabled={approving}
               className="mt-4"
             >
-              Approve & Continue
+              {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           )}
         </div>
@@ -118,9 +121,10 @@ export function StageOutput({
             <Button
               variant="success"
               onClick={() => onApprove()}
+              disabled={approving}
               className="mt-4"
             >
-              Approve & Continue
+              {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           )}
         </div>
@@ -136,6 +140,7 @@ export function StageOutput({
           onSubmitAnswers={onSubmitAnswers ?? (() => {})}
           isApproved={isApproved}
           stageTemplates={stageTemplates}
+          approving={approving}
         />
       );
 
@@ -149,9 +154,10 @@ export function StageOutput({
               <Button
                 variant="success"
                 onClick={() => onApprove()}
+                disabled={approving}
                 className="mt-4"
               >
-                Approve & Continue
+                {approving ? "Approving..." : "Approve & Continue"}
               </Button>
             )}
           </div>
@@ -170,6 +176,13 @@ export function StageOutput({
           isApproved={isApproved}
         />
       );
+
+    case "pr_review":
+      return isApproved ? (
+        <div>
+          <TextOutput content={output || "PR Review completed."} />
+        </div>
+      ) : null;
 
     default:
       return <TextOutput content={output} />;

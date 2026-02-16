@@ -14,6 +14,7 @@ interface ResearchOutputProps {
   onSubmitAnswers: (answers: string) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
+  approving?: boolean;
 }
 
 export function ResearchOutput({
@@ -23,6 +24,7 @@ export function ResearchOutput({
   onSubmitAnswers,
   isApproved,
   stageTemplates,
+  approving,
 }: ResearchOutputProps) {
   let research = "";
   let questions: ResearchQuestion[] = [];
@@ -38,8 +40,8 @@ export function ResearchOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={onApprove} className="mt-4">
-            Approve & Continue
+          <Button variant="success" onClick={onApprove} disabled={approving} className="mt-4">
+            {approving ? "Approving..." : "Approve & Continue"}
           </Button>
         )}
       </div>
@@ -65,6 +67,7 @@ export function ResearchOutput({
           stageTemplates={stageTemplates}
           suggestedStages={suggestedStages}
           onApprove={onApproveWithStages}
+          approving={approving}
         />
       )}
 
@@ -74,8 +77,8 @@ export function ResearchOutput({
             <p className="text-sm font-medium mb-3">
               Research complete — no further questions.
             </p>
-            <Button variant="success" onClick={onApprove}>
-              Approve & Continue
+            <Button variant="success" onClick={onApprove} disabled={approving}>
+              {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           </AlertDescription>
         </Alert>
@@ -88,10 +91,12 @@ function StageSelectionPanel({
   stageTemplates,
   suggestedStages,
   onApprove,
+  approving,
 }: {
   stageTemplates: StageTemplate[];
   suggestedStages: StageSuggestion[];
   onApprove: (selectedStageIds: string[]) => void;
+  approving?: boolean;
 }) {
   // Map AI suggestions to templates by normalized name
   const suggestionMap = useMemo(() => {
@@ -202,8 +207,8 @@ function StageSelectionPanel({
         })}
       </div>
 
-      <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0}>
-        Approve & Continue
+      <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving}>
+        {approving ? "Approving..." : "Approve & Continue"}
       </Button>
     </div>
   );
@@ -215,7 +220,7 @@ export function QuestionCards({
   submitLabel = "Submit Answers & Continue Research",
 }: {
   questions: ResearchQuestion[];
-  onSubmit: (answers: string) => void;
+  onSubmit: (answers: string) => void | Promise<void>;
   submitLabel?: string;
 }) {
   const [selections, setSelections] = useState<Record<string, string | null>>(() => {
@@ -239,13 +244,24 @@ export function QuestionCards({
     return initial;
   });
 
-  const handleSubmit = () => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
     const lines = questions.map((q) => {
       const sel = selections[q.id];
       const answer = sel !== null ? sel : (customText[q.id] ?? q.proposed_answer);
       return `Q: ${q.question}\nA: ${answer}`;
     });
-    onSubmit(lines.join("\n\n"));
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit(lines.join("\n\n"));
+    } catch (err) {
+      console.error("Failed to submit answers:", err);
+      setError(err instanceof Error ? err.message : String(err));
+      setSubmitting(false);
+    }
   };
 
   // Use a special "__other__" value to represent the "Other" option in RadioGroup
@@ -356,8 +372,14 @@ export function QuestionCards({
         );
       })}
 
-      <Button onClick={handleSubmit}>
-        {submitLabel}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Button onClick={handleSubmit} disabled={submitting}>
+        {submitting ? "Submitting..." : submitLabel}
       </Button>
     </div>
   );

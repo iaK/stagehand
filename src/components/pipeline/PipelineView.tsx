@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore } from "../../stores/processStore";
@@ -13,41 +13,54 @@ interface PipelineViewProps {
 
 export function PipelineView({ onToggleHistory }: PipelineViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { activeTask, executions, loadExecutions, loadTaskStages } =
-    useTaskStore();
-  const rawFilteredStages = useTaskStore((s) => s.getActiveTaskStageTemplates());
-  // Memoize by comparing IDs to avoid new array reference causing infinite re-renders
-  const prevIdsRef = useRef<string>("");
-  const prevFilteredRef = useRef<StageTemplate[]>(rawFilteredStages);
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const loadTaskStages = useTaskStore((s) => s.loadTaskStages);
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const taskStages = useTaskStore((s) => s.taskStages);
+
+  // Compute filtered stages from stable selectors
+  const activeTaskId = activeTask?.id;
   const filteredStages = useMemo(() => {
-    const ids = rawFilteredStages.map((s) => s.id).join(",");
-    if (ids === prevIdsRef.current) return prevFilteredRef.current;
-    prevIdsRef.current = ids;
-    prevFilteredRef.current = rawFilteredStages;
-    return rawFilteredStages;
-  }, [rawFilteredStages]);
+    if (!activeTaskId) return stageTemplates;
+    const selectedIds = taskStages[activeTaskId];
+    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    const idSet = new Set(selectedIds);
+    return stageTemplates.filter((t) => idSet.has(t.id));
+  }, [stageTemplates, taskStages, activeTaskId]);
 
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
 
+  // Stable primitive values for effect dependencies
+  const projectId = activeProject?.id;
+  const currentStageId = activeTask?.current_stage_id;
+
   // Load executions and task stages when task changes
   useEffect(() => {
-    if (activeProject && activeTask) {
-      loadExecutions(activeProject.id, activeTask.id);
-      loadTaskStages(activeProject.id, activeTask.id);
+    if (projectId && activeTaskId) {
+      loadExecutions(projectId, activeTaskId).catch((err) =>
+        console.error("Failed to load executions:", err),
+      );
+      loadTaskStages(projectId, activeTaskId).catch((err) =>
+        console.error("Failed to load task stages:", err),
+      );
     }
-  }, [activeProject, activeTask, loadExecutions, loadTaskStages]);
+  }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);
 
   // Auto-select current stage
   useEffect(() => {
-    if (activeTask && filteredStages.length > 0) {
+    if (currentStageId && filteredStages.length > 0) {
       const current = filteredStages.find(
-        (s) => s.id === activeTask.current_stage_id,
+        (s) => s.id === currentStageId,
       );
       setViewingStage(current ?? filteredStages[0]);
+    } else if (filteredStages.length > 0) {
+      setViewingStage(filteredStages[0]);
     } else {
       setViewingStage(null);
     }
-  }, [activeTask, filteredStages]);
+  }, [currentStageId, filteredStages]);
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
@@ -81,7 +94,7 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
       <div className="border-b border-border flex items-center">
         <PipelineStepper
           stages={filteredStages}
-          currentStageId={activeTask.current_stage_id}
+          currentStageId={currentStageId ?? ""}
           executions={executions}
           onStageClick={setViewingStage}
         />

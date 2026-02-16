@@ -14,6 +14,8 @@ import {
   ThinkingBubble,
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
+import { usePrReview } from "../../hooks/usePrReview";
+import { PrReviewOutput } from "../output/PrReviewOutput";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -27,7 +29,10 @@ interface StageViewProps {
 
 export function StageView({ stage }: StageViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { activeTask, executions, stageTemplates, setTaskStages } = useTaskStore();
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const setTaskStages = useTaskStore((s) => s.setTaskStages);
   const { isRunning, streamOutput } = useProcessStore(
     (s) => s.stages[stage.id] ?? DEFAULT_STAGE_STATE,
   );
@@ -36,6 +41,7 @@ export function StageView({ stage }: StageViewProps) {
   const { runStage, approveStage, advanceFromStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
+  const prReview = usePrReview(stage, activeTask);
   const [userInput, setUserInput] = useState("");
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
@@ -43,6 +49,8 @@ export function StageView({ stage }: StageViewProps) {
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
 
   // Sync editable commit message when pending commit appears for this stage
   useEffect(() => {
@@ -56,13 +64,19 @@ export function StageView({ stage }: StageViewProps) {
     setCommitting(true);
     setCommitError(null);
     try {
-      await gitAdd(activeProject.path);
-      const result = await gitCommit(activeProject.path, commitMessage);
-      const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
-      const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
-      useProcessStore.getState().setCommitted(stage.id, shortHash);
-      useProcessStore.getState().clearPendingCommit();
-      await advanceFromStage(activeTask, stage);
+      if (pendingCommit.fixId) {
+        // PR Review fix commit — don't advance
+        await prReview.commitFix(pendingCommit.fixId, commitMessage);
+      } else {
+        // Standard commit — advance to next stage
+        await gitAdd(activeProject.path);
+        const result = await gitCommit(activeProject.path, commitMessage);
+        const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
+        const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
+        useProcessStore.getState().setCommitted(stage.id, shortHash);
+        useProcessStore.getState().clearPendingCommit();
+        await advanceFromStage(activeTask, stage);
+      }
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -72,8 +86,13 @@ export function StageView({ stage }: StageViewProps) {
 
   const handleSkipCommit = async () => {
     if (!activeTask) return;
-    useProcessStore.getState().clearPendingCommit();
-    await advanceFromStage(activeTask, stage);
+    if (pendingCommit?.fixId) {
+      // PR Review fix — skip commit but keep changes
+      await prReview.skipFixCommit(pendingCommit.fixId);
+    } else {
+      useProcessStore.getState().clearPendingCommit();
+      await advanceFromStage(activeTask, stage);
+    }
   };
 
   const stageExecs = useMemo(
@@ -111,41 +130,169 @@ export function StageView({ stage }: StageViewProps) {
 
   const handleRun = async () => {
     if (!activeTask) return;
-    await runStage(activeTask, stage, userInput || undefined);
+    setStageError(null);
+    try {
+      await runStage(activeTask, stage, userInput || undefined);
+    } catch (err) {
+      console.error("Failed to run stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleApprove = async (decision?: string) => {
     if (!activeTask) return;
-    await approveStage(activeTask, stage, decision);
+    setApproving(true);
+    setStageError(null);
+    try {
+      await approveStage(activeTask, stage, decision);
+    } catch (err) {
+      console.error("Failed to approve stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+      setApproving(false);
+    }
   };
 
   const handleRedo = async () => {
     if (!activeTask) return;
     setShowFeedback(false);
-    await redoStage(activeTask, stage, feedback || undefined);
-    setFeedback("");
+    setStageError(null);
+    try {
+      await redoStage(activeTask, stage, feedback || undefined);
+      setFeedback("");
+    } catch (err) {
+      console.error("Failed to redo stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleSubmitAnswers = async (answers: string) => {
     if (!activeTask) return;
+    setStageError(null);
     await redoStage(activeTask, stage, answers);
   };
 
   const handleApproveWithStages = async (selectedStageIds: string[]) => {
     if (!activeTask || !activeProject) return;
-    // Build stages with sort orders from the templates
-    const stages = selectedStageIds
-      .map((id) => {
-        const t = stageTemplates.find((s) => s.id === id);
-        return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
-      })
-      .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
-    // Persist selected stages before approving
-    await setTaskStages(activeProject.id, activeTask.id, stages);
-    await approveStage(activeTask, stage);
+    setApproving(true);
+    try {
+      // Auto-include PR Review whenever PR Preparation is selected
+      let ids = [...selectedStageIds];
+      const hasPrPrep = stageTemplates.some(
+        (t) => ids.includes(t.id) && t.name === "PR Preparation",
+      );
+      if (hasPrPrep) {
+        const prReviewTemplate = stageTemplates.find((t) => t.name === "PR Review");
+        if (prReviewTemplate && !ids.includes(prReviewTemplate.id)) {
+          ids.push(prReviewTemplate.id);
+        }
+      }
+
+      // Build stages with sort orders from the templates
+      const stages = ids
+        .map((id) => {
+          const t = stageTemplates.find((s) => s.id === id);
+          return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
+        })
+        .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
+      // Persist selected stages before approving
+      await setTaskStages(activeProject.id, activeTask.id, stages);
+      await approveStage(activeTask, stage);
+    } catch (err) {
+      console.error("Failed to approve with stages:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+      setApproving(false);
+    }
   };
 
   if (!activeProject || !activeTask) return null;
+
+  // PR Review: custom rendering — no standard stage flow
+  if (stage.output_format === "pr_review") {
+    const noPrUrl = !activeTask.pr_url;
+    return (
+      <div className="p-6 max-w-4xl">
+        {/* Stage Header */}
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold text-foreground">{stage.name}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
+        </div>
+
+        {noPrUrl ? (
+          <Alert variant="destructive">
+            <AlertDescription>
+              No PR URL found on this task. Please create a PR first (via the PR Preparation stage).
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <PrReviewOutput
+              fixes={prReview.fixes}
+              fixingId={prReview.fixingId}
+              onFix={prReview.fixComment}
+              onSkip={prReview.skipFix}
+              onMarkDone={prReview.markDone}
+              onRefresh={prReview.fetchReviews}
+              loading={prReview.loading}
+              isCompleted={activeTask.status === "completed"}
+              error={prReview.error}
+              streamOutput={streamOutput}
+            />
+
+            {/* Commit dialog for individual fixes */}
+            {pendingCommit?.stageId === stage.id && pendingCommit.fixId && (
+              <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  <span className="text-sm font-medium text-foreground">
+                    Commit Fix
+                  </span>
+                </div>
+
+                {pendingCommit.diffStat && (
+                  <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
+                    {pendingCommit.diffStat}
+                  </pre>
+                )}
+
+                <Textarea
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  rows={3}
+                  className="font-mono mb-3 resize-none"
+                />
+
+                {commitError && (
+                  <Alert variant="destructive" className="mb-3">
+                    <AlertDescription>{commitError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCommit}
+                    disabled={committing || !commitMessage.trim()}
+                    size="sm"
+                  >
+                    {committing ? "Committing..." : "Commit"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSkipCommit}
+                    disabled={committing}
+                  >
+                    Skip
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   const showInitialForm =
     isCurrentStage && (stageStatus === "pending" || !latestExecution);
@@ -181,6 +328,11 @@ export function StageView({ stage }: StageViewProps) {
                 className="mt-2"
               />
             </div>
+          )}
+          {stageError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{stageError}</AlertDescription>
+            </Alert>
           )}
           <Button onClick={handleRun} disabled={isRunning}>
             Run Stage
@@ -366,7 +518,14 @@ export function StageView({ stage }: StageViewProps) {
                 onSubmitAnswers={handleSubmitAnswers}
                 isApproved={false}
                 stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
+                approving={approving}
               />
+
+              {stageError && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertDescription>{stageError}</AlertDescription>
+                </Alert>
+              )}
 
               {/* Redo actions */}
               {isCurrentStage && (
@@ -410,6 +569,11 @@ export function StageView({ stage }: StageViewProps) {
               {latestExecution.error_message && (
                 <Alert variant="destructive">
                   <AlertDescription>{latestExecution.error_message}</AlertDescription>
+                </Alert>
+              )}
+              {stageError && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertDescription>{stageError}</AlertDescription>
                 </Alert>
               )}
               {isCurrentStage && (

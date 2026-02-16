@@ -26,7 +26,11 @@ interface TaskListProps {
 }
 
 export function TaskList({ onEdit }: TaskListProps) {
-  const { tasks, activeTask, setActiveTask, updateTask, executions } = useTaskStore();
+  const tasks = useTaskStore((s) => s.tasks);
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const setActiveTask = useTaskStore((s) => s.setActiveTask);
+  const updateTask = useTaskStore((s) => s.updateTask);
+  const executions = useTaskStore((s) => s.executions);
   const activeProject = useProjectStore((s) => s.activeProject);
   const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
 

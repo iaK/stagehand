@@ -11,6 +11,9 @@ import {
   gitCreateBranch,
   gitCheckoutBranch,
   gitBranchExists,
+  gitPush,
+  gitDefaultBranch,
+  ghCreatePr,
 } from "../lib/git";
 import * as repo from "../lib/repositories";
 import type {
@@ -23,10 +26,14 @@ import type {
 
 export function useStageExecution() {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { stageTemplates, executions, loadExecutions, updateTask } =
-    useTaskStore();
-  const { appendOutput, clearOutput, setRunning, setStopped } =
-    useProcessStore();
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const executions = useTaskStore((s) => s.executions);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const updateTask = useTaskStore((s) => s.updateTask);
+  const appendOutput = useProcessStore((s) => s.appendOutput);
+  const clearOutput = useProcessStore((s) => s.clearOutput);
+  const setRunning = useProcessStore((s) => s.setRunning);
+  const setStopped = useProcessStore((s) => s.setStopped);
 
   const runStage = useCallback(
     async (task: Task, stage: StageTemplate, userInput?: string) => {
@@ -86,6 +93,7 @@ export function useStageExecution() {
       clearOutput(stage.id);
       setRunning(stage.id, "spawning");
 
+      let executionId: string | null = null;
       try {
         // Find previous completed execution (using filtered stage list from store)
         const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
@@ -129,9 +137,23 @@ export function useStageExecution() {
             const firstAttempt = prevAttempts[0];
             if (firstAttempt.user_input && userInput) {
               effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+            } else if (firstAttempt.user_input && !userInput) {
+              // Retry without new input — re-use original input
+              effectiveUserInput = firstAttempt.user_input;
             }
           }
         }
+
+        // Fetch approved stage summaries for {{stage_summaries}}
+        const summaries = await repo.getApprovedStageSummaries(
+          activeProject.id,
+          task.id,
+        );
+        const stageSummariesText = summaries.length > 0
+          ? summaries
+              .map((s) => `### ${s.stage_name}\n${s.stage_summary}`)
+              .join("\n\n")
+          : undefined;
 
         // Render prompt
         const prompt = renderPrompt(stage.prompt_template, {
@@ -140,13 +162,14 @@ export function useStageExecution() {
           userInput: effectiveUserInput,
           userDecision: prevExec?.user_decision ?? undefined,
           priorAttemptOutput,
+          stageSummaries: stageSummariesText,
         });
 
         // Always use a fresh session — context is passed via the prompt template
         const sessionId = crypto.randomUUID();
 
         // Create execution record
-        const executionId = crypto.randomUUID();
+        executionId = crypto.randomUUID();
         const execution: Omit<StageExecution, "completed_at"> = {
           id: executionId,
           task_id: task.id,
@@ -166,6 +189,7 @@ export function useStageExecution() {
           error_message: null,
           thinking_output: null,
           stage_result: null,
+          stage_summary: null,
           started_at: new Date().toISOString(),
         };
 
@@ -243,7 +267,7 @@ export function useStageExecution() {
               );
               // Update execution in DB
               finalizeExecution(
-                executionId,
+                executionId!,
                 stage,
                 rawOutput,
                 resultText,
@@ -255,7 +279,7 @@ export function useStageExecution() {
             case "error":
               setStopped(stage.id);
               appendOutput(stage.id, `[Error] ${event.message}`);
-              repo.updateStageExecution(activeProject!.id, executionId, {
+              repo.updateStageExecution(activeProject!.id, executionId!, {
                 status: "failed",
                 error_message: event.message,
                 completed_at: new Date().toISOString(),
@@ -283,8 +307,21 @@ export function useStageExecution() {
           onEvent,
         );
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
         setStopped(stage.id);
-        appendOutput(stage.id, `[Failed] ${err}`);
+        appendOutput(stage.id, `[Failed] ${errorMsg}`);
+        // Update the execution record with the actual error (if it was created)
+        if (executionId) {
+          try {
+            await repo.updateStageExecution(activeProject.id, executionId, {
+              status: "failed",
+              error_message: errorMsg,
+              completed_at: new Date().toISOString(),
+            });
+          } catch {
+            // Execution may not have been created yet — ignore
+          }
+        }
         await loadExecutions(activeProject.id, task.id).catch(() => {});
       }
     },
@@ -401,11 +438,15 @@ export function useStageExecution() {
           break;
       }
 
+      // Extract a concise summary for this stage
+      const stageSummary = extractStageSummary(stage, latest, decision);
+
       // Update execution with decision and computed stage_result
       await repo.updateStageExecution(activeProject.id, latest.id, {
         status: "approved",
         user_decision: decision ?? null,
         stage_result: stageResult,
+        stage_summary: stageSummary,
       });
 
       // For commit-eligible stages, generate pending commit and wait for user decision
@@ -415,6 +456,15 @@ export function useStageExecution() {
         await generatePendingCommit(task, stage);
         await loadExecutions(activeProject.id, task.id);
         return;
+      }
+
+      // PR Preparation: create the actual PR and save URL to the task
+      if (stage.name === "PR Preparation" && task.branch_name) {
+        try {
+          await createPullRequest(task, decision);
+        } catch {
+          // PR creation is non-critical — still advance
+        }
       }
 
       // Non-commit stages: advance immediately
@@ -503,6 +553,43 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       });
     },
     [activeProject],
+  );
+
+  const createPullRequest = useCallback(
+    async (task: Task, decision?: string) => {
+      if (!activeProject || !task.branch_name) return;
+
+      // Parse the PR fields from the user decision
+      let title = task.title;
+      let body = "";
+      if (decision) {
+        try {
+          const fields = JSON.parse(decision);
+          if (fields.title) title = fields.title;
+          const parts: string[] = [];
+          if (fields.description) parts.push(fields.description);
+          if (fields.test_plan) parts.push(`## Test Plan\n\n${fields.test_plan}`);
+          body = parts.join("\n\n");
+        } catch {
+          // Use defaults
+        }
+      }
+
+      // Push the branch to remote
+      await gitPush(activeProject.path, task.branch_name);
+
+      // Determine base branch
+      const baseBranch = await gitDefaultBranch(activeProject.path) ?? undefined;
+
+      // Create the PR
+      const prUrl = await ghCreatePr(activeProject.path, title, body, baseBranch);
+
+      // Save PR URL to the task
+      if (prUrl) {
+        await updateTask(activeProject.id, task.id, { pr_url: prUrl.trim() });
+      }
+    },
+    [activeProject, updateTask],
   );
 
   const advanceFromStageInner = useCallback(
@@ -650,6 +737,8 @@ function extractStageOutput(
       }
       return raw;
     }
+    case "pr_review":
+      return raw || "PR Review completed";
     default:
       return raw;
   }
@@ -671,6 +760,96 @@ function formatSelectedApproach(decision: string): string {
   } catch {
     return decision;
   }
+}
+
+/** Extract a concise summary from a stage's output for use in PR preparation. */
+function extractStageSummary(
+  stage: StageTemplate,
+  execution: StageExecution,
+  decision?: string,
+): string | null {
+  const raw = execution.parsed_output ?? execution.raw_output ?? "";
+  if (!raw.trim()) return null;
+
+  switch (stage.output_format) {
+    case "research": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.research) return truncateToSentences(data.research, 3);
+      } catch { /* fall through */ }
+      return truncateToSentences(raw, 3);
+    }
+    case "plan": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.plan) return truncateToSentences(data.plan, 3);
+      } catch { /* fall through */ }
+      return truncateToSentences(raw, 3);
+    }
+    case "options": {
+      if (decision) {
+        try {
+          const selected = JSON.parse(decision);
+          if (Array.isArray(selected) && selected.length > 0) {
+            const approach = selected[0];
+            return `Selected: ${approach.title} — ${truncateToSentences(approach.description, 2)}`;
+          }
+        } catch { /* fall through */ }
+      }
+      return truncateToSentences(raw, 3);
+    }
+    case "findings": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.summary) return data.summary;
+      } catch {
+        // Phase 2 text output — summarize
+      }
+      return truncateToSentences(raw, 3);
+    }
+    case "pr_review":
+      return raw ? truncateToSentences(raw, 3) : null;
+    case "text": {
+      return extractImplementationSummary(raw);
+    }
+    default:
+      return truncateToSentences(raw, 3);
+  }
+}
+
+/** Extract first N sentences from text. */
+function truncateToSentences(text: string, n: number): string {
+  // Strip markdown headers for cleaner extraction
+  const cleaned = text.replace(/^#+\s+.*$/gm, "").trim();
+  // Match sentences ending with . ! or ?
+  const sentences = cleaned.match(/[^.!?]*[.!?]+/g);
+  if (!sentences || sentences.length === 0) {
+    // No clear sentences — take first ~300 chars
+    return cleaned.slice(0, 300).trim();
+  }
+  return sentences.slice(0, n).join("").trim();
+}
+
+/** Extract summary from implementation (text format) output. */
+function extractImplementationSummary(raw: string): string | null {
+  if (!raw.trim()) return null;
+
+  // Look for explicit summary sections near end of output
+  const summaryMatch = raw.match(
+    /(?:^|\n)#+\s*(?:Summary|Changes Made|What (?:was|I) (?:changed|did))[^\n]*\n([\s\S]{10,500}?)(?:\n#|\n---|\n\*\*|$)/i,
+  );
+  if (summaryMatch) {
+    return truncateToSentences(summaryMatch[1].trim(), 3);
+  }
+
+  // Fall back to last paragraph (implementation output often ends with a summary)
+  const paragraphs = raw.split(/\n\n+/).filter((p) => p.trim().length > 20);
+  if (paragraphs.length > 0) {
+    const last = paragraphs[paragraphs.length - 1].trim();
+    return truncateToSentences(last, 3);
+  }
+
+  return truncateToSentences(raw, 3);
 }
 
 function validateGate(

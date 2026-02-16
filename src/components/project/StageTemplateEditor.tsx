@@ -38,7 +38,8 @@ export function StageTemplateEditor({ onClose }: StageTemplateEditorProps) {
 
 export function StageTemplateEditorContent() {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { stageTemplates, loadStageTemplates } = useTaskStore();
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [selectedId, setSelectedId] = useState<string | null>(
     stageTemplates[0]?.id ?? null,
   );
@@ -163,6 +164,7 @@ export function StageTemplateEditorContent() {
                 <SelectItem value="structured">Structured</SelectItem>
                 <SelectItem value="research">Research (Q&A)</SelectItem>
                 <SelectItem value="plan">Plan (Q&A)</SelectItem>
+                <SelectItem value="pr_review">PR Review</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -183,7 +185,7 @@ export function StageTemplateEditorContent() {
           />
           <p className="text-[10px] text-muted-foreground mt-1">
             Variables: {"{{task_description}}"}, {"{{previous_output}}"},
-            {"{{user_input}}"}, {"{{user_decision}}"}
+            {"{{user_input}}"}, {"{{user_decision}}"}, {"{{stage_summaries}}"}
           </p>
         </div>
 

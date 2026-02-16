@@ -22,7 +22,8 @@ export function Sidebar() {
     setActiveProject,
     archiveProject,
   } = useProjectStore();
-  const { loadTasks, loadStageTemplates } = useTaskStore();
+  const loadTasks = useTaskStore((s) => s.loadTasks);
+  const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showProjectCreate, setShowProjectCreate] = useState(false);
@@ -37,9 +38,15 @@ export function Sidebar() {
 
   useEffect(() => {
     if (activeProject) {
-      loadTasks(activeProject.id);
-      loadStageTemplates(activeProject.id);
-      loadLinearForProject(activeProject.id);
+      loadTasks(activeProject.id).catch((err) =>
+        console.error("Failed to load tasks:", err),
+      );
+      loadStageTemplates(activeProject.id).catch((err) =>
+        console.error("Failed to load stage templates:", err),
+      );
+      loadLinearForProject(activeProject.id).catch((err) =>
+        console.error("Failed to load Linear settings:", err),
+      );
     }
   }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject]);
 

@@ -28,7 +28,7 @@ interface TaskStore {
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "pr_url">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
@@ -76,15 +76,24 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (runningProcessIds !== null && runningProcessIds.length === 0) {
       for (const exec of executions) {
         if (exec.status === "running") {
-          await repo.updateStageExecution(projectId, exec.id, {
-            status: "failed",
-            error_message: "Process crashed or was interrupted",
-            completed_at: new Date().toISOString(),
-          });
-          exec.status = "failed";
-          exec.error_message = "Process crashed or was interrupted";
-          // Also reset the process store so the Retry button isn't stuck disabled
-          useProcessStore.getState().setStopped(exec.stage_template_id);
+          // Skip if the process store thinks this stage is actively running
+          // (process may be spawning or not yet registered with the backend)
+          const stageState = useProcessStore.getState().stages[exec.stage_template_id];
+          if (stageState?.isRunning) continue;
+
+          try {
+            await repo.updateStageExecution(projectId, exec.id, {
+              status: "failed",
+              error_message: "Process crashed or was interrupted",
+              completed_at: new Date().toISOString(),
+            });
+            exec.status = "failed";
+            exec.error_message = "Process crashed or was interrupted";
+            // Also reset the process store so the Retry button isn't stuck disabled
+            useProcessStore.getState().setStopped(exec.stage_template_id);
+          } catch (err) {
+            console.error("Failed to clean up stale execution:", exec.id, err);
+          }
         }
       }
     }

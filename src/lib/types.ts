@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_review";
 export type ResultMode = "replace" | "append" | "passthrough";
 
 export interface Task {
@@ -42,6 +42,7 @@ export interface Task {
   current_stage_id: string | null;
   status: TaskStatus;
   branch_name: string | null;
+  pr_url: string | null;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -64,6 +65,7 @@ export interface StageExecution {
   error_message: string | null;
   thinking_output: string | null;
   stage_result: string | null;
+  stage_summary: string | null;
   started_at: string;
   completed_at: string | null;
 }
@@ -144,6 +146,26 @@ export interface ResearchOutput {
 export interface StageSuggestion {
   name: string;
   reason: string;
+}
+
+// === PR Review ===
+
+export interface PrReviewFix {
+  id: string;
+  execution_id: string;
+  comment_id: number;
+  comment_type: "review" | "inline" | "conversation";
+  author: string;
+  author_avatar_url: string | null;
+  body: string;
+  file_path: string | null;
+  line: number | null;
+  diff_hunk: string | null;
+  state: string;
+  fix_status: "pending" | "fixing" | "fixed" | "skipped";
+  fix_commit_hash: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // === Linear ===

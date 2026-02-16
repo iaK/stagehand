@@ -98,6 +98,112 @@ export async function gitDefaultBranch(workingDir: string): Promise<string | nul
   }
 }
 
+export async function gitPush(workingDir: string, branchName: string): Promise<string> {
+  return runGit(workingDir, "push", "-u", "origin", branchName);
+}
+
+export async function runGh(workingDir: string, ...args: string[]): Promise<string> {
+  return invoke<string>("run_gh_command", {
+    args,
+    workingDirectory: workingDir,
+  });
+}
+
+export async function ghCreatePr(
+  workingDir: string,
+  title: string,
+  body: string,
+  baseBranch?: string,
+): Promise<string> {
+  const args = ["pr", "create", "--title", title, "--body", body];
+  if (baseBranch) {
+    args.push("--base", baseBranch);
+  }
+  return runGh(workingDir, ...args);
+}
+
+export function parsePrUrl(prUrl: string): { owner: string; repo: string; number: number } | null {
+  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
+}
+
+export interface GhReview {
+  id: number;
+  state: string;
+  body: string;
+  user: { login: string; avatar_url: string };
+}
+
+export interface GhReviewComment {
+  id: number;
+  body: string;
+  path: string;
+  line: number | null;
+  original_line: number | null;
+  diff_hunk: string;
+  user: { login: string; avatar_url: string };
+}
+
+export interface GhIssueComment {
+  id: number;
+  body: string;
+  user: { login: string; avatar_url: string };
+}
+
+export async function ghFetchPrReviews(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GhReview[]> {
+  const raw = await runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+    "--paginate",
+  );
+  return JSON.parse(raw);
+}
+
+export async function ghFetchPrComments(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GhReviewComment[]> {
+  const raw = await runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/pulls/${prNumber}/comments`,
+    "--paginate",
+  );
+  return JSON.parse(raw);
+}
+
+export async function ghFetchPrIssueComments(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GhIssueComment[]> {
+  const raw = await runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/issues/${prNumber}/comments`,
+    "--paginate",
+  );
+  return JSON.parse(raw);
+}
+
+export async function ghCommentOnPr(
+  workingDir: string,
+  prNumber: number,
+  body: string,
+): Promise<string> {
+  return runGh(workingDir, "pr", "comment", String(prNumber), "--body", body);
+}
+
 export async function readFileContents(path: string): Promise<string | null> {
   return invoke<string | null>("read_file_contents", { path });
 }

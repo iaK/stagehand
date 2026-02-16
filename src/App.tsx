@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Layout } from "./components/layout/Layout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { checkClaudeAvailable } from "./lib/claude";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,6 +16,7 @@ function App() {
   }, []);
 
   return (
+    <ErrorBoundary>
     <TooltipProvider>
       <div className="h-screen overflow-hidden">
         {claudeError && (
@@ -40,6 +42,7 @@ function App() {
         <Layout />
       </div>
     </TooltipProvider>
+    </ErrorBoundary>
   );
 }
 

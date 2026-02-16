@@ -5,7 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
 export function StageHistory() {
-  const { stageTemplates, executions } = useTaskStore();
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const executions = useTaskStore((s) => s.executions);
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
 
   const completedStages = stageTemplates.filter((stage) =>

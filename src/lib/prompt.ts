@@ -4,6 +4,7 @@ interface PromptContext {
   userInput?: string;
   userDecision?: string;
   priorAttemptOutput?: string;
+  stageSummaries?: string;
 }
 
 export function renderPrompt(
@@ -29,6 +30,10 @@ export function renderPrompt(
     /\{\{prior_attempt_output\}\}/g,
     context.priorAttemptOutput ?? "",
   );
+  result = result.replace(
+    /\{\{stage_summaries\}\}/g,
+    context.stageSummaries ?? "",
+  );
 
   // Handle {{#if variable}} ... {{else}} ... {{/if}} blocks
   result = result.replace(
@@ -43,7 +48,9 @@ export function renderPrompt(
               ? context.userDecision
               : varName === "prior_attempt_output"
                 ? context.priorAttemptOutput
-                : undefined;
+                : varName === "stage_summaries"
+                  ? context.stageSummaries
+                  : undefined;
       // Split on {{else}} — first part for truthy, second for falsy
       const parts = content.split(/\{\{else\}\}/);
       if (value) {
