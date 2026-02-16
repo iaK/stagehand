@@ -23,6 +23,20 @@ export async function gitAdd(workingDir: string): Promise<string> {
   return runGit(workingDir, "add", "-A");
 }
 
+export async function gitAddFiles(workingDir: string, files: string[]): Promise<string> {
+  if (files.length === 0) return "";
+  return runGit(workingDir, "add", "--", ...files);
+}
+
+export async function getChangedFiles(workingDir: string): Promise<string[]> {
+  const status = await gitStatus(workingDir);
+  return status
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.slice(3).trim());
+}
+
 export async function gitCommit(workingDir: string, message: string): Promise<string> {
   return runGit(workingDir, "commit", "-m", message);
 }
@@ -151,6 +165,22 @@ export interface GhIssueComment {
   user: { login: string; avatar_url: string };
 }
 
+function parsePaginatedJson<T>(raw: string): T[] {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // gh --paginate may concatenate arrays: [...][...] — fix by wrapping
+    const fixed = "[" + raw.replace(/\]\s*\[/g, ",") + "]";
+    try {
+      // The outer brackets make it [[...items...], but the replace joined them
+      // Actually the replace turns "][" into "," so [1,2][3,4] becomes [1,2,3,4]
+      return JSON.parse(fixed);
+    } catch {
+      return [];
+    }
+  }
+}
+
 export async function ghFetchPrReviews(
   workingDir: string,
   owner: string,
@@ -163,7 +193,7 @@ export async function ghFetchPrReviews(
     `repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
     "--paginate",
   );
-  return JSON.parse(raw);
+  return parsePaginatedJson<GhReview>(raw);
 }
 
 export async function ghFetchPrComments(
@@ -178,7 +208,7 @@ export async function ghFetchPrComments(
     `repos/${owner}/${repo}/pulls/${prNumber}/comments`,
     "--paginate",
   );
-  return JSON.parse(raw);
+  return parsePaginatedJson<GhReviewComment>(raw);
 }
 
 export async function ghFetchPrIssueComments(
@@ -193,15 +223,22 @@ export async function ghFetchPrIssueComments(
     `repos/${owner}/${repo}/issues/${prNumber}/comments`,
     "--paginate",
   );
-  return JSON.parse(raw);
+  return parsePaginatedJson<GhIssueComment>(raw);
 }
 
 export async function ghCommentOnPr(
   workingDir: string,
+  owner: string,
+  repo: string,
   prNumber: number,
   body: string,
 ): Promise<string> {
-  return runGh(workingDir, "pr", "comment", String(prNumber), "--body", body);
+  return runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/issues/${prNumber}/comments`,
+    "-f", `body=${body}`,
+  );
 }
 
 export async function readFileContents(path: string): Promise<string | null> {

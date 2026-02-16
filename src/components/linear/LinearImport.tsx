@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { LinearIssue } from "../../lib/types";
 
@@ -70,7 +69,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[560px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-[560px] max-h-[80vh] !flex !flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import from Linear</DialogTitle>
         </DialogHeader>
@@ -83,7 +82,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
           autoFocus
         />
 
-        <ScrollArea className="flex-1 min-h-0 max-h-[50vh]">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {loading && (
             <div className="text-sm text-muted-foreground text-center py-8">
               Loading issues...
@@ -135,7 +134,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
                 </button>
               );
             })}
-        </ScrollArea>
+        </div>
 
         <Separator />
         <DialogFooter>

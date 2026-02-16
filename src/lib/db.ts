@@ -213,9 +213,49 @@ async function initProjectSchema(db: Database): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (execution_id) REFERENCES stage_executions(id),
-      UNIQUE(execution_id, comment_id)
+      UNIQUE(execution_id, comment_id, comment_type)
     )
   `);
+
+  // Migrate: widen unique constraint from (execution_id, comment_id) to include comment_type
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS _pr_review_fixes_v2 (
+      id TEXT PRIMARY KEY,
+      execution_id TEXT NOT NULL,
+      comment_id INTEGER NOT NULL,
+      comment_type TEXT NOT NULL DEFAULT 'inline',
+      author TEXT NOT NULL DEFAULT '',
+      author_avatar_url TEXT,
+      body TEXT NOT NULL DEFAULT '',
+      file_path TEXT,
+      line INTEGER,
+      diff_hunk TEXT,
+      state TEXT NOT NULL DEFAULT 'COMMENTED',
+      fix_status TEXT NOT NULL DEFAULT 'pending',
+      fix_commit_hash TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (execution_id) REFERENCES stage_executions(id),
+      UNIQUE(execution_id, comment_id, comment_type)
+    )
+  `).catch(() => { /* table already exists */ });
+
+  // If old table has wrong constraint, migrate data
+  try {
+    const oldInfo = await db.select<{ sql: string }[]>(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='pr_review_fixes'",
+    );
+    if (oldInfo.length > 0 && !oldInfo[0].sql.includes("comment_type)")) {
+      await db.execute("INSERT OR IGNORE INTO _pr_review_fixes_v2 SELECT * FROM pr_review_fixes");
+      await db.execute("DROP TABLE pr_review_fixes");
+      await db.execute("ALTER TABLE _pr_review_fixes_v2 RENAME TO pr_review_fixes");
+    } else {
+      await db.execute("DROP TABLE IF EXISTS _pr_review_fixes_v2");
+    }
+  } catch {
+    // Migration already completed or not needed
+    await db.execute("DROP TABLE IF EXISTS _pr_review_fixes_v2").catch(() => {});
+  }
 
   await migratePrReviewStage(db);
 }

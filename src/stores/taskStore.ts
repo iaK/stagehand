@@ -11,6 +11,7 @@ interface TaskStore {
   executions: StageExecution[];
   loading: boolean;
   taskStages: Record<string, string[]>; // taskId → stageTemplateId[]
+  taskExecStatuses: Record<string, string>; // taskId → latest execution status
 
   loadTasks: (projectId: string) => Promise<void>;
   loadStageTemplates: (projectId: string) => Promise<void>;
@@ -43,12 +44,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   executions: [],
   loading: false,
   taskStages: {},
+  taskExecStatuses: {},
 
   loadTasks: async (projectId) => {
-    const tasks = await repo.listTasks(projectId);
+    const [tasks, taskExecStatuses] = await Promise.all([
+      repo.listTasks(projectId),
+      repo.getLatestExecutionStatusPerTask(projectId),
+    ]);
     const current = get().activeTask;
     set({
       tasks,
+      taskExecStatuses,
       activeTask: current
         ? tasks.find((t) => t.id === current.id) ?? null
         : null,
@@ -98,7 +104,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       }
     }
 
-    set({ executions });
+    const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
+    set({ executions, taskExecStatuses });
   },
 
   loadTaskStages: async (projectId, taskId) => {
@@ -158,8 +165,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   refreshExecution: async (projectId, _executionId) => {
     const task = get().activeTask;
     if (task) {
-      const executions = await repo.listStageExecutions(projectId, task.id);
-      set({ executions });
+      const [executions, taskExecStatuses] = await Promise.all([
+        repo.listStageExecutions(projectId, task.id),
+        repo.getLatestExecutionStatusPerTask(projectId),
+      ]);
+      set({ executions, taskExecStatuses });
     }
   },
 }));

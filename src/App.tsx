@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import { Layout } from "./components/layout/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { checkClaudeAvailable } from "./lib/claude";
+import { requestNotificationPermission } from "./lib/notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   const [claudeError, setClaudeError] = useState<string | null>(null);
 
   useEffect(() => {
+    requestNotificationPermission();
     checkClaudeAvailable().catch((err) => {
       setClaudeError(String(err));
     });
@@ -41,6 +44,7 @@ function App() {
         )}
         <Layout />
       </div>
+      <Toaster position="bottom-right" />
     </TooltipProvider>
     </ErrorBoundary>
   );

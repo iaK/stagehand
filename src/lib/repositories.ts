@@ -256,6 +256,26 @@ export async function updateTask(
 
 // === Stage Executions ===
 
+export async function getLatestExecutionStatusPerTask(
+  projectId: string,
+): Promise<Record<string, string>> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ task_id: string; status: string }[]>(
+    `SELECT se.task_id, se.status FROM stage_executions se
+     INNER JOIN (
+       SELECT task_id, MAX(started_at) as max_started
+       FROM stage_executions
+       GROUP BY task_id
+     ) latest ON se.task_id = latest.task_id AND se.started_at = latest.max_started`,
+    [],
+  );
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    result[row.task_id] = row.status;
+  }
+  return result;
+}
+
 export async function listStageExecutions(
   projectId: string,
   taskId: string,
@@ -443,7 +463,7 @@ export async function upsertPrReviewFix(
   await db.execute(
     `INSERT INTO pr_review_fixes (id, execution_id, comment_id, comment_type, author, author_avatar_url, body, file_path, line, diff_hunk, state, fix_status, fix_commit_hash, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-     ON CONFLICT(execution_id, comment_id) DO UPDATE SET
+     ON CONFLICT(execution_id, comment_id, comment_type) DO UPDATE SET
        author = $5, author_avatar_url = $6, body = $7, file_path = $8, line = $9,
        diff_hunk = $10, state = $11, updated_at = $15`,
     [

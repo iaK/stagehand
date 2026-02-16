@@ -111,7 +111,6 @@ export function StageView({ stage }: StageViewProps) {
   const stageStatus = latestExecution?.status ?? "pending";
   const isCurrentStage = activeTask?.current_stage_id === stage.id;
   const isApproved = stageStatus === "approved";
-  const hasHistory = stageExecs.length > 1;
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
 
@@ -225,6 +224,17 @@ export function StageView({ stage }: StageViewProps) {
           </Alert>
         ) : (
           <>
+            {/* Live stream output while fixing a comment */}
+            {isRunning && prReview.fixingId && (
+              <div className="mb-4">
+                <LiveStreamBubble
+                  streamLines={streamOutput}
+                  label="Fixing review comment..."
+                  onStop={() => killCurrent(stage.id)}
+                />
+              </div>
+            )}
+
             <PrReviewOutput
               fixes={prReview.fixes}
               fixingId={prReview.fixingId}
@@ -310,6 +320,16 @@ export function StageView({ stage }: StageViewProps) {
         )}
       </div>
 
+      {/* Future stage -- not current, nothing has run */}
+      {!isCurrentStage && !latestExecution && (
+        <div className="mb-6 py-6 text-center text-muted-foreground">
+          <svg className="w-8 h-8 mx-auto mb-2 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm">Waiting for earlier stages to complete</p>
+        </div>
+      )}
+
       {/* Initial form -- only when nothing has run yet */}
       {showInitialForm && (
         <div className="mb-6">
@@ -340,9 +360,29 @@ export function StageView({ stage }: StageViewProps) {
         </div>
       )}
 
-      {/* APPROVED: final result + collapsible timeline */}
+      {/* APPROVED: collapsible timeline + final result */}
       {latestExecution && isApproved && (
         <div className="mb-6">
+          {stageExecs.length > 0 && (
+            <Collapsible open={showTimeline} onOpenChange={setShowTimeline} className="mb-4">
+              <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <svg
+                  className={`w-3 h-3 transition-transform ${showTimeline ? "rotate-90" : ""}`}
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                </svg>
+                {showTimeline ? "Hide" : "Show"} process ({stageExecs.length} {stageExecs.length === 1 ? "round" : "rounds"})
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-3">
+                  <StageTimeline executions={stageExecs} stage={stage} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           {(stage.output_format === "research" || stage.output_format === "findings") && (
             <Alert className="mb-4 border-emerald-200 bg-emerald-50 text-emerald-800">
               <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -373,26 +413,6 @@ export function StageView({ stage }: StageViewProps) {
                 label="Final round thinking"
               />
             </div>
-          )}
-
-          {hasHistory && (
-            <Collapsible open={showTimeline} onOpenChange={setShowTimeline} className="mt-4">
-              <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                <svg
-                  className={`w-3 h-3 transition-transform ${showTimeline ? "rotate-90" : ""}`}
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                </svg>
-                {showTimeline ? "Hide" : "Show"} process ({stageExecs.length} rounds)
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-3">
-                  <StageTimeline executions={stageExecs} stage={stage} />
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
           )}
         </div>
       )}

@@ -16,6 +16,7 @@ import {
   ghCreatePr,
 } from "../lib/git";
 import * as repo from "../lib/repositories";
+import { sendNotification } from "../lib/notifications";
 import type {
   Task,
   StageTemplate,
@@ -365,6 +366,9 @@ export function useStageExecution() {
           error_message: wasKilled ? "Stopped by user" : `Process exited with code ${exitCode}`,
           completed_at: new Date().toISOString(),
         });
+        if (!wasKilled) {
+          sendNotification("Stage failed", `${stage.name} encountered an error`);
+        }
       } else {
         // Try to parse structured output
         let parsedOutput = resultText;
@@ -380,6 +384,7 @@ export function useStageExecution() {
           thinking_output: savedThinking,
           completed_at: new Date().toISOString(),
         });
+        sendNotification("Stage complete", `${stage.name} needs your review`);
       }
 
       await loadExecutions(activeProject.id, task.id);
@@ -551,6 +556,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         message: commitMessage,
         diffStat,
       });
+      sendNotification("Ready to commit", `${stage.name} has changes to commit`);
     },
     [activeProject],
   );

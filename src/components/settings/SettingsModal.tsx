@@ -1,35 +1,19 @@
 import { useState } from "react";
 import { useProjectStore } from "../../stores/projectStore";
+import { useTaskStore } from "../../stores/taskStore";
 import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
-import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
+import { SingleTemplateEditor } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
 import { GitHubSettingsContent } from "../github/GitHubSettings";
 import { GitHubConventionsContent } from "../github/GitHubConventions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section =
-  | "archived"
-  | "templates"
-  | "linear"
-  | "github"
-  | "conventions";
+type Section = string; // "archived" | "template:<id>" | "linear" | "github" | "conventions"
 
 type NavItem =
   | { header: string }
   | { section: Section; label: string; projectRequired?: boolean };
-
-const NAV_ITEMS: NavItem[] = [
-  { header: "GENERAL" },
-  { section: "archived", label: "Archived Projects" },
-  { header: "PIPELINE" },
-  { section: "templates", label: "Stage Templates", projectRequired: true },
-  { header: "INTEGRATIONS" },
-  { section: "linear", label: "Linear", projectRequired: true },
-  { section: "github", label: "Git", projectRequired: true },
-  { header: "WORKFLOW" },
-  { section: "conventions", label: "Conventions", projectRequired: true },
-];
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -37,9 +21,26 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const [activeSection, setActiveSection] = useState<Section>("archived");
 
-  const currentItem = NAV_ITEMS.find(
+  const navItems: NavItem[] = [
+    { header: "GENERAL" },
+    { section: "archived", label: "Archived Projects" },
+    { header: "PIPELINE" },
+    ...stageTemplates.map((t) => ({
+      section: `template:${t.id}`,
+      label: t.name,
+      projectRequired: true as const,
+    })),
+    { header: "INTEGRATIONS" },
+    { section: "linear", label: "Linear", projectRequired: true },
+    { section: "github", label: "Git", projectRequired: true },
+    { header: "WORKFLOW" },
+    { section: "conventions", label: "Conventions", projectRequired: true },
+  ];
+
+  const currentItem = navItems.find(
     (i): i is Extract<NavItem, { section: Section }> =>
       "section" in i && i.section === activeSection,
   );
@@ -67,7 +68,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <div className="flex flex-1 min-h-0">
           {/* Left Nav */}
           <nav className="w-48 border-r border-border py-2 overflow-y-auto flex-shrink-0">
-            {NAV_ITEMS.map((item, i) => {
+            {navItems.map((item, i) => {
               if ("header" in item) {
                 return (
                   <div
@@ -129,16 +130,20 @@ function SectionContent({
   section: Section;
   projectId?: string;
 }) {
+  if (section.startsWith("template:")) {
+    const templateId = section.slice("template:".length);
+    return <SingleTemplateEditor templateId={templateId} />;
+  }
   switch (section) {
     case "archived":
       return <ArchivedProjectsSettings />;
-    case "templates":
-      return <StageTemplateEditorContent />;
     case "linear":
       return <LinearSettingsContent projectId={projectId!} />;
     case "github":
       return <GitHubSettingsContent projectId={projectId!} />;
     case "conventions":
       return <GitHubConventionsContent projectId={projectId!} />;
+    default:
+      return null;
   }
 }

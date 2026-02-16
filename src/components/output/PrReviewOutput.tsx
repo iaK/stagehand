@@ -50,14 +50,29 @@ export function PrReviewOutput({
   const skippedCount = fixes.filter((f) => f.fix_status === "skipped").length;
   const pendingCount = fixes.filter((f) => f.fix_status === "pending").length;
 
-  // Sort: active items first, resolved/dismissed at bottom
+  // Sort: pending items first, then fixing, then fixed/skipped/approved/dismissed at bottom
   const sortedFixes = [...fixes].sort((a, b) => {
     const resolvedStates = ["APPROVED", "DISMISSED"];
-    const aResolved = resolvedStates.includes(a.state) ? 1 : 0;
-    const bResolved = resolvedStates.includes(b.state) ? 1 : 0;
+    const doneStatuses = ["fixed", "skipped"];
+    const aResolved = resolvedStates.includes(a.state) || doneStatuses.includes(a.fix_status) ? 1 : 0;
+    const bResolved = resolvedStates.includes(b.state) || doneStatuses.includes(b.fix_status) ? 1 : 0;
     if (aResolved !== bResolved) return aResolved - bResolved;
     return 0;
   });
+
+  if (fixes.length === 0 && loading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 py-8 justify-center text-muted-foreground">
+          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-sm">Fetching PR reviews...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (fixes.length === 0 && !loading) {
     return (
@@ -95,7 +110,12 @@ export function PrReviewOutput({
             <Button
               variant="success"
               size="sm"
-              onClick={onMarkDone}
+              onClick={() => {
+                if (pendingCount > 0) {
+                  if (!window.confirm(`There are still ${pendingCount} pending comment(s). Mark as done anyway?`)) return;
+                }
+                onMarkDone();
+              }}
               disabled={!!fixingId}
             >
               Mark as Done
@@ -155,7 +175,7 @@ function ReviewCard({
   streamOutput?: string[];
 }) {
   const [context, setContext] = useState("");
-  const isResolved = fix.state === "APPROVED" || fix.state === "DISMISSED";
+  const isResolved = fix.state === "APPROVED" || fix.state === "DISMISSED" || fix.fix_status === "fixed" || fix.fix_status === "skipped";
   const isFixing = fix.id === fixingId;
 
   const stateInfo = stateColors[fix.state] ?? { badge: "secondary" as const, label: fix.state };

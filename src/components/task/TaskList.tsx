@@ -31,11 +31,12 @@ export function TaskList({ onEdit }: TaskListProps) {
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
   const updateTask = useTaskStore((s) => s.updateTask);
   const executions = useTaskStore((s) => s.executions);
+  const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const activeProject = useProjectStore((s) => s.activeProject);
   const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
 
-  // For the active task, derive color from the latest execution on its current stage
   const getTaskDotClass = (task: Task) => {
+    // For the active task, use detailed execution data
     if (task.id === activeTask?.id && task.current_stage_id && executions.length > 0) {
       const stageExecs = executions.filter(
         (e) => e.stage_template_id === task.current_stage_id,
@@ -44,6 +45,11 @@ export function TaskList({ onEdit }: TaskListProps) {
       if (latestExec) {
         return pipelineColors[latestExec.status] ?? statusColors[task.status] ?? "bg-zinc-400";
       }
+    }
+    // For all tasks, use the cached latest execution status
+    const execStatus = taskExecStatuses[task.id];
+    if (execStatus) {
+      return pipelineColors[execStatus] ?? statusColors[task.status] ?? "bg-zinc-400";
     }
     return statusColors[task.status] ?? "bg-zinc-400";
   };

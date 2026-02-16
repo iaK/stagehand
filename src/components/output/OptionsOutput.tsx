@@ -41,13 +41,13 @@ export function OptionsOutput({
 
   return (
     <div>
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         {options.map((option) => (
           <button
             key={option.id}
             onClick={() => !isApproved && setSelectedId(option.id)}
             disabled={isApproved}
-            className={`text-left p-4 rounded-lg border transition-all ${
+            className={`text-left p-5 rounded-lg border transition-all ${
               selectedId === option.id
                 ? "border-blue-500 bg-blue-50"
                 : isApproved
@@ -55,24 +55,24 @@ export function OptionsOutput({
                   : "border-border bg-white hover:border-zinc-400"
             }`}
           >
-            <h4 className="text-sm font-medium text-foreground mb-1">
+            <h4 className="text-base font-medium text-foreground mb-2">
               {option.title}
             </h4>
-            <p className="text-xs text-muted-foreground mb-3">{option.description}</p>
-            <div className="grid grid-cols-2 gap-4">
+            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">{option.description}</p>
+            <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-xs text-emerald-600 font-medium mb-1">
+                <p className="text-sm text-emerald-600 font-medium mb-2">
                   Pros
                 </p>
-                <ul className="text-xs text-muted-foreground space-y-0.5">
+                <ul className="text-sm text-muted-foreground space-y-1.5">
                   {option.pros.map((pro, i) => (
                     <li key={i}>+ {pro}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <p className="text-xs text-red-600 font-medium mb-1">Cons</p>
-                <ul className="text-xs text-muted-foreground space-y-0.5">
+                <p className="text-sm text-red-600 font-medium mb-2">Cons</p>
+                <ul className="text-sm text-muted-foreground space-y-1.5">
                   {option.cons.map((con, i) => (
                     <li key={i}>- {con}</li>
                   ))}

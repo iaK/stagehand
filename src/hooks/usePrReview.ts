@@ -12,10 +12,12 @@ import {
   gitPush,
   hasUncommittedChanges,
   gitDiffStat,
-  gitAdd,
+  getChangedFiles,
+  gitAddFiles,
   gitCommit,
 } from "../lib/git";
 import * as repo from "../lib/repositories";
+import { sendNotification } from "../lib/notifications";
 import type {
   Task,
   StageTemplate,
@@ -41,6 +43,8 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const fetchReviewsRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const preFixFilesRef = useRef<Set<string>>(new Set());
 
   // Create or find execution record
   const ensureExecution = useCallback(async (): Promise<string | null> => {
@@ -106,6 +110,9 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
         ghFetchPrIssueComments(activeProject.path, parsed.owner, parsed.repo, parsed.number),
       ]);
 
+      const previousFixes = await repo.listPrReviewFixes(activeProject.id, execId);
+      const previousCount = previousFixes.length;
+
       // Normalize review-level comments (APPROVED, CHANGES_REQUESTED, etc.)
       for (const review of reviews) {
         if (!review.body?.trim()) continue; // Skip empty reviews
@@ -168,6 +175,10 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       // Reload fixes from DB
       const updatedFixes = await repo.listPrReviewFixes(activeProject.id, execId);
+      const newCount = updatedFixes.length - previousCount;
+      if (newCount > 0) {
+        sendNotification("PR Review", `${newCount} new review comment${newCount === 1 ? "" : "s"}`);
+      }
       if (mountedRef.current) {
         setFixes(updatedFixes);
       }
@@ -181,6 +192,9 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       }
     }
   }, [activeProject, task, ensureExecution]);
+
+  // Keep ref in sync so effects always call the latest version
+  fetchReviewsRef.current = fetchReviews;
 
   const fixComment = useCallback(
     async (fixId: string, userContext?: string) => {
@@ -198,6 +212,10 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       clearOutput(stage.id);
       setRunning(stage.id, "fixing");
+
+      // Snapshot currently changed files before Claude modifies anything
+      const preFixFiles = await getChangedFiles(activeProject.path).catch(() => []);
+      preFixFilesRef.current = new Set(preFixFiles);
 
       try {
         let prompt = `Fix the following PR review comment.
@@ -353,7 +371,16 @@ Keep it under 72 characters for the first line.`,
       if (!activeProject) return;
 
       try {
-        await gitAdd(activeProject.path);
+        // Stage only files changed by the fix, not pre-existing changes
+        const allChanged = await getChangedFiles(activeProject.path);
+        const fixFiles = allChanged.filter((f) => !preFixFilesRef.current.has(f));
+        if (fixFiles.length > 0) {
+          await gitAddFiles(activeProject.path, fixFiles);
+        } else {
+          // Fallback: if we can't determine which files are new, stage all
+          const { gitAdd } = await import("../lib/git");
+          await gitAdd(activeProject.path);
+        }
         const result = await gitCommit(activeProject.path, commitMessage);
         const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
@@ -435,7 +462,7 @@ Keep it under 72 characters for the first line.`,
       const parsed = parsePrUrl(task.pr_url!);
       if (parsed) {
         try {
-          await ghCommentOnPr(activeProject.path, parsed.number, summaryText);
+          await ghCommentOnPr(activeProject.path, parsed.owner, parsed.repo, parsed.number, summaryText);
         } catch {
           // Non-critical — continue
         }
@@ -463,24 +490,25 @@ Keep it under 72 characters for the first line.`,
     }
   }, [activeProject, task, fixes, executionId, updateTask, loadExecutions]);
 
-  // Auto-fetch on mount
+  // Auto-fetch on mount (only for pr_review stages)
   useEffect(() => {
     mountedRef.current = true;
-    if (task?.pr_url && activeProject && task.status !== "completed") {
-      fetchReviews();
+    if (stage.output_format === "pr_review" && task?.pr_url && activeProject && task.status !== "completed") {
+      fetchReviewsRef.current();
     }
     return () => {
       mountedRef.current = false;
     };
-  }, [task?.id, task?.pr_url, activeProject?.id]);
+  }, [task?.id, task?.pr_url, activeProject?.id, stage.output_format]);
 
-  // Polling
+  // Polling (only for pr_review stages)
   useEffect(() => {
+    if (stage.output_format !== "pr_review") return;
     if (!task?.pr_url || !activeProject || task.status === "completed") return;
 
     pollingRef.current = setInterval(() => {
       if (fixingId) return; // Don't poll while fixing
-      fetchReviews();
+      fetchReviewsRef.current();
     }, POLL_INTERVAL_MS);
 
     return () => {
