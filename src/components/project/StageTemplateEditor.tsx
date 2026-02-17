@@ -62,7 +62,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       gate_rules: editingTemplate.gate_rules,
     });
     await loadStageTemplates(activeProject.id);
-    sendNotification("Template saved", editingTemplate.name);
+    sendNotification("Template saved", editingTemplate.name, "success");
   };
 
   if (!editingTemplate) return null;

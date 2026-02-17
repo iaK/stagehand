@@ -78,7 +78,7 @@ export function StageView({ stage }: StageViewProps) {
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
         useProcessStore.getState().setCommitted(stage.id, shortHash);
         useProcessStore.getState().clearPendingCommit();
-        sendNotification("Changes committed", shortHash);
+        sendNotification("Changes committed", shortHash, "success");
         await advanceFromStage(activeTask, stage);
       }
     } catch (e) {
@@ -95,7 +95,7 @@ export function StageView({ stage }: StageViewProps) {
       await prReview.skipFixCommit(pendingCommit.fixId);
     } else {
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Commit skipped", stage.name);
+      sendNotification("Commit skipped", stage.name, "info");
       await advanceFromStage(activeTask, stage);
     }
   };
@@ -152,7 +152,7 @@ export function StageView({ stage }: StageViewProps) {
       // Commit-eligible stages already send a "Ready to commit" notification
       const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
       if (!commitEligibleStages.includes(stage.name)) {
-        sendNotification("Stage approved", stage.name);
+        sendNotification("Stage approved", stage.name, "success");
       }
     } catch (err) {
       console.error("Failed to approve stage:", err);

@@ -14,19 +14,35 @@ export async function requestNotificationPermission() {
   return granted;
 }
 
-export async function sendNotification(title: string, body?: string) {
+export async function sendNotification(
+  title: string,
+  body?: string,
+  type: "success" | "error" | "info" = "info",
+) {
+  const showToast = () => {
+    const opts = { description: body };
+    switch (type) {
+      case "success":
+        return toast.success(title, opts);
+      case "error":
+        return toast.error(title, opts);
+      case "info":
+        return toast.info(title, opts);
+    }
+  };
+
   if (document.hidden) {
     try {
       const granted = await isPermissionGranted();
       if (granted) {
         tauriSendNotification({ title, body });
       } else {
-        toast(title, { description: body });
+        showToast();
       }
     } catch {
-      toast(title, { description: body });
+      showToast();
     }
   } else {
-    toast(title, { description: body });
+    showToast();
   }
 }

@@ -383,7 +383,7 @@ export function useStageExecution() {
           completed_at: new Date().toISOString(),
         });
         if (!wasKilled) {
-          sendNotification("Stage failed", `${stage.name} encountered an error`);
+          sendNotification("Stage failed", `${stage.name} encountered an error`, "error");
         }
       } else {
         // Try to parse structured output
@@ -400,7 +400,7 @@ export function useStageExecution() {
           thinking_output: savedThinking,
           completed_at: new Date().toISOString(),
         });
-        sendNotification("Stage complete", `${stage.name} needs your review`);
+        sendNotification("Stage complete", `${stage.name} needs your review`, "success");
       }
 
       await loadExecutions(activeProject.id, task.id);
@@ -571,7 +571,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         message: commitMessage,
         diffStat,
       });
-      sendNotification("Ready to commit", `${stage.name} has changes to commit`);
+      sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success");
     },
     [activeProject],
   );
@@ -610,7 +610,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       // Save PR URL to the task
       if (prUrl) {
         await updateTask(activeProject.id, task.id, { pr_url: prUrl.trim() });
-        sendNotification("PR created", title);
+        sendNotification("PR created", title, "success");
       }
     },
     [activeProject, updateTask],
