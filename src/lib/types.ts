@@ -42,6 +42,7 @@ export interface Task {
   current_stage_id: string | null;
   status: TaskStatus;
   branch_name: string | null;
+  worktree_path: string | null;
   pr_url: string | null;
   archived: number;
   created_at: string;

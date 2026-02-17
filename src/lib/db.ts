@@ -179,6 +179,10 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE tasks ADD COLUMN pr_url TEXT
   `).catch(() => { /* column already exists */ });
 
+  await db.execute(`
+    ALTER TABLE tasks ADD COLUMN worktree_path TEXT
+  `).catch(() => { /* column already exists */ });
+
   // Migrate Research stage: text → research format
   await migrateResearchStage(db);
 

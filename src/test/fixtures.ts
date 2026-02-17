@@ -26,6 +26,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
     current_stage_id: "stage-1",
     status: "pending",
     branch_name: null,
+    worktree_path: null,
     pr_url: null,
     archived: 0,
     created_at: "2025-01-01T00:00:00.000Z",

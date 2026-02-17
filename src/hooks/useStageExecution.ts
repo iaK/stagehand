@@ -8,13 +8,14 @@ import {
   hasUncommittedChanges,
   gitDiffStat,
   isGitRepo,
-  gitCreateBranch,
-  gitCheckoutBranch,
   gitBranchExists,
   gitPush,
   gitDefaultBranch,
   ghCreatePr,
+  gitWorktreeAdd,
+  gitWorktreeRemove,
 } from "../lib/git";
+import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
 import type {
@@ -40,45 +41,56 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate, userInput?: string) => {
       if (!activeProject) return;
 
-      // Create branch on first stage execution if task has no branch yet
-      if (stage.output_format === "research" && !task.branch_name) {
+      // Create worktree on first stage execution if task has no worktree yet
+      if (stage.output_format === "research" && !task.worktree_path) {
         try {
           const gitRepo = await isGitRepo(activeProject.path);
           if (gitRepo) {
-            let branchName: string;
-            // Use Linear branch name if available, otherwise generate from title
-            const commitRules = await repo.getProjectSetting(
-              activeProject.id,
-              "github_commit_rules",
-            );
-            // Simple slug generation from task title
-            const slug = task.title
-              .toLowerCase()
-              .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "")
-              .slice(0, 50);
-            branchName = `feature/${slug}`;
+            // Use existing branch name or generate one
+            let branchName = task.branch_name;
+            if (!branchName) {
+              const commitRules = await repo.getProjectSetting(
+                activeProject.id,
+                "github_commit_rules",
+              );
+              // Simple slug generation from task title
+              const slug = task.title
+                .toLowerCase()
+                .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-|-$/g, "")
+                .slice(0, 50);
+              branchName = `feature/${slug}`;
 
-            // Check if branch naming convention is specified
-            if (commitRules?.toLowerCase().includes("branch")) {
-              // Keep the generated name — convention will be followed
-              // as much as possible from the slug
+              // Check if branch naming convention is specified
+              if (commitRules?.toLowerCase().includes("branch")) {
+                // Keep the generated name — convention will be followed
+                // as much as possible from the slug
+              }
             }
+
+            const worktreePath = `${activeProject.path}/.stagehand-worktrees/${branchName.replace(/\//g, "-")}`;
 
             const exists = await gitBranchExists(activeProject.path, branchName);
-            if (exists) {
-              await gitCheckoutBranch(activeProject.path, branchName);
-            } else {
-              await gitCreateBranch(activeProject.path, branchName);
+
+            // Clean up stale worktree if directory already exists
+            try {
+              await gitWorktreeRemove(activeProject.path, worktreePath);
+            } catch {
+              // Worktree may not exist — that's fine
             }
 
-            await updateTask(activeProject.id, task.id, { branch_name: branchName });
+            await gitWorktreeAdd(activeProject.path, worktreePath, branchName, !exists);
+
+            await updateTask(activeProject.id, task.id, {
+              branch_name: branchName,
+              worktree_path: worktreePath,
+            });
             // Update local task reference
-            task = { ...task, branch_name: branchName };
+            task = { ...task, branch_name: branchName, worktree_path: worktreePath };
           }
         } catch {
-          // Branch creation is non-critical — continue with stage execution
+          // Worktree creation is non-critical — continue with stage execution
         }
       }
 
@@ -292,7 +304,7 @@ export function useStageExecution() {
         await spawnClaude(
           {
             prompt,
-            workingDirectory: activeProject.path,
+            workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
             appendSystemPrompt: stage.persona_system_prompt ?? undefined,
@@ -479,6 +491,8 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate) => {
       if (!activeProject) return;
 
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
       const gitRepo = await isGitRepo(activeProject.path);
       if (!gitRepo) {
         // Not a git repo — skip commit, advance directly
@@ -487,7 +501,7 @@ export function useStageExecution() {
         return;
       }
 
-      const hasChanges = await hasUncommittedChanges(activeProject.path);
+      const hasChanges = await hasUncommittedChanges(workDir);
       if (!hasChanges) {
         // No changes to commit — advance directly
         const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
@@ -495,7 +509,7 @@ export function useStageExecution() {
         return;
       }
 
-      const diffStat = await gitDiffStat(activeProject.path).catch(() => "");
+      const diffStat = await gitDiffStat(workDir).catch(() => "");
 
       // Generate commit message using Claude (lightweight one-shot)
       let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
@@ -522,7 +536,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
           spawnClaude(
             {
               prompt,
-              workingDirectory: activeProject.path,
+              workingDirectory: workDir,
               maxTurns: 1,
               allowedTools: [],
               outputFormat: "text",
@@ -578,14 +592,16 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         }
       }
 
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
       // Push the branch to remote
-      await gitPush(activeProject.path, task.branch_name);
+      await gitPush(workDir, task.branch_name);
 
       // Determine base branch
       const baseBranch = await gitDefaultBranch(activeProject.path) ?? undefined;
 
       // Create the PR
-      const prUrl = await ghCreatePr(activeProject.path, title, body, baseBranch);
+      const prUrl = await ghCreatePr(workDir, title, body, baseBranch);
 
       // Save PR URL to the task
       if (prUrl) {
@@ -610,6 +626,17 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         await updateTask(projectId, task.id, {
           status: "completed",
         });
+        // Clean up worktree on completion
+        if (task.worktree_path) {
+          try {
+            const project = useProjectStore.getState().activeProject;
+            if (project) {
+              await gitWorktreeRemove(project.path, task.worktree_path);
+            }
+          } catch {
+            // Non-critical — worktree cleanup is best-effort
+          }
+        }
       }
 
       await loadExecutions(projectId, task.id);

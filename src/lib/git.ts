@@ -112,6 +112,31 @@ export async function gitDefaultBranch(workingDir: string): Promise<string | nul
   }
 }
 
+export async function gitWorktreeAdd(
+  workingDir: string,
+  worktreePath: string,
+  branchName: string,
+  createBranch: boolean,
+): Promise<string> {
+  if (createBranch) {
+    return runGit(workingDir, "worktree", "add", worktreePath, "-b", branchName);
+  }
+  return runGit(workingDir, "worktree", "add", worktreePath, branchName);
+}
+
+export async function gitWorktreeRemove(
+  workingDir: string,
+  worktreePath: string,
+): Promise<string> {
+  return runGit(workingDir, "worktree", "remove", worktreePath, "--force");
+}
+
+export async function gitWorktreeList(
+  workingDir: string,
+): Promise<string> {
+  return runGit(workingDir, "worktree", "list");
+}
+
 export async function gitPush(workingDir: string, branchName: string): Promise<string> {
   return runGit(workingDir, "push", "-u", "origin", branchName);
 }

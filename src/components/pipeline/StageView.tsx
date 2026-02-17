@@ -14,6 +14,7 @@ import {
   ThinkingBubble,
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
+import { getTaskWorkingDir } from "../../lib/worktree";
 import { usePrReview } from "../../hooks/usePrReview";
 import { PrReviewOutput } from "../output/PrReviewOutput";
 import { Button } from "@/components/ui/button";
@@ -70,8 +71,9 @@ export function StageView({ stage }: StageViewProps) {
         await prReview.commitFix(pendingCommit.fixId, commitMessage);
       } else {
         // Standard commit — advance to next stage
-        await gitAdd(activeProject.path);
-        const result = await gitCommit(activeProject.path, commitMessage);
+        const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+        await gitAdd(workDir);
+        const result = await gitCommit(workDir, commitMessage);
         const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
         useProcessStore.getState().setCommitted(stage.id, shortHash);

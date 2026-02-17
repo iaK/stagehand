@@ -16,6 +16,7 @@ import {
   gitAddFiles,
   gitCommit,
 } from "../lib/git";
+import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
 import type {
@@ -213,8 +214,10 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       clearOutput(stage.id);
       setRunning(stage.id, "fixing");
 
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
       // Snapshot currently changed files before Claude modifies anything
-      const preFixFiles = await getChangedFiles(activeProject.path).catch(() => []);
+      const preFixFiles = await getChangedFiles(workDir).catch(() => []);
       preFixFilesRef.current = new Set(preFixFiles);
 
       try {
@@ -245,7 +248,7 @@ ${fix.body}`;
           spawnClaude(
             {
               prompt,
-              workingDirectory: activeProject.path,
+              workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
             },
@@ -293,9 +296,9 @@ ${fix.body}`;
         });
 
         // Check for uncommitted changes
-        const hasChanges = await hasUncommittedChanges(activeProject.path);
+        const hasChanges = await hasUncommittedChanges(workDir);
         if (hasChanges) {
-          const diffStat = await gitDiffStat(activeProject.path).catch(() => "");
+          const diffStat = await gitDiffStat(workDir).catch(() => "");
 
           // Generate commit message
           let commitMessage = `fix: address review comment by ${fix.author}`;
@@ -316,7 +319,7 @@ ${diffStat}
 
 Return ONLY the commit message text, nothing else. No quotes, no markdown, no explanation.
 Keep it under 72 characters for the first line.`,
-                  workingDirectory: activeProject.path,
+                  workingDirectory: workDir,
                   maxTurns: 1,
                   allowedTools: [],
                   outputFormat: "text",
@@ -368,20 +371,22 @@ Keep it under 72 characters for the first line.`,
 
   const commitFix = useCallback(
     async (fixId: string, commitMessage: string) => {
-      if (!activeProject) return;
+      if (!activeProject || !task) return;
+
+      const workDir = getTaskWorkingDir(task, activeProject.path);
 
       try {
         // Stage only files changed by the fix, not pre-existing changes
-        const allChanged = await getChangedFiles(activeProject.path);
+        const allChanged = await getChangedFiles(workDir);
         const fixFiles = allChanged.filter((f) => !preFixFilesRef.current.has(f));
         if (fixFiles.length > 0) {
-          await gitAddFiles(activeProject.path, fixFiles);
+          await gitAddFiles(workDir, fixFiles);
         } else {
           // Fallback: if we can't determine which files are new, stage all
           const { gitAdd } = await import("../lib/git");
-          await gitAdd(activeProject.path);
+          await gitAdd(workDir);
         }
-        const result = await gitCommit(activeProject.path, commitMessage);
+        const result = await gitCommit(workDir, commitMessage);
         const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
 
@@ -400,7 +405,7 @@ Keep it under 72 characters for the first line.`,
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [activeProject],
+    [activeProject, task],
   );
 
   const skipFix = useCallback(
@@ -435,7 +440,8 @@ Keep it under 72 characters for the first line.`,
     try {
       // Push branch
       if (task.branch_name) {
-        await gitPush(activeProject.path, task.branch_name);
+        const workDir = getTaskWorkingDir(task, activeProject.path);
+        await gitPush(workDir, task.branch_name);
       }
 
       // Build summary

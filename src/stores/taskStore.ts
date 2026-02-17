@@ -29,7 +29,7 @@ interface TaskStore {
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "pr_url">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
