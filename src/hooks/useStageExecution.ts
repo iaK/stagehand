@@ -432,7 +432,7 @@ export function useStageExecution() {
           ...(usageData ?? {}),
         });
         if (!wasKilled) {
-          sendNotification("Stage failed", `${stage.name} encountered an error`, "error");
+          sendNotification("Stage failed", `${stage.name} encountered an error`, "error", { projectId: activeProject.id, taskId });
         }
       } else {
         // Try to parse structured output
@@ -450,7 +450,7 @@ export function useStageExecution() {
           completed_at: new Date().toISOString(),
           ...(usageData ?? {}),
         });
-        sendNotification("Stage complete", `${stage.name} needs your review`, "success");
+        sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
       }
 
       await loadExecutions(activeProject.id, taskId);
@@ -621,7 +621,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         message: commitMessage,
         diffStat,
       });
-      sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success");
+      sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success", { projectId: activeProject.id, taskId: task.id });
     },
     [activeProject],
   );
@@ -660,7 +660,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       // Save PR URL to the task
       if (prUrl) {
         await updateTask(activeProject.id, task.id, { pr_url: prUrl.trim() });
-        sendNotification("PR created", title, "success");
+        sendNotification("PR created", title, "success", { projectId: activeProject.id, taskId: task.id });
       }
     },
     [activeProject, updateTask],

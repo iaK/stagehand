@@ -3,7 +3,16 @@ import {
   isPermissionGranted,
   requestPermission,
   sendNotification as tauriSendNotification,
+  onAction,
 } from "@tauri-apps/plugin-notification";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useProjectStore } from "../stores/projectStore";
+import { useTaskStore } from "../stores/taskStore";
+
+export interface NotificationContext {
+  projectId?: string;
+  taskId?: string;
+}
 
 export async function requestNotificationPermission() {
   let granted = await isPermissionGranted();
@@ -18,6 +27,7 @@ export async function sendNotification(
   title: string,
   body?: string,
   type: "success" | "error" | "info" = "info",
+  context?: NotificationContext,
 ) {
   const showToast = () => {
     const opts = { description: body };
@@ -36,7 +46,7 @@ export async function sendNotification(
     try {
       const granted = await isPermissionGranted();
       if (granted) {
-        tauriSendNotification({ title, body });
+        tauriSendNotification({ title, body, extra: context ? { ...context } : undefined });
       } else {
         showToast();
       }
@@ -46,4 +56,28 @@ export async function sendNotification(
   } else {
     showToast();
   }
+}
+
+export async function registerNotificationClickHandler() {
+  return onAction(async (event) => {
+    const extra = (event.notification as { extra?: NotificationContext }).extra;
+    if (!extra?.projectId) return;
+
+    await getCurrentWindow().setFocus();
+
+    const { projects, setActiveProject } = useProjectStore.getState();
+    const project = projects.find((p) => p.id === extra.projectId);
+    if (!project) return;
+
+    setActiveProject(project);
+
+    if (extra.taskId) {
+      await useTaskStore.getState().loadTasks(extra.projectId);
+      const tasks = useTaskStore.getState().tasks;
+      const task = tasks.find((t) => t.id === extra.taskId);
+      if (task) {
+        useTaskStore.getState().setActiveTask(task);
+      }
+    }
+  });
 }

@@ -42,13 +42,13 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
     const ok = await saveApiKey(projectId, keyInput.trim());
     if (ok) {
       setKeyInput("");
-      sendNotification("Linear connected", `Signed in successfully`, "success");
+      sendNotification("Linear connected", `Signed in successfully`, "success", { projectId });
     }
   };
 
   const handleDisconnect = async () => {
     await disconnect(projectId);
-    sendNotification("Linear disconnected", undefined, "info");
+    sendNotification("Linear disconnected", undefined, "info", { projectId });
   };
 
   if (connected) {

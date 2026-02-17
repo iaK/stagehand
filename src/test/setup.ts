@@ -27,6 +27,9 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: vi.fn(async () => true),
   requestPermission: vi.fn(async () => "granted" as const),
   sendNotification: vi.fn(),
+  onAction: vi.fn(async () => ({ unregister: vi.fn() })),
+  registerActionTypes: vi.fn(async () => {}),
+  onNotificationReceived: vi.fn(async () => ({ unregister: vi.fn() })),
 }));
 
 // Mock @tauri-apps/api/path

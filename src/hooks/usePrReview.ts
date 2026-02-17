@@ -221,7 +221,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       const updatedFixes = await repo.listPrReviewFixes(activeProject.id, execId);
       const newCount = updatedFixes.length - previousCount;
       if (newCount > 0) {
-        sendNotification("PR Review", `${newCount} new review comment${newCount === 1 ? "" : "s"}`, "info");
+        sendNotification("PR Review", `${newCount} new review comment${newCount === 1 ? "" : "s"}`, "info", { projectId: activeProject.id, taskId: task.id });
       }
       if (mountedRef.current) {
         setFixes(updatedFixes);
@@ -444,7 +444,7 @@ Keep it under 72 characters for the first line.`,
           ),
         );
         useProcessStore.getState().clearPendingCommit();
-        sendNotification("Fix committed", shortHash, "success");
+        sendNotification("Fix committed", shortHash, "success", { projectId: activeProject.id, taskId: task.id });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -459,9 +459,9 @@ Keep it under 72 characters for the first line.`,
       setFixes((prev) =>
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "skipped" } : f)),
       );
-      sendNotification("Fix skipped", undefined, "info");
+      sendNotification("Fix skipped", undefined, "info", { projectId: activeProject.id, taskId: task?.id });
     },
-    [activeProject],
+    [activeProject, task],
   );
 
   const skipFixCommit = useCallback(
@@ -472,9 +472,9 @@ Keep it under 72 characters for the first line.`,
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "fixed" } : f)),
       );
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Fix commit skipped", undefined, "info");
+      sendNotification("Fix commit skipped", undefined, "info", { projectId: activeProject.id, taskId: task?.id });
     },
-    [activeProject],
+    [activeProject, task],
   );
 
   const markDone = useCallback(async () => {
@@ -544,7 +544,7 @@ Keep it under 72 characters for the first line.`,
 
       // Mark task as completed
       await updateTask(activeProject.id, task.id, { status: "completed" });
-      sendNotification("PR review done", `${fixed.length} fixed, ${skipped.length} skipped`, "success");
+      sendNotification("PR review done", `${fixed.length} fixed, ${skipped.length} skipped`, "success", { projectId: activeProject.id, taskId: task.id });
       if (task.id) {
         await loadExecutions(activeProject.id, task.id);
       }

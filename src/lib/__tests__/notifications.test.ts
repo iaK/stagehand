@@ -1,15 +1,19 @@
 import { vi } from "vitest";
-import { sendNotification, requestNotificationPermission } from "../notifications";
+import { sendNotification, requestNotificationPermission, registerNotificationClickHandler } from "../notifications";
 import { toast } from "sonner";
 import {
   isPermissionGranted,
   requestPermission,
   sendNotification as tauriSendNotification,
+  onAction,
 } from "@tauri-apps/plugin-notification";
+import { useProjectStore } from "../../stores/projectStore";
+import { useTaskStore } from "../../stores/taskStore";
 
 const mockIsPermissionGranted = vi.mocked(isPermissionGranted);
 const mockRequestPermission = vi.mocked(requestPermission);
 const mockTauriSendNotification = vi.mocked(tauriSendNotification);
+const mockOnAction = vi.mocked(onAction);
 
 describe("sendNotification", () => {
   let originalHiddenDescriptor: PropertyDescriptor | undefined;
@@ -26,7 +30,24 @@ describe("sendNotification", () => {
     }
   });
 
-  it("sends Tauri notification when document is hidden and permission granted", async () => {
+  it("sends Tauri notification with extra when document is hidden and permission granted", async () => {
+    Object.defineProperty(document, "hidden", {
+      value: true,
+      configurable: true,
+    });
+    mockIsPermissionGranted.mockResolvedValue(true);
+
+    await sendNotification("Stage complete", "Research needs review", "info", { projectId: "proj-1", taskId: "task-1" });
+
+    expect(mockTauriSendNotification).toHaveBeenCalledWith({
+      title: "Stage complete",
+      body: "Research needs review",
+      extra: { projectId: "proj-1", taskId: "task-1" },
+    });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("sends Tauri notification with extra undefined when no context provided", async () => {
     Object.defineProperty(document, "hidden", {
       value: true,
       configurable: true,
@@ -38,6 +59,7 @@ describe("sendNotification", () => {
     expect(mockTauriSendNotification).toHaveBeenCalledWith({
       title: "Stage complete",
       body: "Research needs review",
+      extra: undefined,
     });
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
@@ -168,5 +190,125 @@ describe("requestNotificationPermission", () => {
 
     expect(result).toBe(false);
     expect(mockRequestPermission).toHaveBeenCalled();
+  });
+});
+
+describe("registerNotificationClickHandler", () => {
+  it("calls onAction with a callback", async () => {
+    await registerNotificationClickHandler();
+
+    expect(mockOnAction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("navigates to correct project and task when extra contains both", async () => {
+    // Set up store state
+    const mockProject = { id: "proj-1", name: "Test Project", path: "/test", archived: 0, created_at: "" };
+    const mockTask = { id: "task-1", title: "Test Task", status: "pending", project_id: "proj-1", current_stage_id: null, branch_name: null, worktree_path: null, pr_url: null, description: null, archived: 0, created_at: "" };
+
+    useProjectStore.setState({ projects: [mockProject] });
+
+    const mockSetActiveProject = vi.fn();
+    useProjectStore.setState({ setActiveProject: mockSetActiveProject });
+
+    const mockLoadTasks = vi.fn(async () => {
+      useTaskStore.setState({ tasks: [mockTask] });
+    });
+    const mockSetActiveTask = vi.fn();
+    useTaskStore.setState({ loadTasks: mockLoadTasks, setActiveTask: mockSetActiveTask });
+
+    // Capture the callback
+    let capturedCallback: (event: unknown) => Promise<void>;
+    mockOnAction.mockImplementation(async (cb) => {
+      capturedCallback = cb as (event: unknown) => Promise<void>;
+      return { unregister: vi.fn() };
+    });
+
+    await registerNotificationClickHandler();
+
+    // Simulate notification click
+    await capturedCallback!({
+      actionTypeId: "",
+      id: 0,
+      notification: {
+        extra: { projectId: "proj-1", taskId: "task-1" },
+      },
+    });
+
+    expect(mockSetActiveProject).toHaveBeenCalledWith(mockProject);
+    expect(mockLoadTasks).toHaveBeenCalledWith("proj-1");
+    expect(mockSetActiveTask).toHaveBeenCalledWith(mockTask);
+  });
+
+  it("handles missing extra gracefully", async () => {
+    let capturedCallback: (event: unknown) => Promise<void>;
+    mockOnAction.mockImplementation(async (cb) => {
+      capturedCallback = cb as (event: unknown) => Promise<void>;
+      return { unregister: vi.fn() };
+    });
+
+    await registerNotificationClickHandler();
+
+    // Should not throw
+    await capturedCallback!({
+      actionTypeId: "",
+      id: 0,
+      notification: {},
+    });
+  });
+
+  it("handles projectId only — sets project but no task", async () => {
+    const mockProject = { id: "proj-2", name: "Project 2", path: "/test2", archived: 0, created_at: "" };
+
+    useProjectStore.setState({ projects: [mockProject] });
+
+    const mockSetActiveProject = vi.fn();
+    useProjectStore.setState({ setActiveProject: mockSetActiveProject });
+
+    const mockSetActiveTask = vi.fn();
+    useTaskStore.setState({ setActiveTask: mockSetActiveTask });
+
+    let capturedCallback: (event: unknown) => Promise<void>;
+    mockOnAction.mockImplementation(async (cb) => {
+      capturedCallback = cb as (event: unknown) => Promise<void>;
+      return { unregister: vi.fn() };
+    });
+
+    await registerNotificationClickHandler();
+
+    await capturedCallback!({
+      actionTypeId: "",
+      id: 0,
+      notification: {
+        extra: { projectId: "proj-2" },
+      },
+    });
+
+    expect(mockSetActiveProject).toHaveBeenCalledWith(mockProject);
+    expect(mockSetActiveTask).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when project is not found", async () => {
+    useProjectStore.setState({ projects: [] });
+
+    const mockSetActiveProject = vi.fn();
+    useProjectStore.setState({ setActiveProject: mockSetActiveProject });
+
+    let capturedCallback: (event: unknown) => Promise<void>;
+    mockOnAction.mockImplementation(async (cb) => {
+      capturedCallback = cb as (event: unknown) => Promise<void>;
+      return { unregister: vi.fn() };
+    });
+
+    await registerNotificationClickHandler();
+
+    await capturedCallback!({
+      actionTypeId: "",
+      id: 0,
+      notification: {
+        extra: { projectId: "nonexistent" },
+      },
+    });
+
+    expect(mockSetActiveProject).not.toHaveBeenCalled();
   });
 });

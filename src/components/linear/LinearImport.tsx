@@ -65,7 +65,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
 
       const title = `[${issue.identifier}] ${issue.title}`;
       await addTask(projectId, title, description, issue.branchName);
-      sendNotification("Task imported", title, "success");
+      sendNotification("Task imported", title, "success", { projectId });
       onClose();
     } catch (err) {
       setImportError(`Failed to import issue: ${err}`);

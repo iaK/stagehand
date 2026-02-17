@@ -95,7 +95,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
     }
 
     setSaving(false);
-    sendNotification("Conventions saved", undefined, "success");
+    sendNotification("Conventions saved", undefined, "success", { projectId });
   };
 
   return (
