@@ -101,6 +101,33 @@ export function parseGitRemote(url: string): { owner: string; repo: string } | n
   return null;
 }
 
+export interface GitCommit {
+  hash: string;
+  message: string;
+  date: string;
+  author: string;
+}
+
+export async function gitLog(workingDir: string): Promise<GitCommit[]> {
+  try {
+    const raw = await runGit(
+      workingDir,
+      "log",
+      "--format=%H%n%s%n%aI%n%an%n---",
+    );
+    return raw
+      .trim()
+      .split("---\n")
+      .filter((block) => block.trim())
+      .map((block) => {
+        const [hash, message, date, author] = block.trim().split("\n");
+        return { hash, message, date, author };
+      });
+  } catch {
+    return [];
+  }
+}
+
 export async function gitDefaultBranch(workingDir: string): Promise<string | null> {
   try {
     const ref = await runGit(workingDir, "symbolic-ref", "refs/remotes/origin/HEAD");
