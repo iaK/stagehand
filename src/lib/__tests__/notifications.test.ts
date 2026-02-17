@@ -33,16 +33,18 @@ describe("sendNotification", () => {
     });
     mockIsPermissionGranted.mockResolvedValue(true);
 
-    await sendNotification("Stage complete", "Research needs review");
+    await sendNotification("Stage complete", "Research needs review", "success");
 
     expect(mockTauriSendNotification).toHaveBeenCalledWith({
       title: "Stage complete",
       body: "Research needs review",
     });
-    expect(toast).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
   });
 
-  it("falls back to toast when document is hidden but permission not granted", async () => {
+  it("falls back to toast.info when document is hidden but permission not granted", async () => {
     Object.defineProperty(document, "hidden", {
       value: true,
       configurable: true,
@@ -52,7 +54,7 @@ describe("sendNotification", () => {
     await sendNotification("Stage complete", "body text");
 
     expect(mockTauriSendNotification).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith("Stage complete", {
+    expect(toast.info).toHaveBeenCalledWith("Stage complete", {
       description: "body text",
     });
   });
@@ -63,10 +65,10 @@ describe("sendNotification", () => {
       configurable: true,
     });
 
-    await sendNotification("Stage complete", "body text");
+    await sendNotification("Stage complete", "body text", "success");
 
     expect(mockTauriSendNotification).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith("Stage complete", {
+    expect(toast.success).toHaveBeenCalledWith("Stage complete", {
       description: "body text",
     });
   });
@@ -78,11 +80,63 @@ describe("sendNotification", () => {
     });
     mockIsPermissionGranted.mockRejectedValue(new Error("Tauri not available"));
 
-    await sendNotification("Stage complete", "body text");
+    await sendNotification("Stage complete", "body text", "error");
 
-    expect(toast).toHaveBeenCalledWith("Stage complete", {
+    expect(toast.error).toHaveBeenCalledWith("Stage complete", {
       description: "body text",
     });
+  });
+
+  it("calls toast.success for success type", async () => {
+    Object.defineProperty(document, "hidden", {
+      value: false,
+      configurable: true,
+    });
+
+    await sendNotification("Done", "All good", "success");
+
+    expect(toast.success).toHaveBeenCalledWith("Done", { description: "All good" });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("calls toast.error for error type", async () => {
+    Object.defineProperty(document, "hidden", {
+      value: false,
+      configurable: true,
+    });
+
+    await sendNotification("Failed", "Something broke", "error");
+
+    expect(toast.error).toHaveBeenCalledWith("Failed", { description: "Something broke" });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("calls toast.info for info type", async () => {
+    Object.defineProperty(document, "hidden", {
+      value: false,
+      configurable: true,
+    });
+
+    await sendNotification("Notice", "FYI", "info");
+
+    expect(toast.info).toHaveBeenCalledWith("Notice", { description: "FYI" });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("defaults to info type when no type is provided", async () => {
+    Object.defineProperty(document, "hidden", {
+      value: false,
+      configurable: true,
+    });
+
+    await sendNotification("Update", "Something happened");
+
+    expect(toast.info).toHaveBeenCalledWith("Update", { description: "Something happened" });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 

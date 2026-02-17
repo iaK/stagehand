@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { TextOutput } from "./TextOutput";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -331,18 +330,18 @@ export function QuestionCards({
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Textarea
+                        <MarkdownTextarea
                           value={customText[q.id] ?? ""}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             setCustomText((prev) => ({
                               ...prev,
-                              [q.id]: e.target.value,
+                              [q.id]: v,
                             }))
                           }
                           rows={2}
                           placeholder="Type your answer..."
                           autoFocus
-                          className="mt-2 resize-none"
+                          className="mt-2"
                         />
                       </div>
                     )}

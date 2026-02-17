@@ -37,8 +37,13 @@ vi.mock("@tauri-apps/api/path", () => ({
 }));
 
 // Mock sonner toast
+const toastFn = Object.assign(vi.fn(), {
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+});
 vi.mock("sonner", () => ({
-  toast: vi.fn(),
+  toast: toastFn,
   Toaster: () => null,
 }));
 
