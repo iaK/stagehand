@@ -15,7 +15,7 @@ export function MergeConfirmation({ task }: MergeConfirmationProps) {
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!pendingMerge) return null;
+  if (!pendingMerge || pendingMerge.taskId !== task.id) return null;
 
   const handleMerge = async () => {
     setMerging(true);
@@ -29,7 +29,11 @@ export function MergeConfirmation({ task }: MergeConfirmationProps) {
   };
 
   const handleSkip = async () => {
-    await skipMerge(task);
+    try {
+      await skipMerge(task);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   return (

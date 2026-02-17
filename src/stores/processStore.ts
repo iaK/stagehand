@@ -25,6 +25,7 @@ export interface PendingCommit {
 }
 
 export interface PendingMerge {
+  taskId: string;
   branchName: string;
   targetBranch: string;
 }
