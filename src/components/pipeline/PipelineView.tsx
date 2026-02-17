@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
-import { useProcessStore } from "../../stores/processStore";
+import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { TaskOverview } from "../task/TaskOverview";
@@ -66,8 +66,9 @@ export function PipelineView() {
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
-    useProcessStore.getState().setViewingStageId(viewingStage?.id ?? null);
-  }, [viewingStage]);
+    const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
+    useProcessStore.getState().setViewingStageId(sk);
+  }, [viewingStage, activeTaskId]);
 
   if (!activeProject) {
     return (

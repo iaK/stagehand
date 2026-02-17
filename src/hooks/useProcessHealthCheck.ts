@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
-import { useProcessStore } from "../stores/processStore";
+import { useProcessStore, stageKey } from "../stores/processStore";
 import { listProcesses } from "../lib/claude";
 import * as repo from "../lib/repositories";
 
@@ -40,9 +40,10 @@ export function useProcessHealthCheck(stageId: string | null) {
     // Start polling
     const projectId = activeProject.id;
     const taskId = activeTask.id;
+    const sk = stageKey(taskId, stageId);
 
     const check = async () => {
-      const stageState = useProcessStore.getState().stages[stageId];
+      const stageState = useProcessStore.getState().stages[sk];
       const processId = stageState?.processId;
 
       // Check 1: Is the process still tracked by the backend?
@@ -51,7 +52,7 @@ export function useProcessHealthCheck(stageId: string | null) {
         if (processId && !running.includes(processId)) {
           // Process is gone — mark the execution as crashed
           await markStageCrashed(projectId, stageId, taskId, "Process crashed unexpectedly");
-          useProcessStore.getState().setStopped(stageId);
+          useProcessStore.getState().setStopped(sk);
           await loadExecutions(projectId, taskId);
           return;
         }
@@ -76,7 +77,7 @@ export function useProcessHealthCheck(stageId: string | null) {
           taskId,
           "Process timed out (no output for 10 minutes)",
         );
-        useProcessStore.getState().setStopped(stageId);
+        useProcessStore.getState().setStopped(sk);
         await loadExecutions(projectId, taskId);
       }
     };

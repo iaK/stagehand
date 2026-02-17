@@ -33,6 +33,14 @@ describe("processStore", () => {
       useProcessStore.getState().clearOutput("s1");
       expect(useProcessStore.getState().stages["s1"].streamOutput).toEqual([]);
     });
+
+    it("resets killed flag for new run", () => {
+      useProcessStore.getState().setRunning("s1", "pid-123");
+      useProcessStore.getState().markKilled("s1");
+      expect(useProcessStore.getState().stages["s1"].killed).toBe(true);
+      useProcessStore.getState().clearOutput("s1");
+      expect(useProcessStore.getState().stages["s1"].killed).toBe(false);
+    });
   });
 
   describe("setRunning", () => {
@@ -42,6 +50,15 @@ describe("processStore", () => {
       expect(stage.isRunning).toBe(true);
       expect(stage.processId).toBe("pid-123");
       expect(stage.killed).toBe(false);
+    });
+
+    it("preserves killed flag when process registers", () => {
+      useProcessStore.getState().setRunning("s1", "spawning");
+      useProcessStore.getState().markKilled("s1");
+      useProcessStore.getState().setRunning("s1", "pid-real");
+      const stage = useProcessStore.getState().stages["s1"];
+      expect(stage.processId).toBe("pid-real");
+      expect(stage.killed).toBe(true);
     });
   });
 

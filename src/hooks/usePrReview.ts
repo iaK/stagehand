@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
-import { useProcessStore } from "../stores/processStore";
+import { useProcessStore, stageKey } from "../stores/processStore";
 import { spawnClaude } from "../lib/claude";
 import {
   parsePrUrl,
@@ -247,8 +247,9 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "fixing" } : f)),
       );
 
-      clearOutput(stage.id);
-      setRunning(stage.id, "fixing");
+      const sk = stageKey(task.id, stage.id);
+      clearOutput(sk);
+      setRunning(sk, "fixing");
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
@@ -291,7 +292,7 @@ ${fix.body}`;
             (event: ClaudeStreamEvent) => {
               switch (event.type) {
                 case "started":
-                  setRunning(stage.id, event.process_id);
+                  setRunning(sk, event.process_id);
                   break;
                 case "stdout_line":
                   try {
@@ -299,7 +300,7 @@ ${fix.body}`;
                     if (parsed.type === "assistant" && parsed.message?.content) {
                       for (const block of parsed.message.content) {
                         if (block.type === "text") {
-                          appendOutput(stage.id, block.text);
+                          appendOutput(sk, block.text);
                           resultText += block.text;
                         }
                       }
@@ -307,23 +308,23 @@ ${fix.body}`;
                       const output = parsed.result;
                       if (output != null && output !== "") {
                         const text = typeof output === "string" ? output : JSON.stringify(output);
-                        appendOutput(stage.id, text);
+                        appendOutput(sk, text);
                         resultText += text;
                       }
                     }
                   } catch {
-                    appendOutput(stage.id, event.line);
+                    appendOutput(sk, event.line);
                   }
                   break;
                 case "stderr_line":
-                  appendOutput(stage.id, `[stderr] ${event.line}`);
+                  appendOutput(sk, `[stderr] ${event.line}`);
                   break;
                 case "completed":
-                  setStopped(stage.id);
+                  setStopped(sk);
                   resolve();
                   break;
                 case "error":
-                  setStopped(stage.id);
+                  setStopped(sk);
                   resolve();
                   break;
               }
@@ -393,7 +394,7 @@ Keep it under 72 characters for the first line.`,
 
         setFixingId(null);
       } catch (err) {
-        setStopped(stage.id);
+        setStopped(sk);
         setFixingId(null);
         setError(err instanceof Error ? err.message : String(err));
         await repo.updatePrReviewFix(activeProject.id, fixId, { fix_status: "pending" });

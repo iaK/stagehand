@@ -1,5 +1,10 @@
 import { create } from "zustand";
 
+/** Composite key for per-task, per-stage process tracking. */
+export function stageKey(taskId: string, stageId: string): string {
+  return `${taskId}:${stageId}`;
+}
+
 export interface StageProcessState {
   streamOutput: string[];
   isRunning: boolean;
@@ -73,23 +78,27 @@ export const useProcessStore = create<ProcessStore>((set) => ({
         [stageId]: {
           ...getStage(state.stages, stageId),
           streamOutput: [],
+          killed: false, // Reset kill flag at the start of a new run
         },
       },
     })),
 
   setRunning: (stageId, processId) =>
-    set((state) => ({
-      stages: {
-        ...state.stages,
-        [stageId]: {
-          ...getStage(state.stages, stageId),
-          isRunning: true,
-          processId,
-          killed: false,
-          lastOutputAt: Date.now(),
+    set((state) => {
+      const current = getStage(state.stages, stageId);
+      return {
+        stages: {
+          ...state.stages,
+          [stageId]: {
+            ...current,
+            isRunning: true,
+            processId,
+            // Preserve killed flag — a kill requested during spawning should persist
+            lastOutputAt: Date.now(),
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setStopped: (stageId) =>
     set((state) => ({

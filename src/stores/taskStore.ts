@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
 import { listProcesses } from "../lib/claude";
-import { useProcessStore } from "./processStore";
+import { useProcessStore, stageKey } from "./processStore";
 
 interface TaskStore {
   tasks: Task[];
@@ -84,7 +84,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         if (exec.status === "running") {
           // Skip if the process store thinks this stage is actively running
           // (process may be spawning or not yet registered with the backend)
-          const stageState = useProcessStore.getState().stages[exec.stage_template_id];
+          const sk = stageKey(exec.task_id, exec.stage_template_id);
+          const stageState = useProcessStore.getState().stages[sk];
           if (stageState?.isRunning) continue;
 
           try {
@@ -96,7 +97,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             exec.status = "failed";
             exec.error_message = "Process crashed or was interrupted";
             // Also reset the process store so the Retry button isn't stuck disabled
-            useProcessStore.getState().setStopped(exec.stage_template_id);
+            useProcessStore.getState().setStopped(sk);
           } catch (err) {
             console.error("Failed to clean up stale execution:", exec.id, err);
           }

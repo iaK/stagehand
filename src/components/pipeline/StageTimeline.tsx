@@ -98,10 +98,12 @@ export function LiveStreamBubble({
   streamLines,
   label,
   onStop,
+  isStopping = false,
 }: {
   streamLines: string[];
   label: string;
   onStop: () => void;
+  isStopping?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -117,19 +119,23 @@ export function LiveStreamBubble({
   return (
     <div className="flex gap-3 items-start">
       <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+        <div className={`w-2.5 h-2.5 rounded-full ${isStopping ? "bg-amber-500" : "bg-blue-500"} animate-pulse`} />
       </div>
       <div className="flex-1 min-w-0 pb-4">
         <div className="flex items-center gap-2 mb-1">
-          <p className="text-xs text-blue-600">{label}</p>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={onStop}
-            className="text-destructive hover:text-destructive"
-          >
-            Stop
-          </Button>
+          <p className={`text-xs ${isStopping ? "text-amber-600" : "text-blue-600"}`}>
+            {isStopping ? "Stopping..." : label}
+          </p>
+          {!isStopping && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onStop}
+              className="text-destructive hover:text-destructive"
+            >
+              Stop
+            </Button>
+          )}
         </div>
         <div className="border border-border rounded-lg overflow-hidden bg-zinc-50">
           <div

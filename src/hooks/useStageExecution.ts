@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
-import { useProcessStore } from "../stores/processStore";
+import { useProcessStore, stageKey } from "../stores/processStore";
 import { spawnClaude, killProcess } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
@@ -82,7 +82,7 @@ export function useStageExecution() {
         } catch (err) {
           // Worktree creation is non-critical — continue with stage execution in project root
           const errMsg = err instanceof Error ? err.message : String(err);
-          appendOutput(stage.id, `[Warning] Worktree creation failed, running in project root: ${errMsg}`);
+          appendOutput(stageKey(task.id, stage.id), `[Warning] Worktree creation failed, running in project root: ${errMsg}`);
         }
       }
 
@@ -95,8 +95,9 @@ export function useStageExecution() {
         }
       }
 
-      clearOutput(stage.id);
-      setRunning(stage.id, "spawning");
+      const sk = stageKey(task.id, stage.id);
+      clearOutput(sk);
+      setRunning(sk, "spawning");
 
       let executionId: string | null = null;
       try {
@@ -216,13 +217,21 @@ export function useStageExecution() {
         let resultText = "";
         let thinkingText = "";
 
+        // Capture task.id so completion handler uses the correct task even if activeTask changes
+        const taskId = task.id;
+
         const onEvent = (event: ClaudeStreamEvent) => {
           switch (event.type) {
             case "started":
-              setRunning(stage.id, event.process_id);
-              appendOutput(stage.id, `[Process started: ${event.process_id}]`);
+              // If kill was requested while spawning, kill immediately and don't re-enable
+              if (useProcessStore.getState().stages[sk]?.killed) {
+                killProcess(event.process_id).catch(() => {});
+                break;
+              }
+              setRunning(sk, event.process_id);
+              appendOutput(sk, `[Process started: ${event.process_id}]`);
               // Refresh executions so the UI transitions to show the live stream
-              loadExecutions(activeProject!.id, task.id);
+              loadExecutions(activeProject!.id, taskId);
               break;
             case "stdout_line":
               rawOutput += event.line + "\n";
@@ -232,7 +241,7 @@ export function useStageExecution() {
                 if (parsed.type === "assistant" && parsed.message?.content) {
                   for (const block of parsed.message.content) {
                     if (block.type === "text") {
-                      appendOutput(stage.id, block.text);
+                      appendOutput(sk, block.text);
                       resultText += block.text;
                       thinkingText += block.text;
                     }
@@ -246,33 +255,34 @@ export function useStageExecution() {
                         ? output
                         : JSON.stringify(output);
                     resultText = text;
-                    appendOutput(stage.id, text);
+                    appendOutput(sk, text);
                   }
                   // Don't add result to thinkingText — it's the final structured output
                 } else if (parsed.type === "content_block_delta") {
                   if (parsed.delta?.text) {
-                    appendOutput(stage.id, parsed.delta.text);
+                    appendOutput(sk, parsed.delta.text);
                     resultText += parsed.delta.text;
                     thinkingText += parsed.delta.text;
                   }
                 }
               } catch {
                 // Not JSON, just append as-is
-                appendOutput(stage.id, event.line);
+                appendOutput(sk, event.line);
               }
               break;
             case "stderr_line":
-              appendOutput(stage.id, `[stderr] ${event.line}`);
+              appendOutput(sk, `[stderr] ${event.line}`);
               break;
             case "completed":
-              setStopped(stage.id);
+              setStopped(sk);
               appendOutput(
-                stage.id,
+                sk,
                 `[Process completed with exit code: ${event.exit_code}]`,
               );
               // Update execution in DB
               finalizeExecution(
                 executionId!,
+                taskId,
                 stage,
                 rawOutput,
                 resultText,
@@ -282,13 +292,13 @@ export function useStageExecution() {
               );
               break;
             case "error":
-              setStopped(stage.id);
-              appendOutput(stage.id, `[Error] ${event.message}`);
+              setStopped(sk);
+              appendOutput(sk, `[Error] ${event.message}`);
               repo.updateStageExecution(activeProject!.id, executionId!, {
                 status: "failed",
                 error_message: event.message,
                 completed_at: new Date().toISOString(),
-              }).then(() => loadExecutions(activeProject!.id, task.id));
+              }).then(() => loadExecutions(activeProject!.id, taskId));
               break;
           }
         };
@@ -325,8 +335,8 @@ export function useStageExecution() {
         );
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        setStopped(stage.id);
-        appendOutput(stage.id, `[Failed] ${errorMsg}`);
+        setStopped(sk);
+        appendOutput(sk, `[Failed] ${errorMsg}`);
         // Update the execution record with the actual error (if it was created)
         if (executionId) {
           try {
@@ -358,6 +368,7 @@ export function useStageExecution() {
   const finalizeExecution = useCallback(
     async (
       executionId: string,
+      taskId: string,
       stage: StageTemplate,
       rawOutput: string,
       resultText: string,
@@ -366,10 +377,9 @@ export function useStageExecution() {
       attemptNumber?: number,
     ) => {
       if (!activeProject) return;
-      const task = useTaskStore.getState().activeTask;
-      if (!task) return;
 
-      const wasKilled = useProcessStore.getState().stages[stage.id]?.killed ?? false;
+      const sk = stageKey(taskId, stage.id);
+      const wasKilled = useProcessStore.getState().stages[sk]?.killed ?? false;
 
       const savedThinking = thinkingText?.trim() || null;
 
@@ -403,7 +413,7 @@ export function useStageExecution() {
         sendNotification("Stage complete", `${stage.name} needs your review`);
       }
 
-      await loadExecutions(activeProject.id, task.id);
+      await loadExecutions(activeProject.id, taskId);
     },
     [activeProject, loadExecutions],
   );
@@ -665,11 +675,40 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     [activeProject, runStage],
   );
 
-  const killCurrent = useCallback(async (stageId: string) => {
-    const processId = useProcessStore.getState().stages[stageId]?.processId;
-    if (!processId) return;
+  const killCurrent = useCallback(async (taskId: string, stageId: string) => {
+    const sk = stageKey(taskId, stageId);
+    const state = useProcessStore.getState().stages[sk];
+    if (!state?.isRunning) return;
+
     // Mark as killed before sending the signal so finalizeExecution knows
-    useProcessStore.getState().markKilled(stageId);
+    useProcessStore.getState().markKilled(sk);
+
+    const processId = state.processId;
+    const isPlaceholder = !processId || processId === "spawning" || processId === "fixing";
+
+    if (isPlaceholder) {
+      // Process not yet registered with the backend.
+      // Stop the stage immediately so the UI transitions to the failed/retry state.
+      // The "started" event handler will kill the real process when it arrives.
+      useProcessStore.getState().setStopped(sk);
+
+      const project = useProjectStore.getState().activeProject;
+      if (project) {
+        const exec = useTaskStore.getState().executions.find(
+          (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+        );
+        if (exec) {
+          await repo.updateStageExecution(project.id, exec.id, {
+            status: "failed",
+            error_message: "Stopped by user",
+            completed_at: new Date().toISOString(),
+          });
+          await useTaskStore.getState().loadExecutions(project.id, taskId);
+        }
+      }
+      return;
+    }
+
     try {
       await killProcess(processId);
     } catch {
