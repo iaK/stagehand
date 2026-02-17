@@ -32,11 +32,11 @@ function formatRelativeTime(iso: string): string {
   return `${diffDays}d ago`;
 }
 
-const statusConfig: Record<string, { label: string; className: string }> = {
-  completed: { label: "Completed", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  in_progress: { label: "In Progress", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  pending: { label: "Pending", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
-  failed: { label: "Failed", className: "bg-red-100 text-red-700 border-red-200" },
+const statusConfig: Record<string, { label: string; variant: "success" | "info" | "secondary" | "critical" }> = {
+  completed: { label: "Completed", variant: "success" },
+  in_progress: { label: "In Progress", variant: "info" },
+  pending: { label: "Pending", variant: "secondary" },
+  failed: { label: "Failed", variant: "critical" },
 };
 
 export function TaskOverview() {
@@ -85,7 +85,7 @@ export function TaskOverview() {
             <p className="text-sm text-muted-foreground">{activeTask.description}</p>
           )}
         </div>
-        <Badge className={status.className}>{status.label}</Badge>
+        <Badge variant={status.variant}>{status.label}</Badge>
       </div>
 
       <Separator />

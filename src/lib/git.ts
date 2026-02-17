@@ -108,16 +108,18 @@ export interface GitCommit {
   author: string;
 }
 
-export async function gitLog(workingDir: string): Promise<GitCommit[]> {
+export async function gitLog(workingDir: string, maxCount: number = 50): Promise<GitCommit[]> {
   try {
+    const delimiter = "---END-COMMIT---";
     const raw = await runGit(
       workingDir,
       "log",
-      "--format=%H%n%s%n%aI%n%an%n---",
+      `--max-count=${maxCount}`,
+      `--format=%H%n%s%n%aI%n%an%n${delimiter}`,
     );
     return raw
       .trim()
-      .split("---\n")
+      .split(`${delimiter}\n`)
       .filter((block) => block.trim())
       .map((block) => {
         const [hash, message, date, author] = block.trim().split("\n");

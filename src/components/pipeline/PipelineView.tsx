@@ -127,7 +127,7 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
             <div className="w-px h-6 bg-border" />
             <PipelineStepper
               stages={filteredStages}
-              currentStageId={currentStageId ?? ""}
+              currentStageId={currentStageId ?? null}
               executions={executions}
               onStageClick={setViewingStage}
             />
