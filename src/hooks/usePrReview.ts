@@ -10,6 +10,7 @@ import {
   ghFetchPrIssueComments,
   ghCommentOnPr,
   gitPush,
+  gitWorktreeRemove,
   hasUncommittedChanges,
   gitDiffStat,
   getChangedFiles,
@@ -487,6 +488,15 @@ Keep it under 72 characters for the first line.`,
           stage_summary: `${fixed.length} fixed, ${skipped.length} skipped, ${pending.length} pending`,
           completed_at: new Date().toISOString(),
         });
+      }
+
+      // Clean up worktree before marking completed
+      if (task.worktree_path) {
+        try {
+          await gitWorktreeRemove(activeProject.path, task.worktree_path);
+        } catch {
+          // Non-critical — worktree cleanup is best-effort
+        }
       }
 
       // Mark task as completed

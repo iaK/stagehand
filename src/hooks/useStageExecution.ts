@@ -49,10 +49,6 @@ export function useStageExecution() {
             // Use existing branch name or generate one
             let branchName = task.branch_name;
             if (!branchName) {
-              const commitRules = await repo.getProjectSetting(
-                activeProject.id,
-                "github_commit_rules",
-              );
               // Simple slug generation from task title
               const slug = task.title
                 .toLowerCase()
@@ -61,15 +57,9 @@ export function useStageExecution() {
                 .replace(/^-|-$/g, "")
                 .slice(0, 50);
               branchName = `feature/${slug}`;
-
-              // Check if branch naming convention is specified
-              if (commitRules?.toLowerCase().includes("branch")) {
-                // Keep the generated name — convention will be followed
-                // as much as possible from the slug
-              }
             }
 
-            const worktreePath = `${activeProject.path}/.stagehand-worktrees/${branchName.replace(/\//g, "-")}`;
+            const worktreePath = `${activeProject.path}/.stagehand-worktrees/${branchName.replace(/\//g, "--")}`;
 
             const exists = await gitBranchExists(activeProject.path, branchName);
 
@@ -89,8 +79,10 @@ export function useStageExecution() {
             // Update local task reference
             task = { ...task, branch_name: branchName, worktree_path: worktreePath };
           }
-        } catch {
-          // Worktree creation is non-critical — continue with stage execution
+        } catch (err) {
+          // Worktree creation is non-critical — continue with stage execution in project root
+          const errMsg = err instanceof Error ? err.message : String(err);
+          appendOutput(stage.id, `[Warning] Worktree creation failed, running in project root: ${errMsg}`);
         }
       }
 
@@ -301,13 +293,25 @@ export function useStageExecution() {
           }
         };
 
+        // For commit-eligible stages, instruct the agent not to commit —
+        // the app handles committing after the user reviews changes.
+        const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+        let systemPrompt = stage.persona_system_prompt ?? undefined;
+        if (commitEligibleStages.includes(stage.name)) {
+          const noCommitRule =
+            "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
+          systemPrompt = systemPrompt
+            ? `${systemPrompt}\n\n${noCommitRule}`
+            : noCommitRule;
+        }
+
         await spawnClaude(
           {
             prompt,
             workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
-            appendSystemPrompt: stage.persona_system_prompt ?? undefined,
+            appendSystemPrompt: systemPrompt,
             outputFormat: "stream-json",
             allowedTools: allowedTools,
             jsonSchema:
