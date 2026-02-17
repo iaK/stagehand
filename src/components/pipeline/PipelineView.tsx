@@ -4,6 +4,7 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
+import { TaskOverview } from "../task/TaskOverview";
 import type { StageTemplate } from "../../lib/types";
 
 export function PipelineView() {
@@ -26,6 +27,7 @@ export function PipelineView() {
   }, [stageTemplates, taskStages, activeTaskId]);
 
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
+  const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
 
   // Stable primitive values for effect dependencies
   const projectId = activeProject?.id;
@@ -57,6 +59,11 @@ export function PipelineView() {
     }
   }, [currentStageId, filteredStages]);
 
+  // Reset tab view when task changes
+  useEffect(() => {
+    setActiveView("pipeline");
+  }, [activeTaskId]);
+
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     useProcessStore.getState().setViewingStageId(viewingStage?.id ?? null);
@@ -85,35 +92,60 @@ export function PipelineView() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Stepper */}
+      {/* Header bar */}
       <div className="border-b border-border flex items-center">
-        <PipelineStepper
-          stages={filteredStages}
-          currentStageId={currentStageId ?? ""}
-          executions={executions}
-          onStageClick={setViewingStage}
-          isTaskCompleted={activeTask?.status === "completed"}
-        />
-      </div>
-
-      {/* Stage name + description bar */}
-      {viewingStage && (
-        <div className="border-b border-border px-6 py-2 flex items-baseline gap-2 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">{viewingStage.name}</h2>
-          <span className="text-xs text-muted-foreground truncate">{viewingStage.description}</span>
+        {/* Tab toggle */}
+        <div className="flex items-center gap-1 px-4 py-3">
+          <button
+            onClick={() => setActiveView("overview")}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              activeView === "overview"
+                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
+                : "text-zinc-400 hover:text-zinc-600"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveView("pipeline")}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              activeView === "pipeline"
+                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
+                : "text-zinc-400 hover:text-zinc-600"
+            }`}
+          >
+            Pipeline
+          </button>
         </div>
-      )}
-
-      {/* Stage Content */}
-      <div className="flex-1 overflow-y-auto">
-        {viewingStage ? (
-          <StageView key={viewingStage.id} stage={viewingStage} />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-muted-foreground">No stage selected</p>
-          </div>
+        {activeView === "pipeline" && (
+          <>
+            <div className="w-px h-6 bg-border" />
+            <PipelineStepper
+              stages={filteredStages}
+              currentStageId={currentStageId ?? null}
+              executions={executions}
+              onStageClick={setViewingStage}
+            />
+          </>
         )}
       </div>
+
+      {/* Content */}
+      {activeView === "overview" ? (
+        <div className="flex-1 overflow-y-auto">
+          <TaskOverview />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {viewingStage ? (
+            <StageView key={viewingStage.id} stage={viewingStage} />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">No stage selected</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
