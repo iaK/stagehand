@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
@@ -475,6 +475,9 @@ export function useStageExecution() {
     [activeProject, loadExecutions],
   );
 
+  const runStageRef = useRef(runStage);
+  runStageRef.current = runStage;
+
   const approveStage = useCallback(
     async (task: Task, stage: StageTemplate, decision?: string) => {
       if (!activeProject) return;
@@ -694,6 +697,24 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         await updateTask(projectId, task.id, {
           current_stage_id: nextStage.id,
         });
+
+        // Auto-start next stage if it doesn't require user input
+        if (nextStage.input_source !== "user" && nextStage.input_source !== "both") {
+          const freshTask = useTaskStore.getState().activeTask;
+          if (freshTask && freshTask.id === task.id) {
+            sendNotification(
+              "Stage auto-started",
+              `${nextStage.name} started automatically`,
+              "info",
+              { projectId, taskId: task.id },
+            );
+            // Fire-and-forget: don't await so the approval flow completes
+            // immediately and the UI can update to show the running state
+            runStageRef.current(freshTask, nextStage).catch((err) => {
+              console.error("Auto-start next stage failed:", err);
+            });
+          }
+        }
       } else {
         // No more stages — handle completion based on strategy
         if (task.completion_strategy === "direct_merge" && task.branch_name) {
