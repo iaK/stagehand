@@ -107,16 +107,19 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <p className="text-xs text-muted-foreground mb-4">
-        Define how commits, branches, and PRs should be formatted. These rules are used when generating commit messages and creating branches.
-      </p>
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-foreground">Conventions</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Define how commits, branches, and PRs should be formatted. These rules are used when generating commit messages and creating branches.
+        </p>
+      </div>
 
       {loading ? (
         <div className="text-sm text-muted-foreground text-center py-8">Loading...</div>
       ) : (
-        <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-6">
           <div>
-            <Label>Task Completion Strategy</Label>
+            <Label className="text-sm font-semibold">Task Completion Strategy</Label>
             <p className="text-xs text-muted-foreground mt-1 mb-2">
               How completed tasks are integrated into the main branch. This is the default for new tasks and can be changed per-task.
             </p>
@@ -164,7 +167,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
           <Separator />
 
           <div>
-            <Label>Commit Message Format</Label>
+            <Label className="text-sm font-semibold">Commit Message Format</Label>
             <Textarea
               value={commitFormat}
               onChange={(e) => setCommitFormat(e.target.value)}
@@ -175,7 +178,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
           </div>
 
           <div>
-            <Label>Branch Naming</Label>
+            <Label className="text-sm font-semibold">Branch Naming</Label>
             <Textarea
               value={branchNaming}
               onChange={(e) => setBranchNaming(e.target.value)}
@@ -186,7 +189,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
           </div>
 
           <div>
-            <Label>PR Description Template</Label>
+            <Label className="text-sm font-semibold">PR Description Template</Label>
             <Textarea
               value={prTemplate}
               onChange={(e) => setPrTemplate(e.target.value)}
@@ -197,7 +200,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
           </div>
 
           <div>
-            <Label>Additional Rules</Label>
+            <Label className="text-sm font-semibold">Additional Rules</Label>
             <Textarea
               value={extraRules}
               onChange={(e) => setExtraRules(e.target.value)}
@@ -209,8 +212,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <Separator />
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex items-center justify-end pt-6">
         <Button
           onClick={handleSave}
           disabled={saving || loading}

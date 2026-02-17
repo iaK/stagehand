@@ -48,7 +48,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[800px] max-h-[85vh] flex flex-col p-0" showCloseButton={false}>
+      <DialogContent className="sm:max-w-[800px] h-[85vh] flex flex-col p-0" showCloseButton={false}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <DialogHeader className="p-0">

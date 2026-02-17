@@ -252,7 +252,10 @@ export function useStageExecution() {
               setRunning(sk, event.process_id);
               appendOutput(sk, `[Process started: ${event.process_id}]`);
               // Refresh executions so the UI transitions to show the live stream
-              loadExecutions(activeProject!.id, taskId);
+              // Only if this task is still the active one — otherwise we'd overwrite another task's data
+              if (useTaskStore.getState().activeTask?.id === taskId) {
+                loadExecutions(activeProject!.id, taskId);
+              }
               break;
             case "stdout_line":
               rawOutput += event.line + "\n";
@@ -332,7 +335,11 @@ export function useStageExecution() {
                 status: "failed",
                 error_message: event.message,
                 completed_at: new Date().toISOString(),
-              }).then(() => loadExecutions(activeProject!.id, taskId));
+              }).then(() => {
+                if (useTaskStore.getState().activeTask?.id === taskId) {
+                  loadExecutions(activeProject!.id, taskId);
+                }
+              });
               break;
           }
         };
@@ -383,7 +390,9 @@ export function useStageExecution() {
             // Execution may not have been created yet — ignore
           }
         }
-        await loadExecutions(activeProject.id, task.id).catch(() => {});
+        if (useTaskStore.getState().activeTask?.id === task.id) {
+          await loadExecutions(activeProject.id, task.id).catch(() => {});
+        }
       }
     },
     [
@@ -458,7 +467,10 @@ export function useStageExecution() {
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
       }
 
-      await loadExecutions(activeProject.id, taskId);
+      // Only update the store if this task is still active — prevents state bleeding into other tasks
+      if (useTaskStore.getState().activeTask?.id === taskId) {
+        await loadExecutions(activeProject.id, taskId);
+      }
     },
     [activeProject, loadExecutions],
   );
@@ -694,7 +706,9 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
               branchName: task.branch_name,
               targetBranch,
             });
-            await loadExecutions(projectId, task.id);
+            if (useTaskStore.getState().activeTask?.id === task.id) {
+              await loadExecutions(projectId, task.id);
+            }
             return; // Don't mark as completed yet — wait for merge confirmation
           }
         }
@@ -715,7 +729,10 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         }
       }
 
-      await loadExecutions(projectId, task.id);
+      // Only update the store if this task is still active
+      if (useTaskStore.getState().activeTask?.id === task.id) {
+        await loadExecutions(projectId, task.id);
+      }
     },
     [updateTask, loadExecutions],
   );
