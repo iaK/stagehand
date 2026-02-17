@@ -64,6 +64,14 @@ describe("verifyApiKey", () => {
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Something went wrong");
   });
+
+  it("returns invalid with error on network failure (fetch throws)", async () => {
+    mockFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const result = await verifyApiKey("key");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Failed to fetch");
+  });
 });
 
 describe("fetchMyIssues", () => {

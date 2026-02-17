@@ -70,6 +70,12 @@ describe("extractJson", () => {
     ].join("\n");
     expect(extractJson(text)).toBe(JSON.stringify({ answer: "42" }));
   });
+
+  it("extracts first valid JSON when multiple separate objects exist in text", () => {
+    const text = 'prefix {"a":1} some text {"b":2} suffix';
+    const result = extractJson(text);
+    expect(result).toBe('{"a":1}');
+  });
 });
 
 // ─── validateGate ───────────────────────────────────────────────────────────
@@ -172,7 +178,7 @@ describe("truncateToSentences", () => {
   });
 
   it("returns first 300 chars when no sentence endings", () => {
-    const text = "A" .repeat(400);
+    const text = "A".repeat(400);
     const result = truncateToSentences(text, 3);
     expect(result).toHaveLength(300);
   });

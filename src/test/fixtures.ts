@@ -3,7 +3,6 @@ import type {
   Task,
   StageTemplate,
   StageExecution,
-  PrReviewFix,
 } from "../lib/types";
 
 export function makeProject(overrides?: Partial<Project>): Project {
@@ -86,25 +85,3 @@ export function makeStageExecution(
   };
 }
 
-export function makePrReviewFix(
-  overrides?: Partial<PrReviewFix>,
-): PrReviewFix {
-  return {
-    id: crypto.randomUUID(),
-    execution_id: "exec-1",
-    comment_id: 1,
-    comment_type: "review",
-    author: "reviewer",
-    author_avatar_url: null,
-    body: "Please fix this",
-    file_path: null,
-    line: null,
-    diff_hunk: null,
-    state: "COMMENTED",
-    fix_status: "pending",
-    fix_commit_hash: null,
-    created_at: "2025-01-01T00:00:00.000Z",
-    updated_at: "2025-01-01T00:00:00.000Z",
-    ...overrides,
-  };
-}

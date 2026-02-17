@@ -682,14 +682,24 @@ export function extractJson(text: string): string | null {
     }
   }
 
-  // Third try: find the outermost { ... } in the text
-  const match = text.match(/\{[\s\S]*\}/);
-  if (match) {
+  // Third try: find a JSON object in the text
+  // Use greedy match first (handles nested objects), fall back to lazy (handles multiple separate objects)
+  const greedyMatch = text.match(/\{[\s\S]*\}/);
+  if (greedyMatch) {
     try {
-      JSON.parse(match[0]);
-      return match[0];
+      JSON.parse(greedyMatch[0]);
+      return greedyMatch[0];
     } catch {
-      // continue
+      // Greedy match failed (likely grabbed across multiple separate JSON objects) — try lazy
+      const lazyMatch = text.match(/\{[\s\S]*?\}/);
+      if (lazyMatch) {
+        try {
+          JSON.parse(lazyMatch[0]);
+          return lazyMatch[0];
+        } catch {
+          // continue
+        }
+      }
     }
   }
 

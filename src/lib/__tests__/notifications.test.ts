@@ -1,12 +1,14 @@
 import { vi } from "vitest";
-import { sendNotification } from "../notifications";
+import { sendNotification, requestNotificationPermission } from "../notifications";
 import { toast } from "sonner";
 
 describe("sendNotification", () => {
   let instances: Array<{ onclick: (() => void) | null; close: ReturnType<typeof vi.fn> }>;
+  let originalHiddenDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     instances = [];
+    originalHiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
 
     // Mock Notification as a proper class
     class MockNotification {
@@ -23,6 +25,13 @@ describe("sendNotification", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // Restore original document.hidden descriptor
+    if (originalHiddenDescriptor) {
+      Object.defineProperty(document, "hidden", originalHiddenDescriptor);
+    } else {
+      // If there was no own property, delete our override so the prototype value is used
+      delete (document as unknown as Record<string, unknown>)["hidden"];
+    }
   });
 
   it("creates native Notification when document is hidden and permission granted", () => {
@@ -89,5 +98,56 @@ describe("sendNotification", () => {
 
     expect(focusSpy).toHaveBeenCalled();
     expect(notification.close).toHaveBeenCalled();
+  });
+});
+
+describe("requestNotificationPermission", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("calls requestPermission when permission is default", () => {
+    const requestPermission = vi.fn();
+    vi.stubGlobal("Notification", {
+      permission: "default",
+      requestPermission,
+    });
+
+    requestNotificationPermission();
+
+    expect(requestPermission).toHaveBeenCalled();
+  });
+
+  it("does not call requestPermission when permission is granted", () => {
+    const requestPermission = vi.fn();
+    vi.stubGlobal("Notification", {
+      permission: "granted",
+      requestPermission,
+    });
+
+    requestNotificationPermission();
+
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("does not call requestPermission when permission is denied", () => {
+    const requestPermission = vi.fn();
+    vi.stubGlobal("Notification", {
+      permission: "denied",
+      requestPermission,
+    });
+
+    requestNotificationPermission();
+
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when Notification is not in window", () => {
+    vi.stubGlobal("Notification", undefined);
+    // @ts-expect-error - deliberately removing Notification
+    delete window.Notification;
+
+    // Should not throw
+    expect(() => requestNotificationPermission()).not.toThrow();
   });
 });
