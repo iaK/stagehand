@@ -21,7 +21,7 @@ const CONVENTION_FILES = [
 ];
 
 /** Extract sections from markdown that match convention-related keywords */
-function extractConventionSections(markdown: string): string | null {
+export function extractConventionSections(markdown: string): string | null {
   const keywords = [
     "commit",
     "branch",
@@ -63,7 +63,7 @@ function extractConventionSections(markdown: string): string | null {
 }
 
 /** Extract just the "scripts" section from package.json */
-function extractPackageScripts(content: string): string | null {
+export function extractPackageScripts(content: string): string | null {
   try {
     const pkg = JSON.parse(content);
     if (pkg.scripts && Object.keys(pkg.scripts).length > 0) {

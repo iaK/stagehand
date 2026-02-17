@@ -57,8 +57,14 @@ pub async fn spawn_claude(
     }
 
     if let Some(ref tools) = args.allowed_tools {
-        for tool in tools {
-            cmd.arg("--allowedTools").arg(tool);
+        if tools.is_empty() {
+            // An empty list means "no tools at all" — pass a non-existent tool
+            // name so the CLI restricts to zero real tools.
+            cmd.arg("--allowedTools").arg("_none_");
+        } else {
+            for tool in tools {
+                cmd.arg("--allowedTools").arg(tool);
+            }
         }
     }
 

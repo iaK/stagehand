@@ -49,6 +49,7 @@ pub fn run() {
             commands::process::list_processes,
             commands::process::check_claude_available,
             commands::git::run_git_command,
+            commands::git::run_gh_command,
             commands::git::read_file_contents,
         ])
         .on_window_event(|_window, event| {

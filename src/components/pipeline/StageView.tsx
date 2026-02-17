@@ -9,10 +9,20 @@ import { StageOutput } from "./StageOutput";
 import {
   StageTimeline,
   UserBubble,
+  CollapsibleInputBubble,
   LiveStreamBubble,
   ThinkingBubble,
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
+import { getTaskWorkingDir } from "../../lib/worktree";
+import { usePrReview } from "../../hooks/usePrReview";
+import { PrReviewOutput } from "../output/PrReviewOutput";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { sendNotification } from "../../lib/notifications";
 import type { StageTemplate } from "../../lib/types";
 
 interface StageViewProps {
@@ -21,15 +31,19 @@ interface StageViewProps {
 
 export function StageView({ stage }: StageViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { activeTask, executions } = useTaskStore();
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const setTaskStages = useTaskStore((s) => s.setTaskStages);
   const { isRunning, streamOutput } = useProcessStore(
     (s) => s.stages[stage.id] ?? DEFAULT_STAGE_STATE,
   );
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
-  const { runStage, approveStage, redoStage, killCurrent } =
+  const { runStage, approveStage, advanceFromStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
+  const prReview = usePrReview(stage, activeTask);
   const [userInput, setUserInput] = useState("");
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
@@ -37,6 +51,8 @@ export function StageView({ stage }: StageViewProps) {
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
 
   // Sync editable commit message when pending commit appears for this stage
   useEffect(() => {
@@ -46,17 +62,25 @@ export function StageView({ stage }: StageViewProps) {
   }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
 
   const handleCommit = async () => {
-    if (!activeProject || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !activeTask || !pendingCommit || pendingCommit.stageId !== stage.id) return;
     setCommitting(true);
     setCommitError(null);
     try {
-      await gitAdd(activeProject.path);
-      const result = await gitCommit(activeProject.path, commitMessage);
-      // Extract short hash from commit output (e.g. "[main abc1234] message")
-      const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
-      const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
-      useProcessStore.getState().setCommitted(stage.id, shortHash);
-      useProcessStore.getState().clearPendingCommit();
+      if (pendingCommit.fixId) {
+        // PR Review fix commit — don't advance
+        await prReview.commitFix(pendingCommit.fixId, commitMessage);
+      } else {
+        // Standard commit — advance to next stage
+        const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+        await gitAdd(workDir);
+        const result = await gitCommit(workDir, commitMessage);
+        const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
+        const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
+        useProcessStore.getState().setCommitted(stage.id, shortHash);
+        useProcessStore.getState().clearPendingCommit();
+        sendNotification("Changes committed", shortHash);
+        await advanceFromStage(activeTask, stage);
+      }
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -64,8 +88,16 @@ export function StageView({ stage }: StageViewProps) {
     }
   };
 
-  const handleSkipCommit = () => {
-    useProcessStore.getState().clearPendingCommit();
+  const handleSkipCommit = async () => {
+    if (!activeTask) return;
+    if (pendingCommit?.fixId) {
+      // PR Review fix — skip commit but keep changes
+      await prReview.skipFixCommit(pendingCommit.fixId);
+    } else {
+      useProcessStore.getState().clearPendingCommit();
+      sendNotification("Commit skipped", stage.name);
+      await advanceFromStage(activeTask, stage);
+    }
   };
 
   const stageExecs = useMemo(
@@ -84,7 +116,6 @@ export function StageView({ stage }: StageViewProps) {
   const stageStatus = latestExecution?.status ?? "pending";
   const isCurrentStage = activeTask?.current_stage_id === stage.id;
   const isApproved = stageStatus === "approved";
-  const hasHistory = stageExecs.length > 1;
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
 
@@ -103,27 +134,185 @@ export function StageView({ stage }: StageViewProps) {
 
   const handleRun = async () => {
     if (!activeTask) return;
-    await runStage(activeTask, stage, userInput || undefined);
+    setStageError(null);
+    try {
+      await runStage(activeTask, stage, userInput || undefined);
+    } catch (err) {
+      console.error("Failed to run stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleApprove = async (decision?: string) => {
     if (!activeTask) return;
-    await approveStage(activeTask, stage, decision);
+    setApproving(true);
+    setStageError(null);
+    try {
+      await approveStage(activeTask, stage, decision);
+      // Commit-eligible stages already send a "Ready to commit" notification
+      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+      if (!commitEligibleStages.includes(stage.name)) {
+        sendNotification("Stage approved", stage.name);
+      }
+    } catch (err) {
+      console.error("Failed to approve stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+      setApproving(false);
+    }
   };
 
   const handleRedo = async () => {
     if (!activeTask) return;
     setShowFeedback(false);
-    await redoStage(activeTask, stage, feedback || undefined);
-    setFeedback("");
+    setStageError(null);
+    try {
+      await redoStage(activeTask, stage, feedback || undefined);
+      setFeedback("");
+    } catch (err) {
+      console.error("Failed to redo stage:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleSubmitAnswers = async (answers: string) => {
     if (!activeTask) return;
+    setStageError(null);
     await redoStage(activeTask, stage, answers);
   };
 
+  const handleApproveWithStages = async (selectedStageIds: string[]) => {
+    if (!activeTask || !activeProject) return;
+    setApproving(true);
+    try {
+      // Auto-include PR Review whenever PR Preparation is selected
+      let ids = [...selectedStageIds];
+      const hasPrPrep = stageTemplates.some(
+        (t) => ids.includes(t.id) && t.name === "PR Preparation",
+      );
+      if (hasPrPrep) {
+        const prReviewTemplate = stageTemplates.find((t) => t.name === "PR Review");
+        if (prReviewTemplate && !ids.includes(prReviewTemplate.id)) {
+          ids.push(prReviewTemplate.id);
+        }
+      }
+
+      // Build stages with sort orders from the templates
+      const stages = ids
+        .map((id) => {
+          const t = stageTemplates.find((s) => s.id === id);
+          return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
+        })
+        .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
+      // Persist selected stages before approving
+      await setTaskStages(activeProject.id, activeTask.id, stages);
+      await approveStage(activeTask, stage);
+    } catch (err) {
+      console.error("Failed to approve with stages:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+      setApproving(false);
+    }
+  };
+
   if (!activeProject || !activeTask) return null;
+
+  // PR Review: custom rendering — no standard stage flow
+  if (stage.output_format === "pr_review") {
+    const noPrUrl = !activeTask.pr_url;
+    return (
+      <div className="p-6 max-w-4xl">
+        {/* Stage Header */}
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold text-foreground">{stage.name}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
+        </div>
+
+        {noPrUrl ? (
+          <Alert variant="destructive">
+            <AlertDescription>
+              No PR URL found on this task. Please create a PR first (via the PR Preparation stage).
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            {/* Live stream output while fixing a comment */}
+            {isRunning && prReview.fixingId && (
+              <div className="mb-4">
+                <LiveStreamBubble
+                  streamLines={streamOutput}
+                  label="Fixing review comment..."
+                  onStop={() => killCurrent(stage.id)}
+                />
+              </div>
+            )}
+
+            <PrReviewOutput
+              fixes={prReview.fixes}
+              fixingId={prReview.fixingId}
+              onFix={prReview.fixComment}
+              onSkip={prReview.skipFix}
+              onMarkDone={prReview.markDone}
+              onRefresh={prReview.fetchReviews}
+              loading={prReview.loading}
+              isCompleted={activeTask.status === "completed"}
+              error={prReview.error}
+              streamOutput={streamOutput}
+            />
+
+            {/* Commit dialog for individual fixes */}
+            {pendingCommit?.stageId === stage.id && pendingCommit.fixId && (
+              <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  <span className="text-sm font-medium text-foreground">
+                    Commit Fix
+                  </span>
+                </div>
+
+                {pendingCommit.diffStat && (
+                  <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
+                    {pendingCommit.diffStat}
+                  </pre>
+                )}
+
+                <Textarea
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  rows={3}
+                  className="font-mono mb-3 resize-none"
+                />
+
+                {commitError && (
+                  <Alert variant="destructive" className="mb-3">
+                    <AlertDescription>{commitError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCommit}
+                    disabled={committing || !commitMessage.trim()}
+                    size="sm"
+                  >
+                    {committing ? "Committing..." : "Commit"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSkipCommit}
+                    disabled={committing}
+                  >
+                    Skip
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   const showInitialForm =
     isCurrentStage && (stageStatus === "pending" || !latestExecution);
@@ -132,59 +321,91 @@ export function StageView({ stage }: StageViewProps) {
     <div className="p-6 max-w-4xl">
       {/* Stage Header */}
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-zinc-100">{stage.name}</h2>
-        <p className="text-sm text-zinc-500 mt-1">{stage.description}</p>
+        <h2 className="text-xl font-semibold text-foreground">{stage.name}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
         {latestExecution && latestExecution.attempt_number > 1 && (
-          <p className="text-xs text-zinc-600 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Attempt #{latestExecution.attempt_number}
           </p>
         )}
       </div>
 
-      {/* Initial form — only when nothing has run yet */}
+      {/* Future stage -- not current, nothing has run */}
+      {!isCurrentStage && !latestExecution && (
+        <div className="mb-6 py-6 text-center text-muted-foreground">
+          <svg className="w-8 h-8 mx-auto mb-2 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm">Waiting for earlier stages to complete</p>
+        </div>
+      )}
+
+      {/* Initial form -- only when nothing has run yet */}
       {showInitialForm && (
         <div className="mb-6">
           {needsUserInput && (
             <div className="mb-4">
-              <label className="block text-sm text-zinc-400 mb-2">
+              <Label>
                 {stage.input_source === "both"
                   ? "Additional context or feedback"
                   : "Describe what you need"}
-              </label>
+              </Label>
               <MarkdownTextarea
                 value={userInput}
                 onChange={setUserInput}
                 rows={4}
                 placeholder="Enter additional context..."
+                className="mt-2"
               />
             </div>
           )}
-          <button
-            onClick={handleRun}
-            disabled={isRunning}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg text-sm font-medium transition-colors"
-          >
+          {stageError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{stageError}</AlertDescription>
+            </Alert>
+          )}
+          <Button onClick={handleRun} disabled={isRunning}>
             Run Stage
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* ── APPROVED: final result + collapsible timeline ── */}
+      {/* APPROVED: collapsible timeline + final result */}
       {latestExecution && isApproved && (
         <div className="mb-6">
+          {stageExecs.length > 0 && (
+            <Collapsible open={showTimeline} onOpenChange={setShowTimeline} className="mb-4">
+              <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <svg
+                  className={`w-3 h-3 transition-transform ${showTimeline ? "rotate-90" : ""}`}
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                </svg>
+                {showTimeline ? "Hide" : "Show"} process ({stageExecs.length} {stageExecs.length === 1 ? "round" : "rounds"})
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-3">
+                  <StageTimeline executions={stageExecs} stage={stage} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           {(stage.output_format === "research" || stage.output_format === "findings") && (
-            <div className="mb-4 p-3 bg-emerald-950/30 border border-emerald-800 rounded-lg flex items-center gap-2">
-              <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <Alert className="mb-4 border-emerald-200 bg-emerald-50 text-emerald-800">
+              <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-              <span className="text-sm font-medium text-emerald-300">
+              <AlertDescription className="text-emerald-800">
                 {stage.output_format === "research"
                   ? "Research Complete"
                   : latestExecution.attempt_number > 1
                     ? "Findings Applied"
                     : "Review Complete"}
-              </span>
-            </div>
+              </AlertDescription>
+            </Alert>
           )}
 
           <StageOutput
@@ -203,99 +424,77 @@ export function StageView({ stage }: StageViewProps) {
               />
             </div>
           )}
-
-          {hasHistory && (
-            <div className="mt-4">
-              <button
-                onClick={() => setShowTimeline(!showTimeline)}
-                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                <svg
-                  className={`w-3 h-3 transition-transform ${showTimeline ? "rotate-90" : ""}`}
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                </svg>
-                {showTimeline ? "Hide" : "Show"} process ({stageExecs.length} rounds)
-              </button>
-              {showTimeline && (
-                <div className="mt-3">
-                  <StageTimeline executions={stageExecs} stage={stage} />
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ── COMMIT CONFIRMATION ── */}
+      {/* COMMIT CONFIRMATION — shown after approval, blocks advancement */}
       {pendingCommit?.stageId === stage.id && (
-        <div className="mb-6 p-4 bg-zinc-800/50 border border-zinc-700 rounded-lg">
+        <div className="mb-6 p-4 bg-muted/50 border border-border rounded-lg">
           <div className="flex items-center gap-2 mb-3">
-            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
             </svg>
-            <span className="text-sm font-medium text-zinc-200">
+            <span className="text-sm font-medium text-foreground">
               Commit Changes
             </span>
           </div>
 
           {pendingCommit.diffStat && (
-            <pre className="text-xs text-zinc-500 bg-zinc-900 rounded p-2 mb-3 overflow-x-auto">
+            <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
               {pendingCommit.diffStat}
             </pre>
           )}
 
-          <textarea
+          <Textarea
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
             rows={3}
-            className="w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 mb-3 resize-none"
+            className="font-mono mb-3 resize-none"
           />
 
           {commitError && (
-            <div className="mb-3 p-2 bg-red-950/30 border border-red-900 rounded text-xs text-red-400">
-              {commitError}
-            </div>
+            <Alert variant="destructive" className="mb-3">
+              <AlertDescription>{commitError}</AlertDescription>
+            </Alert>
           )}
 
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={handleCommit}
               disabled={committing || !commitMessage.trim()}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded text-sm transition-colors"
+              size="sm"
             >
               {committing ? "Committing..." : "Commit"}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleSkipCommit}
               disabled={committing}
-              className="px-3 py-1.5 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
             >
               Skip
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
-      {/* ── COMMITTED BADGE ── */}
+      {/* COMMITTED BADGE */}
       {committedHash && isApproved && (
-        <div className="mb-6 flex items-center gap-2 p-2 bg-emerald-950/20 border border-emerald-900/30 rounded-lg">
-          <svg className="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+        <Alert className="mb-6 border-emerald-200 bg-emerald-50 text-emerald-700">
+          <svg className="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
-          <span className="text-xs text-emerald-400">
+          <AlertDescription className="text-emerald-700">
             Committed: <code className="font-mono">{committedHash}</code>
-          </span>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
 
-      {/* ── RUNNING / AWAITING: live timeline ── */}
+      {/* RUNNING / AWAITING: live timeline */}
       {latestExecution && !isApproved && !showInitialForm && (
         <div className="relative mb-6">
           {/* Vertical line for the whole timeline */}
-          <div className="absolute left-3 top-3 bottom-3 w-px bg-zinc-800" />
+          <div className="absolute left-3 top-3 bottom-3 w-px bg-border" />
 
           {/* Past completed rounds */}
           {pastExecs.length > 0 && (
@@ -304,19 +503,24 @@ export function StageView({ stage }: StageViewProps) {
 
           {/* Current round: user input */}
           {latestExecution.user_input && (
-            <UserBubble
-              text={latestExecution.user_input}
-              label={
-                stage.input_source === "previous_stage"
-                  ? "Input from previous stage"
-                  : latestExecution.attempt_number === 1
+            stage.input_source === "previous_stage" ? (
+              <CollapsibleInputBubble
+                text={latestExecution.user_input}
+                label="Input from previous stage"
+              />
+            ) : (
+              <UserBubble
+                text={latestExecution.user_input}
+                label={
+                  latestExecution.attempt_number === 1
                     ? "Your input"
                     : "Your answers"
-              }
-            />
+                }
+              />
+            )
           )}
 
-          {/* Current round: RUNNING — live stream */}
+          {/* Current round: RUNNING -- live stream */}
           {stageStatus === "running" && (
             <LiveStreamBubble
               streamLines={streamOutput}
@@ -325,7 +529,7 @@ export function StageView({ stage }: StageViewProps) {
             />
           )}
 
-          {/* Current round: DONE — interactive output */}
+          {/* Current round: DONE -- interactive output */}
           {stageStatus === "awaiting_user" && (
             <div className="pl-9">
               {latestExecution.thinking_output && (
@@ -340,20 +544,29 @@ export function StageView({ stage }: StageViewProps) {
                 execution={latestExecution}
                 stage={stage}
                 onApprove={handleApprove}
+                onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
                 isApproved={false}
+                stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
+                approving={approving}
               />
+
+              {stageError && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertDescription>{stageError}</AlertDescription>
+                </Alert>
+              )}
 
               {/* Redo actions */}
               {isCurrentStage && (
                 <div className="flex items-start gap-3 mt-4">
                   {!showFeedback && (
-                    <button
+                    <Button
+                      variant="outline"
                       onClick={() => setShowFeedback(true)}
-                      className="px-4 py-2 border border-zinc-700 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm transition-colors"
                     >
                       Redo with Feedback
-                    </button>
+                    </Button>
                   )}
                   {showFeedback && (
                     <div className="flex-1 max-w-lg">
@@ -366,18 +579,12 @@ export function StageView({ stage }: StageViewProps) {
                         className="mb-2"
                       />
                       <div className="flex gap-2">
-                        <button
-                          onClick={handleRedo}
-                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm transition-colors"
-                        >
+                        <Button variant="warning" onClick={handleRedo}>
                           Redo
-                        </button>
-                        <button
-                          onClick={() => setShowFeedback(false)}
-                          className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
-                        >
+                        </Button>
+                        <Button variant="ghost" onClick={() => setShowFeedback(false)}>
                           Cancel
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -390,18 +597,24 @@ export function StageView({ stage }: StageViewProps) {
           {stageStatus === "failed" && (
             <div className="pl-9">
               {latestExecution.error_message && (
-                <div className="p-4 bg-red-950/30 border border-red-900 rounded-lg text-sm text-red-400">
-                  {latestExecution.error_message}
-                </div>
+                <Alert variant="destructive">
+                  <AlertDescription>{latestExecution.error_message}</AlertDescription>
+                </Alert>
+              )}
+              {stageError && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertDescription>{stageError}</AlertDescription>
+                </Alert>
               )}
               {isCurrentStage && (
-                <button
+                <Button
+                  variant="warning"
                   onClick={handleRun}
                   disabled={isRunning}
-                  className="mt-4 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="mt-4"
                 >
                   Retry
-                </button>
+                </Button>
               )}
             </div>
           )}

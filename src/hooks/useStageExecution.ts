@@ -8,11 +8,16 @@ import {
   hasUncommittedChanges,
   gitDiffStat,
   isGitRepo,
-  gitCreateBranch,
-  gitCheckoutBranch,
   gitBranchExists,
+  gitPush,
+  gitDefaultBranch,
+  ghCreatePr,
+  gitWorktreeAdd,
+  gitWorktreeRemove,
 } from "../lib/git";
+import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
+import { sendNotification } from "../lib/notifications";
 import type {
   Task,
   StageTemplate,
@@ -23,67 +28,85 @@ import type {
 
 export function useStageExecution() {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { stageTemplates, executions, loadExecutions, updateTask } =
-    useTaskStore();
-  const { appendOutput, clearOutput, setRunning, setStopped } =
-    useProcessStore();
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const executions = useTaskStore((s) => s.executions);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const updateTask = useTaskStore((s) => s.updateTask);
+  const appendOutput = useProcessStore((s) => s.appendOutput);
+  const clearOutput = useProcessStore((s) => s.clearOutput);
+  const setRunning = useProcessStore((s) => s.setRunning);
+  const setStopped = useProcessStore((s) => s.setStopped);
 
   const runStage = useCallback(
     async (task: Task, stage: StageTemplate, userInput?: string) => {
       if (!activeProject) return;
 
-      // Create branch on first stage execution if task has no branch yet
-      if (stage.sort_order === 0 && !task.branch_name) {
+      // Create worktree on first stage execution if task has no worktree yet
+      if (stage.output_format === "research" && !task.worktree_path) {
         try {
           const gitRepo = await isGitRepo(activeProject.path);
           if (gitRepo) {
-            let branchName: string;
-            // Use Linear branch name if available, otherwise generate from title
-            const commitRules = await repo.getProjectSetting(
-              activeProject.id,
-              "github_commit_rules",
-            );
-            // Simple slug generation from task title
-            const slug = task.title
-              .toLowerCase()
-              .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "")
-              .slice(0, 50);
-            branchName = `feature/${slug}`;
-
-            // Check if branch naming convention is specified
-            if (commitRules?.toLowerCase().includes("branch")) {
-              // Keep the generated name — convention will be followed
-              // as much as possible from the slug
+            // Use existing branch name or generate one
+            let branchName = task.branch_name;
+            if (!branchName) {
+              // Simple slug generation from task title
+              const slug = task.title
+                .toLowerCase()
+                .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-|-$/g, "")
+                .slice(0, 50);
+              branchName = `feature/${slug}`;
             }
+
+            const worktreePath = `${activeProject.path}/.stagehand-worktrees/${branchName.replace(/\//g, "--")}`;
 
             const exists = await gitBranchExists(activeProject.path, branchName);
-            if (exists) {
-              await gitCheckoutBranch(activeProject.path, branchName);
-            } else {
-              await gitCreateBranch(activeProject.path, branchName);
+
+            // Clean up stale worktree if directory already exists
+            try {
+              await gitWorktreeRemove(activeProject.path, worktreePath);
+            } catch {
+              // Worktree may not exist — that's fine
             }
 
-            await updateTask(activeProject.id, task.id, { branch_name: branchName });
+            await gitWorktreeAdd(activeProject.path, worktreePath, branchName, !exists);
+
+            await updateTask(activeProject.id, task.id, {
+              branch_name: branchName,
+              worktree_path: worktreePath,
+            });
             // Update local task reference
-            task = { ...task, branch_name: branchName };
+            task = { ...task, branch_name: branchName, worktree_path: worktreePath };
           }
-        } catch {
-          // Branch creation is non-critical — continue with stage execution
+        } catch (err) {
+          // Worktree creation is non-critical — continue with stage execution in project root
+          const errMsg = err instanceof Error ? err.message : String(err);
+          appendOutput(stage.id, `[Warning] Worktree creation failed, running in project root: ${errMsg}`);
+        }
+      }
+
+      // Clear task_stages when re-running Research so user re-selects stages
+      if (stage.output_format === "research") {
+        const prevAttemptCheck = executions.filter((e) => e.stage_template_id === stage.id);
+        if (prevAttemptCheck.length > 0) {
+          await repo.setTaskStages(activeProject.id, task.id, []);
+          await useTaskStore.getState().loadTaskStages(activeProject.id, task.id);
         }
       }
 
       clearOutput(stage.id);
       setRunning(stage.id, "spawning");
 
+      let executionId: string | null = null;
       try {
-        // Find previous completed execution
+        // Find previous completed execution (using filtered stage list from store)
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
         const prevExec = await repo.getPreviousStageExecution(
           activeProject.id,
           task.id,
           stage.sort_order,
-          stageTemplates,
+          taskStageTemplates,
         );
 
         // Use the previous stage's composed result as input context
@@ -119,9 +142,23 @@ export function useStageExecution() {
             const firstAttempt = prevAttempts[0];
             if (firstAttempt.user_input && userInput) {
               effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+            } else if (firstAttempt.user_input && !userInput) {
+              // Retry without new input — re-use original input
+              effectiveUserInput = firstAttempt.user_input;
             }
           }
         }
+
+        // Fetch approved stage summaries for {{stage_summaries}}
+        const summaries = await repo.getApprovedStageSummaries(
+          activeProject.id,
+          task.id,
+        );
+        const stageSummariesText = summaries.length > 0
+          ? summaries
+              .map((s) => `### ${s.stage_name}\n${s.stage_summary}`)
+              .join("\n\n")
+          : undefined;
 
         // Render prompt
         const prompt = renderPrompt(stage.prompt_template, {
@@ -130,13 +167,14 @@ export function useStageExecution() {
           userInput: effectiveUserInput,
           userDecision: prevExec?.user_decision ?? undefined,
           priorAttemptOutput,
+          stageSummaries: stageSummariesText,
         });
 
         // Always use a fresh session — context is passed via the prompt template
         const sessionId = crypto.randomUUID();
 
         // Create execution record
-        const executionId = crypto.randomUUID();
+        executionId = crypto.randomUUID();
         const execution: Omit<StageExecution, "completed_at"> = {
           id: executionId,
           task_id: task.id,
@@ -156,6 +194,7 @@ export function useStageExecution() {
           error_message: null,
           thinking_output: null,
           stage_result: null,
+          stage_summary: null,
           started_at: new Date().toISOString(),
         };
 
@@ -233,7 +272,7 @@ export function useStageExecution() {
               );
               // Update execution in DB
               finalizeExecution(
-                executionId,
+                executionId!,
                 stage,
                 rawOutput,
                 resultText,
@@ -245,7 +284,7 @@ export function useStageExecution() {
             case "error":
               setStopped(stage.id);
               appendOutput(stage.id, `[Error] ${event.message}`);
-              repo.updateStageExecution(activeProject!.id, executionId, {
+              repo.updateStageExecution(activeProject!.id, executionId!, {
                 status: "failed",
                 error_message: event.message,
                 completed_at: new Date().toISOString(),
@@ -254,13 +293,25 @@ export function useStageExecution() {
           }
         };
 
+        // For commit-eligible stages, instruct the agent not to commit —
+        // the app handles committing after the user reviews changes.
+        const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+        let systemPrompt = stage.persona_system_prompt ?? undefined;
+        if (commitEligibleStages.includes(stage.name)) {
+          const noCommitRule =
+            "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
+          systemPrompt = systemPrompt
+            ? `${systemPrompt}\n\n${noCommitRule}`
+            : noCommitRule;
+        }
+
         await spawnClaude(
           {
             prompt,
-            workingDirectory: activeProject.path,
+            workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
-            appendSystemPrompt: stage.persona_system_prompt ?? undefined,
+            appendSystemPrompt: systemPrompt,
             outputFormat: "stream-json",
             allowedTools: allowedTools,
             jsonSchema:
@@ -273,8 +324,21 @@ export function useStageExecution() {
           onEvent,
         );
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
         setStopped(stage.id);
-        appendOutput(stage.id, `[Failed] ${err}`);
+        appendOutput(stage.id, `[Failed] ${errorMsg}`);
+        // Update the execution record with the actual error (if it was created)
+        if (executionId) {
+          try {
+            await repo.updateStageExecution(activeProject.id, executionId, {
+              status: "failed",
+              error_message: errorMsg,
+              completed_at: new Date().toISOString(),
+            });
+          } catch {
+            // Execution may not have been created yet — ignore
+          }
+        }
         await loadExecutions(activeProject.id, task.id).catch(() => {});
       }
     },
@@ -318,6 +382,9 @@ export function useStageExecution() {
           error_message: wasKilled ? "Stopped by user" : `Process exited with code ${exitCode}`,
           completed_at: new Date().toISOString(),
         });
+        if (!wasKilled) {
+          sendNotification("Stage failed", `${stage.name} encountered an error`);
+        }
       } else {
         // Try to parse structured output
         let parsedOutput = resultText;
@@ -333,6 +400,7 @@ export function useStageExecution() {
           thinking_output: savedThinking,
           completed_at: new Date().toISOString(),
         });
+        sendNotification("Stage complete", `${stage.name} needs your review`);
       }
 
       await loadExecutions(activeProject.id, task.id);
@@ -358,12 +426,15 @@ export function useStageExecution() {
         return;
       }
 
+      // Use filtered stage templates from store (avoids redundant DB call)
+      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+
       // Get the previous stage's result (for append/passthrough)
       const prevExec = await repo.getPreviousStageExecution(
         activeProject.id,
         task.id,
         stage.sort_order,
-        stageTemplates,
+        taskStageTemplates,
       );
       const prevResult = prevExec?.stage_result ?? null;
 
@@ -388,35 +459,34 @@ export function useStageExecution() {
           break;
       }
 
+      // Extract a concise summary for this stage
+      const stageSummary = extractStageSummary(stage, latest, decision);
+
+      // PR Preparation: create the PR before marking as approved so failures
+      // are surfaced to the user and the stage can be retried.
+      if (stage.name === "PR Preparation" && task.branch_name) {
+        await createPullRequest(task, decision);
+      }
+
       // Update execution with decision and computed stage_result
       await repo.updateStageExecution(activeProject.id, latest.id, {
         status: "approved",
         user_decision: decision ?? null,
         stage_result: stageResult,
+        stage_summary: stageSummary,
       });
 
-      // Check if this is a commit-eligible stage (Implementation, Refinement, Security Review)
+      // For commit-eligible stages, generate pending commit and wait for user decision
+      // (advanceFromStage will be called after the user commits or skips)
       const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
       if (commitEligibleStages.includes(stage.name)) {
-        generatePendingCommit(task, stage).catch(() => {});
+        await generatePendingCommit(task, stage);
+        await loadExecutions(activeProject.id, task.id);
+        return;
       }
 
-      // Advance to next stage
-      const nextStage = stageTemplates.find(
-        (s) => s.sort_order === stage.sort_order + 1,
-      );
-
-      if (nextStage) {
-        await updateTask(activeProject.id, task.id, {
-          current_stage_id: nextStage.id,
-        });
-      } else {
-        await updateTask(activeProject.id, task.id, {
-          status: "completed",
-        });
-      }
-
-      await loadExecutions(activeProject.id, task.id);
+      // Non-commit stages: advance immediately
+      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
   );
@@ -425,14 +495,25 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate) => {
       if (!activeProject) return;
 
-      // Check if the project is a git repo with uncommitted changes
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
       const gitRepo = await isGitRepo(activeProject.path);
-      if (!gitRepo) return;
+      if (!gitRepo) {
+        // Not a git repo — skip commit, advance directly
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+        return;
+      }
 
-      const hasChanges = await hasUncommittedChanges(activeProject.path);
-      if (!hasChanges) return;
+      const hasChanges = await hasUncommittedChanges(workDir);
+      if (!hasChanges) {
+        // No changes to commit — advance directly
+        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+        return;
+      }
 
-      const diffStat = await gitDiffStat(activeProject.path).catch(() => "");
+      const diffStat = await gitDiffStat(workDir).catch(() => "");
 
       // Generate commit message using Claude (lightweight one-shot)
       let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
@@ -459,7 +540,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
           spawnClaude(
             {
               prompt,
-              workingDirectory: activeProject.path,
+              workingDirectory: workDir,
               maxTurns: 1,
               allowedTools: [],
               outputFormat: "text",
@@ -483,14 +564,97 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         // Use fallback message
       }
 
+      // Set pending commit — StageView will show the approval dialog
       useProcessStore.getState().setPendingCommit({
         stageId: stage.id,
         stageName: stage.name,
         message: commitMessage,
         diffStat,
       });
+      sendNotification("Ready to commit", `${stage.name} has changes to commit`);
     },
     [activeProject],
+  );
+
+  const createPullRequest = useCallback(
+    async (task: Task, decision?: string) => {
+      if (!activeProject || !task.branch_name) return;
+
+      // Parse the PR fields from the user decision
+      let title = task.title;
+      let body = "";
+      if (decision) {
+        try {
+          const fields = JSON.parse(decision);
+          if (fields.title) title = fields.title;
+          const parts: string[] = [];
+          if (fields.description) parts.push(fields.description);
+          if (fields.test_plan) parts.push(`## Test Plan\n\n${fields.test_plan}`);
+          body = parts.join("\n\n");
+        } catch {
+          // Use defaults
+        }
+      }
+
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
+      // Push the branch to remote
+      await gitPush(workDir, task.branch_name);
+
+      // Determine base branch
+      const baseBranch = await gitDefaultBranch(activeProject.path) ?? undefined;
+
+      // Create the PR
+      const prUrl = await ghCreatePr(workDir, title, body, baseBranch);
+
+      // Save PR URL to the task
+      if (prUrl) {
+        await updateTask(activeProject.id, task.id, { pr_url: prUrl.trim() });
+        sendNotification("PR created", title);
+      }
+    },
+    [activeProject, updateTask],
+  );
+
+  const advanceFromStageInner = useCallback(
+    async (projectId: string, task: Task, stage: StageTemplate, taskStageTemplates: StageTemplate[]) => {
+      const nextStage = taskStageTemplates
+        .filter((s) => s.sort_order > stage.sort_order)
+        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
+
+      if (nextStage) {
+        await updateTask(projectId, task.id, {
+          current_stage_id: nextStage.id,
+        });
+      } else {
+        await updateTask(projectId, task.id, {
+          status: "completed",
+        });
+        // Clean up worktree on completion
+        if (task.worktree_path) {
+          try {
+            const project = useProjectStore.getState().activeProject;
+            if (project) {
+              await gitWorktreeRemove(project.path, task.worktree_path);
+            }
+          } catch {
+            // Non-critical — worktree cleanup is best-effort
+          }
+        }
+      }
+
+      await loadExecutions(projectId, task.id);
+    },
+    [updateTask, loadExecutions],
+  );
+
+  const advanceFromStage = useCallback(
+    async (task: Task, stage: StageTemplate) => {
+      if (!activeProject) return;
+      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+    },
+    [activeProject, advanceFromStageInner],
   );
 
   const redoStage = useCallback(
@@ -513,11 +677,11 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     }
   }, []);
 
-  return { runStage, approveStage, redoStage, killCurrent };
+  return { runStage, approveStage, advanceFromStage, redoStage, killCurrent };
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
-function extractJson(text: string): string | null {
+export function extractJson(text: string): string | null {
   if (!text) return null;
 
   // First try: parse the whole thing
@@ -549,14 +713,24 @@ function extractJson(text: string): string | null {
     }
   }
 
-  // Third try: find the outermost { ... } in the text
-  const match = text.match(/\{[\s\S]*\}/);
-  if (match) {
+  // Third try: find a JSON object in the text
+  // Use greedy match first (handles nested objects), fall back to lazy (handles multiple separate objects)
+  const greedyMatch = text.match(/\{[\s\S]*\}/);
+  if (greedyMatch) {
     try {
-      JSON.parse(match[0]);
-      return match[0];
+      JSON.parse(greedyMatch[0]);
+      return greedyMatch[0];
     } catch {
-      // continue
+      // Greedy match failed (likely grabbed across multiple separate JSON objects) — try lazy
+      const lazyMatch = text.match(/\{[\s\S]*?\}/);
+      if (lazyMatch) {
+        try {
+          JSON.parse(lazyMatch[0]);
+          return lazyMatch[0];
+        } catch {
+          // continue
+        }
+      }
     }
   }
 
@@ -564,7 +738,7 @@ function extractJson(text: string): string | null {
 }
 
 /** Extract a clean, human-readable output from a stage for its stage_result. */
-function extractStageOutput(
+export function extractStageOutput(
   stage: StageTemplate,
   execution: StageExecution,
   decision?: string,
@@ -577,6 +751,16 @@ function extractStageOutput(
       try {
         const data = JSON.parse(raw);
         if (data.research) return data.research;
+      } catch {
+        // fall through
+      }
+      return raw;
+    }
+    case "plan": {
+      // Extract the plan text from the JSON envelope
+      try {
+        const data = JSON.parse(raw);
+        if (data.plan) return data.plan;
       } catch {
         // fall through
       }
@@ -598,12 +782,14 @@ function extractStageOutput(
       }
       return raw;
     }
+    case "pr_review":
+      return raw || "PR Review completed";
     default:
       return raw;
   }
 }
 
-function formatSelectedApproach(decision: string): string {
+export function formatSelectedApproach(decision: string): string {
   try {
     const selected = JSON.parse(decision);
     if (!Array.isArray(selected) || selected.length === 0) return decision;
@@ -621,7 +807,97 @@ function formatSelectedApproach(decision: string): string {
   }
 }
 
-function validateGate(
+/** Extract a concise summary from a stage's output for use in PR preparation. */
+export function extractStageSummary(
+  stage: StageTemplate,
+  execution: StageExecution,
+  decision?: string,
+): string | null {
+  const raw = execution.parsed_output ?? execution.raw_output ?? "";
+  if (!raw.trim()) return null;
+
+  switch (stage.output_format) {
+    case "research": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.research) return truncateToSentences(data.research, 3);
+      } catch { /* fall through */ }
+      return truncateToSentences(raw, 3);
+    }
+    case "plan": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.plan) return truncateToSentences(data.plan, 3);
+      } catch { /* fall through */ }
+      return truncateToSentences(raw, 3);
+    }
+    case "options": {
+      if (decision) {
+        try {
+          const selected = JSON.parse(decision);
+          if (Array.isArray(selected) && selected.length > 0) {
+            const approach = selected[0];
+            return `Selected: ${approach.title} — ${truncateToSentences(approach.description, 2)}`;
+          }
+        } catch { /* fall through */ }
+      }
+      return truncateToSentences(raw, 3);
+    }
+    case "findings": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.summary) return data.summary;
+      } catch {
+        // Phase 2 text output — summarize
+      }
+      return truncateToSentences(raw, 3);
+    }
+    case "pr_review":
+      return raw ? truncateToSentences(raw, 3) : null;
+    case "text": {
+      return extractImplementationSummary(raw);
+    }
+    default:
+      return truncateToSentences(raw, 3);
+  }
+}
+
+/** Extract first N sentences from text. */
+export function truncateToSentences(text: string, n: number): string {
+  // Strip markdown headers for cleaner extraction
+  const cleaned = text.replace(/^#+\s+.*$/gm, "").trim();
+  // Match sentences ending with . ! or ?
+  const sentences = cleaned.match(/[^.!?]*[.!?]+/g);
+  if (!sentences || sentences.length === 0) {
+    // No clear sentences — take first ~300 chars
+    return cleaned.slice(0, 300).trim();
+  }
+  return sentences.slice(0, n).join("").trim();
+}
+
+/** Extract summary from implementation (text format) output. */
+export function extractImplementationSummary(raw: string): string | null {
+  if (!raw.trim()) return null;
+
+  // Look for explicit summary sections near end of output
+  const summaryMatch = raw.match(
+    /(?:^|\n)#+\s*(?:Summary|Changes Made|What (?:was|I) (?:changed|did))[^\n]*\n([\s\S]{10,500}?)(?:\n#|\n---|\n\*\*|$)/i,
+  );
+  if (summaryMatch) {
+    return truncateToSentences(summaryMatch[1].trim(), 3);
+  }
+
+  // Fall back to last paragraph (implementation output often ends with a summary)
+  const paragraphs = raw.split(/\n\n+/).filter((p) => p.trim().length > 20);
+  if (paragraphs.length > 0) {
+    const last = paragraphs[paragraphs.length - 1].trim();
+    return truncateToSentences(last, 3);
+  }
+
+  return truncateToSentences(raw, 3);
+}
+
+export function validateGate(
   rule: GateRule,
   decision: string | undefined,
   _execution: StageExecution,

@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { useProcessStore, DEFAULT_STAGE_STATE } from "../../stores/processStore";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
 export function TerminalView() {
   const viewingStageId = useProcessStore((s) => s.viewingStageId);
@@ -25,57 +26,56 @@ export function TerminalView() {
   }, [isRunning]);
 
   return (
-    <div
-      className={`border-t border-zinc-800 bg-zinc-950 flex flex-col transition-all ${
-        collapsed ? "h-8" : "h-48"
-      }`}
-    >
-      {/* Header */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-900 transition-colors flex-shrink-0"
+    <Collapsible open={!collapsed} onOpenChange={(open) => setCollapsed(!open)}>
+      <div
+        className={`border-t border-border bg-zinc-50 flex flex-col transition-all ${
+          collapsed ? "h-8" : "h-48"
+        }`}
       >
-        <div
-          className={`w-2 h-2 rounded-full ${
-            anyRunning ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"
-          }`}
-        />
-        <span className="text-zinc-500 uppercase tracking-wider">
-          Terminal
-        </span>
-        <span className="text-zinc-700 ml-auto">
-          {collapsed ? "▲" : "▼"}
-        </span>
-      </button>
+        {/* Header */}
+        <CollapsibleTrigger className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-100 transition-colors flex-shrink-0">
+          <div
+            className={`w-2 h-2 rounded-full ${
+              anyRunning ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
+            }`}
+          />
+          <span className="text-muted-foreground uppercase tracking-wider">
+            Terminal
+          </span>
+          <span className="text-muted-foreground/50 ml-auto">
+            {collapsed ? "\u25B2" : "\u25BC"}
+          </span>
+        </CollapsibleTrigger>
 
-      {/* Content */}
-      {!collapsed && (
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto px-3 pb-2 font-mono text-xs leading-relaxed"
-        >
-          {streamOutput.length === 0 ? (
-            <span className="text-zinc-700">Ready.</span>
-          ) : (
-            streamOutput.map((line, i) => (
-              <div
-                key={i}
-                className={`whitespace-pre-wrap break-all ${
-                  line.startsWith("[stderr]")
-                    ? "text-amber-500"
-                    : line.startsWith("[Error]") || line.startsWith("[Failed")
-                      ? "text-red-400"
-                      : line.startsWith("[Process")
-                        ? "text-zinc-600"
-                        : "text-zinc-300"
-                }`}
-              >
-                {line}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+        {/* Content */}
+        <CollapsibleContent className="flex-1 min-h-0">
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto px-3 pb-2 font-mono text-xs leading-relaxed h-full"
+          >
+            {streamOutput.length === 0 ? (
+              <span className="text-muted-foreground/50">Ready.</span>
+            ) : (
+              streamOutput.map((line, i) => (
+                <div
+                  key={i}
+                  className={`whitespace-pre-wrap break-all ${
+                    line.startsWith("[stderr]")
+                      ? "text-amber-600"
+                      : line.startsWith("[Error]") || line.startsWith("[Failed")
+                        ? "text-red-600"
+                        : line.startsWith("[Process")
+                          ? "text-muted-foreground"
+                          : "text-zinc-700"
+                  }`}
+                >
+                  {line}
+                </div>
+              ))
+            )}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
   );
 }

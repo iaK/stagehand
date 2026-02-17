@@ -42,14 +42,14 @@ export function PipelineStepper({
               onClick={() => onStageClick(stage)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
                 status === "completed"
-                  ? "bg-emerald-900/40 text-emerald-400 border border-emerald-800"
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                   : status === "running"
-                    ? "bg-blue-900/40 text-blue-400 border border-blue-700 animate-pulse"
+                    ? "bg-blue-50 text-blue-700 border border-blue-200 animate-pulse"
                     : status === "awaiting"
-                      ? "bg-amber-900/40 text-amber-400 border border-amber-700"
+                      ? "bg-amber-50 text-amber-700 border border-amber-200"
                       : status === "current"
-                        ? "bg-zinc-700 text-zinc-200 border border-zinc-600"
-                        : "bg-zinc-900 text-zinc-600 border border-zinc-800"
+                        ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
+                        : "bg-zinc-50 text-zinc-400 border border-zinc-200"
               }`}
             >
               <span
@@ -62,7 +62,7 @@ export function PipelineStepper({
                         ? "bg-amber-500 text-white"
                         : status === "current"
                           ? "bg-zinc-500 text-white"
-                          : "bg-zinc-800 text-zinc-600"
+                          : "bg-zinc-200 text-zinc-500"
                 }`}
               >
                 {status === "completed" ? (
@@ -78,7 +78,7 @@ export function PipelineStepper({
             {i < stages.length - 1 && (
               <div
                 className={`w-6 h-px mx-1 ${
-                  status === "completed" ? "bg-emerald-700" : "bg-zinc-800"
+                  status === "completed" ? "bg-emerald-300" : "bg-zinc-200"
                 }`}
               />
             )}

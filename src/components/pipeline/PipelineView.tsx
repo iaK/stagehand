@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
+import { Button } from "@/components/ui/button";
 import type { StageTemplate } from "../../lib/types";
 
 interface PipelineViewProps {
@@ -12,28 +13,54 @@ interface PipelineViewProps {
 
 export function PipelineView({ onToggleHistory }: PipelineViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { activeTask, stageTemplates, executions, loadExecutions } =
-    useTaskStore();
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const loadTaskStages = useTaskStore((s) => s.loadTaskStages);
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const taskStages = useTaskStore((s) => s.taskStages);
+
+  // Compute filtered stages from stable selectors
+  const activeTaskId = activeTask?.id;
+  const filteredStages = useMemo(() => {
+    if (!activeTaskId) return stageTemplates;
+    const selectedIds = taskStages[activeTaskId];
+    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    const idSet = new Set(selectedIds);
+    return stageTemplates.filter((t) => idSet.has(t.id));
+  }, [stageTemplates, taskStages, activeTaskId]);
+
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
 
-  // Load executions when task changes
+  // Stable primitive values for effect dependencies
+  const projectId = activeProject?.id;
+  const currentStageId = activeTask?.current_stage_id;
+
+  // Load executions and task stages when task changes
   useEffect(() => {
-    if (activeProject && activeTask) {
-      loadExecutions(activeProject.id, activeTask.id);
+    if (projectId && activeTaskId) {
+      loadExecutions(projectId, activeTaskId).catch((err) =>
+        console.error("Failed to load executions:", err),
+      );
+      loadTaskStages(projectId, activeTaskId).catch((err) =>
+        console.error("Failed to load task stages:", err),
+      );
     }
-  }, [activeProject, activeTask, loadExecutions]);
+  }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);
 
   // Auto-select current stage
   useEffect(() => {
-    if (activeTask && stageTemplates.length > 0) {
-      const current = stageTemplates.find(
-        (s) => s.id === activeTask.current_stage_id,
+    if (currentStageId && filteredStages.length > 0) {
+      const current = filteredStages.find(
+        (s) => s.id === currentStageId,
       );
-      setViewingStage(current ?? stageTemplates[0]);
+      setViewingStage(current ?? filteredStages[0]);
+    } else if (filteredStages.length > 0) {
+      setViewingStage(filteredStages[0]);
     } else {
       setViewingStage(null);
     }
-  }, [activeTask, stageTemplates]);
+  }, [currentStageId, filteredStages]);
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
@@ -44,8 +71,8 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
         <div className="text-center">
-          <p className="text-zinc-500 text-lg">Welcome to Stagehand</p>
-          <p className="text-zinc-600 text-sm mt-2">
+          <p className="text-muted-foreground text-lg">Welcome to Stagehand</p>
+          <p className="text-muted-foreground/60 text-sm mt-2">
             Create a project to get started
           </p>
         </div>
@@ -56,7 +83,7 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
   if (!activeTask) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <p className="text-zinc-500">Select or create a task to begin</p>
+        <p className="text-muted-foreground">Select or create a task to begin</p>
       </div>
     );
   }
@@ -64,20 +91,21 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Stepper */}
-      <div className="border-b border-zinc-800 flex items-center">
+      <div className="border-b border-border flex items-center">
         <PipelineStepper
-          stages={stageTemplates}
-          currentStageId={activeTask.current_stage_id}
+          stages={filteredStages}
+          currentStageId={currentStageId ?? ""}
           executions={executions}
           onStageClick={setViewingStage}
         />
-        <button
+        <Button
+          variant="outline"
+          size="xs"
           onClick={onToggleHistory}
-          className="px-3 py-1.5 mr-4 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 rounded transition-colors"
-          title="Toggle completed stages panel"
+          className="mr-4"
         >
           History
-        </button>
+        </Button>
       </div>
 
       {/* Stage Content */}
@@ -86,7 +114,7 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
           <StageView key={viewingStage.id} stage={viewingStage} />
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-zinc-600">No stage selected</p>
+            <p className="text-muted-foreground">No stage selected</p>
           </div>
         )}
       </div>

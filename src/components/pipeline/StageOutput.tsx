@@ -1,25 +1,32 @@
-import type { StageTemplate, StageExecution } from "../../lib/types";
+import type { StageTemplate, StageExecution, ResearchQuestion } from "../../lib/types";
 import { TextOutput } from "../output/TextOutput";
 import { OptionsOutput } from "../output/OptionsOutput";
 import { ChecklistOutput } from "../output/ChecklistOutput";
 import { StructuredOutput } from "../output/StructuredOutput";
-import { ResearchOutput } from "../output/ResearchOutput";
+import { ResearchOutput, QuestionCards } from "../output/ResearchOutput";
 import { FindingsOutput } from "../output/FindingsOutput";
+import { Button } from "@/components/ui/button";
 
 interface StageOutputProps {
   execution: StageExecution;
   stage: StageTemplate;
   onApprove: (decision?: string) => void;
+  onApproveWithStages?: (selectedStageIds: string[]) => void;
   onSubmitAnswers?: (answers: string) => void;
   isApproved: boolean;
+  stageTemplates?: StageTemplate[];
+  approving?: boolean;
 }
 
 export function StageOutput({
   execution,
   stage,
   onApprove,
+  onApproveWithStages,
   onSubmitAnswers,
   isApproved,
+  stageTemplates,
+  approving,
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
@@ -29,17 +36,35 @@ export function StageOutput({
         <div>
           <TextOutput content={output} />
           {!isApproved && (
-            <button
+            <Button
+              variant="success"
               onClick={() => onApprove()}
-              className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+              disabled={approving}
+              className="mt-4"
             >
-              Approve & Continue
-            </button>
+              {approving ? "Approving..." : "Approve & Continue"}
+            </Button>
           )}
         </div>
       );
 
-    case "options":
+    case "options": {
+      // Check for questions before rendering options
+      try {
+        const parsed = JSON.parse(output);
+        const questions: ResearchQuestion[] = parsed.questions ?? [];
+        if (questions.length > 0 && !isApproved && onSubmitAnswers) {
+          return (
+            <QuestionCards
+              questions={questions}
+              onSubmit={onSubmitAnswers}
+              submitLabel="Submit Answers"
+            />
+          );
+        }
+      } catch {
+        // Not valid JSON, fall through to normal options rendering
+      }
       return (
         <OptionsOutput
           output={output}
@@ -47,6 +72,7 @@ export function StageOutput({
           isApproved={isApproved}
         />
       );
+    }
 
     case "checklist":
       return (
@@ -67,13 +93,54 @@ export function StageOutput({
         />
       );
 
+    case "plan": {
+      let planContent = output;
+      try {
+        const parsed = JSON.parse(output);
+        const questions: ResearchQuestion[] = parsed.questions ?? [];
+        if (questions.length > 0 && !isApproved && onSubmitAnswers) {
+          return (
+            <div>
+              {parsed.plan && <TextOutput content={parsed.plan} />}
+              <QuestionCards
+                questions={questions}
+                onSubmit={onSubmitAnswers}
+                submitLabel="Submit Answers"
+              />
+            </div>
+          );
+        }
+        planContent = parsed.plan ?? output;
+      } catch {
+        // Not valid JSON, render as plain text
+      }
+      return (
+        <div>
+          <TextOutput content={planContent} />
+          {!isApproved && (
+            <Button
+              variant="success"
+              onClick={() => onApprove()}
+              disabled={approving}
+              className="mt-4"
+            >
+              {approving ? "Approving..." : "Approve & Continue"}
+            </Button>
+          )}
+        </div>
+      );
+    }
+
     case "research":
       return (
         <ResearchOutput
           output={output}
           onApprove={() => onApprove()}
+          onApproveWithStages={onApproveWithStages}
           onSubmitAnswers={onSubmitAnswers ?? (() => {})}
           isApproved={isApproved}
+          stageTemplates={stageTemplates}
+          approving={approving}
         />
       );
 
@@ -84,12 +151,14 @@ export function StageOutput({
           <div>
             <TextOutput content={output} />
             {!isApproved && (
-              <button
+              <Button
+                variant="success"
                 onClick={() => onApprove()}
-                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                disabled={approving}
+                className="mt-4"
               >
-                Approve & Continue
-              </button>
+                {approving ? "Approving..." : "Approve & Continue"}
+              </Button>
             )}
           </div>
         );
@@ -107,6 +176,13 @@ export function StageOutput({
           isApproved={isApproved}
         />
       );
+
+    case "pr_review":
+      return isApproved ? (
+        <div>
+          <TextOutput content={output || "PR Review completed."} />
+        </div>
+      ) : null;
 
     default:
       return <TextOutput content={output} />;

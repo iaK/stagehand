@@ -11,7 +11,7 @@ export function getDefaultStageTemplates(
       description:
         "Investigate the problem space, gather context, and understand requirements.",
       sort_order: 0,
-      prompt_template: `You are a senior software engineer researching a task. Analyze the following task thoroughly.
+      prompt_template: `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
 
 Task: {{task_description}}
 
@@ -25,22 +25,42 @@ Your previous research output (build on this, do NOT repeat questions that have 
 {{prior_attempt_output}}
 {{/if}}
 
-Provide a comprehensive analysis including:
-1. Understanding of the problem
-2. Key technical considerations
-3. Relevant existing code/patterns to be aware of
-4. Potential challenges and risks
+Investigate the codebase and provide a factual analysis:
+1. **Problem understanding** — What exactly needs to happen? What is the current behavior vs desired behavior?
+2. **Relevant code** — Which files, functions, components, and patterns are involved? Quote key code snippets.
+3. **Dependencies & constraints** — What does this code depend on? What depends on it? Are there tests, types, or contracts to respect?
+4. **Codebase conventions** — What patterns, naming conventions, and architectural decisions does the project follow that are relevant?
 
-If you have questions that need the developer's input before the research is complete, include them in the "questions" array. For each question:
+Do NOT:
+- Suggest how to implement the solution
+- Propose architectural approaches
+- Discuss trade-offs between implementation options
+- Make recommendations about what approach to take
+
+Your questions should ONLY be about clarifying requirements and scope — what the developer wants, not how to build it.
+
+If you have questions, include them in the "questions" array. For each question:
 - Provide a "proposed_answer" with your best guess
 - Provide an "options" array with 2-4 selectable choices the developer can pick from (the developer can also write a custom answer)
 - Do NOT re-ask questions the developer has already answered above
 
 If all questions have been answered and the research is complete, return an empty "questions" array.
 
+Additionally, suggest which pipeline stages this task needs. The available stages are:
+- "High-Level Approaches": Brainstorm and compare multiple approaches (useful for complex tasks with multiple viable solutions)
+- "Planning": Create a detailed implementation plan (useful for non-trivial changes)
+- "Implementation": Write the actual code changes (almost always needed)
+- "Refinement": Self-review the implementation for quality issues (useful for larger changes)
+- "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
+- "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
+- "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
+
+For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
+Include your suggestions in the "suggested_stages" array.
+
 Respond with a JSON object matching this structure:
 {
-  "research": "Your full research analysis in Markdown...",
+  "research": "Your factual research analysis in Markdown (NO implementation suggestions)...",
   "questions": [
     {
       "id": "q1",
@@ -48,6 +68,10 @@ Respond with a JSON object matching this structure:
       "proposed_answer": "Your best-guess answer",
       "options": ["Option A", "Option B", "Option C"]
     }
+  ],
+  "suggested_stages": [
+    { "name": "Implementation", "reason": "Code changes are needed" },
+    { "name": "PR Preparation", "reason": "Changes should be submitted as a PR" }
   ]
 }`,
       input_source: "user",
@@ -72,8 +96,19 @@ Respond with a JSON object matching this structure:
               required: ["id", "question", "proposed_answer"],
             },
           },
+          suggested_stages: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                reason: { type: "string" },
+              },
+              required: ["name", "reason"],
+            },
+          },
         },
-        required: ["research", "questions"],
+        required: ["research", "questions", "suggested_stages"],
       }),
       gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,
@@ -90,12 +125,32 @@ Respond with a JSON object matching this structure:
       description:
         "Generate multiple implementation approaches based on the research.",
       sort_order: 1,
-      prompt_template: `Based on the research below, propose 2-4 distinct high-level approaches for implementing this task.
+      prompt_template: `You are a senior software architect proposing implementation approaches for a task.
 
 Task: {{task_description}}
 
 Research findings:
 {{previous_output}}
+
+{{#if user_input}}
+Developer's answers to your questions:
+{{user_input}}
+{{/if}}
+
+{{#if prior_attempt_output}}
+Your previous output (incorporate the developer's answers above and refine your thinking):
+{{prior_attempt_output}}
+{{/if}}
+
+Before proposing approaches, you may ask the developer clarifying questions about implementation preferences, trade-offs they care about, or constraints that affect the approach. These should be questions about HOW to build it (not WHAT to build — that was covered in research).
+
+If you need more information, include questions in the "questions" array and leave "options" empty.
+If you have enough information, provide 2-4 distinct approaches in "options" with an empty "questions" array.
+
+For each question:
+- Provide a "proposed_answer" with your best guess
+- Provide an "options" array with 2-4 selectable choices
+- Do NOT re-ask questions the developer has already answered above
 
 For each approach, provide:
 - A clear title
@@ -112,6 +167,14 @@ Respond with a JSON object matching this structure:
       "description": "Detailed description",
       "pros": ["pro 1", "pro 2"],
       "cons": ["con 1", "con 2"]
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Your question here?",
+      "proposed_answer": "Your best-guess answer",
+      "options": ["Option A", "Option B"]
     }
   ]
 }`,
@@ -134,8 +197,24 @@ Respond with a JSON object matching this structure:
               required: ["id", "title", "description", "pros", "cons"],
             },
           },
+          questions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                question: { type: "string" },
+                proposed_answer: { type: "string" },
+                options: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+              required: ["id", "question", "proposed_answer"],
+            },
+          },
         },
-        required: ["options"],
+        required: ["options", "questions"],
       }),
       gate_rules: JSON.stringify({
         type: "require_selection",
@@ -156,25 +235,80 @@ Respond with a JSON object matching this structure:
       description:
         "Create a detailed implementation plan based on the selected approach.",
       sort_order: 2,
-      prompt_template: `Create a detailed implementation plan for the following task using the selected approach.
+      prompt_template: `You are a senior software engineer creating a detailed implementation plan.
 
 Task: {{task_description}}
 
 Selected approach:
 {{user_decision}}
 
-Previous research:
+Previous research and context:
 {{previous_output}}
 
-Provide:
+{{#if user_input}}
+Developer's answers to your questions:
+{{user_input}}
+{{/if}}
+
+{{#if prior_attempt_output}}
+Your previous output (incorporate the developer's answers above and refine your plan):
+{{prior_attempt_output}}
+{{/if}}
+
+Before writing the plan, you may ask the developer clarifying questions about implementation details — e.g. naming preferences, testing expectations, specific behaviors for edge cases, or anything that would change the plan.
+
+If you need more information, include questions in the "questions" array and set "plan" to a brief summary of what you know so far.
+If you have enough information, provide the full plan in "plan" with an empty "questions" array.
+
+For each question:
+- Provide a "proposed_answer" with your best guess
+- Provide an "options" array with 2-4 selectable choices
+- Do NOT re-ask questions the developer has already answered above
+
+The plan should include:
 1. Step-by-step implementation plan
 2. Files that need to be created or modified
 3. Dependencies or prerequisites
 4. Testing strategy
-5. Potential edge cases to handle`,
+5. Potential edge cases to handle
+
+Respond with a JSON object matching this structure:
+{
+  "plan": "Your detailed implementation plan in Markdown...",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Your question here?",
+      "proposed_answer": "Your best-guess answer",
+      "options": ["Option A", "Option B"]
+    }
+  ]
+}`,
       input_source: "previous_stage",
-      output_format: "text",
-      output_schema: null,
+      output_format: "plan",
+      output_schema: JSON.stringify({
+        type: "object",
+        properties: {
+          plan: { type: "string" },
+          questions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                question: { type: "string" },
+                proposed_answer: { type: "string" },
+                options: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+              required: ["id", "question", "proposed_answer"],
+            },
+          },
+        },
+        required: ["plan", "questions"],
+      }),
       gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,
       persona_system_prompt: null,
@@ -409,8 +543,16 @@ Respond with a JSON object:
 
 Task: {{task_description}}
 
-Implementation details:
+{{#if stage_summaries}}
+## Stage Summaries
+
+{{stage_summaries}}
+{{/if}}
+
+{{#if previous_output}}
+Full implementation details (for reference):
 {{previous_output}}
+{{/if}}
 
 Generate:
 1. A concise PR title
@@ -451,6 +593,25 @@ Respond with a JSON object:
       persona_model: null,
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      result_mode: "replace",
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      name: "PR Review",
+      description:
+        "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
+      sort_order: 7,
+      prompt_template: "",
+      input_source: "previous_stage",
+      output_format: "pr_review",
+      output_schema: null,
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: null,
       result_mode: "replace",
     },
   ];

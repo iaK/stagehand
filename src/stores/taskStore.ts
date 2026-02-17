@@ -10,10 +10,15 @@ interface TaskStore {
   stageTemplates: StageTemplate[];
   executions: StageExecution[];
   loading: boolean;
+  taskStages: Record<string, string[]>; // taskId → stageTemplateId[]
+  taskExecStatuses: Record<string, string>; // taskId → latest execution status
 
   loadTasks: (projectId: string) => Promise<void>;
   loadStageTemplates: (projectId: string) => Promise<void>;
   loadExecutions: (projectId: string, taskId: string) => Promise<void>;
+  loadTaskStages: (projectId: string, taskId: string) => Promise<void>;
+  setTaskStages: (projectId: string, taskId: string, stages: { stageTemplateId: string; sortOrder: number }[]) => Promise<void>;
+  getActiveTaskStageTemplates: () => StageTemplate[];
   setActiveTask: (task: Task | null) => void;
   addTask: (
     projectId: string,
@@ -24,7 +29,7 @@ interface TaskStore {
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
@@ -38,12 +43,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   stageTemplates: [],
   executions: [],
   loading: false,
+  taskStages: {},
+  taskExecStatuses: {},
 
   loadTasks: async (projectId) => {
-    const tasks = await repo.listTasks(projectId);
+    const [tasks, taskExecStatuses] = await Promise.all([
+      repo.listTasks(projectId),
+      repo.getLatestExecutionStatusPerTask(projectId),
+    ]);
     const current = get().activeTask;
     set({
       tasks,
+      taskExecStatuses,
       activeTask: current
         ? tasks.find((t) => t.id === current.id) ?? null
         : null,
@@ -71,20 +82,54 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (runningProcessIds !== null && runningProcessIds.length === 0) {
       for (const exec of executions) {
         if (exec.status === "running") {
-          await repo.updateStageExecution(projectId, exec.id, {
-            status: "failed",
-            error_message: "Process crashed or was interrupted",
-            completed_at: new Date().toISOString(),
-          });
-          exec.status = "failed";
-          exec.error_message = "Process crashed or was interrupted";
-          // Also reset the process store so the Retry button isn't stuck disabled
-          useProcessStore.getState().setStopped(exec.stage_template_id);
+          // Skip if the process store thinks this stage is actively running
+          // (process may be spawning or not yet registered with the backend)
+          const stageState = useProcessStore.getState().stages[exec.stage_template_id];
+          if (stageState?.isRunning) continue;
+
+          try {
+            await repo.updateStageExecution(projectId, exec.id, {
+              status: "failed",
+              error_message: "Process crashed or was interrupted",
+              completed_at: new Date().toISOString(),
+            });
+            exec.status = "failed";
+            exec.error_message = "Process crashed or was interrupted";
+            // Also reset the process store so the Retry button isn't stuck disabled
+            useProcessStore.getState().setStopped(exec.stage_template_id);
+          } catch (err) {
+            console.error("Failed to clean up stale execution:", exec.id, err);
+          }
         }
       }
     }
 
-    set({ executions });
+    const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
+    set({ executions, taskExecStatuses });
+  },
+
+  loadTaskStages: async (projectId, taskId) => {
+    const stageIds = await repo.getTaskStages(projectId, taskId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: stageIds },
+    }));
+  },
+
+  setTaskStages: async (projectId, taskId, stages) => {
+    await repo.setTaskStages(projectId, taskId, stages);
+    const stageIds = stages.map((s) => s.stageTemplateId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: stageIds },
+    }));
+  },
+
+  getActiveTaskStageTemplates: () => {
+    const { activeTask, stageTemplates, taskStages } = get();
+    if (!activeTask) return stageTemplates;
+    const selectedIds = taskStages[activeTask.id];
+    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    const idSet = new Set(selectedIds);
+    return stageTemplates.filter((t) => idSet.has(t.id));
   },
 
   setActiveTask: (task) => set({ activeTask: task }),
@@ -120,8 +165,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   refreshExecution: async (projectId, _executionId) => {
     const task = get().activeTask;
     if (task) {
-      const executions = await repo.listStageExecutions(projectId, task.id);
-      set({ executions });
+      const [executions, taskExecStatuses] = await Promise.all([
+        repo.listStageExecutions(projectId, task.id),
+        repo.getLatestExecutionStatusPerTask(projectId),
+      ]);
+      set({ executions, taskExecStatuses });
     }
   },
 }));

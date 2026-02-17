@@ -15,7 +15,9 @@ const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
  */
 export function useProcessHealthCheck(stageId: string | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const { activeTask, executions, loadExecutions } = useTaskStore();
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {

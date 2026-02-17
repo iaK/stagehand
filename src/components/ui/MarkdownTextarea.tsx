@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { TextOutput } from "../output/TextOutput";
+import { Textarea } from "@/components/ui/textarea";
 
 interface MarkdownTextareaProps {
   value: string;
@@ -57,14 +58,14 @@ export function MarkdownTextarea({
 
   if (isEditing) {
     return (
-      <textarea
+      <Textarea
         ref={textareaRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={handleBlur}
         rows={rows}
         placeholder={placeholder}
-        className={`w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 resize-none ${className ?? ""}`}
+        className={`resize-none ${className ?? ""}`}
       />
     );
   }
@@ -76,15 +77,15 @@ export function MarkdownTextarea({
       tabIndex={readOnly ? undefined : 0}
       role={readOnly ? undefined : "button"}
       style={{ minHeight }}
-      className={`w-full bg-zinc-900 text-zinc-100 border border-zinc-700 rounded-lg px-4 py-3 text-sm ${
-        readOnly ? "" : "cursor-pointer hover:border-zinc-500"
-      } focus:outline-none focus:border-blue-500 ${className ?? ""}`}
+      className={`w-full bg-background border border-input rounded-md px-4 py-3 text-sm ${
+        readOnly ? "" : "cursor-pointer hover:border-zinc-400"
+      } focus:outline-none focus:border-ring ${className ?? ""}`}
     >
       {value ? (
         <TextOutput content={value} />
       ) : (
         placeholder && (
-          <span className="text-zinc-500">{placeholder}</span>
+          <span className="text-muted-foreground">{placeholder}</span>
         )
       )}
     </div>

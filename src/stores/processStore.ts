@@ -21,6 +21,7 @@ export interface PendingCommit {
   stageName: string;
   message: string;
   diffStat: string;
+  fixId?: string;
 }
 
 interface ProcessStore {

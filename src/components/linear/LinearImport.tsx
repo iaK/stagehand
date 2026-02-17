@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { useLinearStore } from "../../stores/linearStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { fetchIssueDetail } from "../../lib/linear";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { sendNotification } from "../../lib/notifications";
 import type { LinearIssue } from "../../lib/types";
 
 interface LinearImportProps {
@@ -10,11 +17,11 @@ interface LinearImportProps {
 }
 
 const priorityLabels: Record<number, { label: string; color: string }> = {
-  0: { label: "None", color: "text-zinc-500" },
-  1: { label: "Urgent", color: "text-red-400" },
-  2: { label: "High", color: "text-orange-400" },
-  3: { label: "Medium", color: "text-yellow-400" },
-  4: { label: "Low", color: "text-zinc-400" },
+  0: { label: "None", color: "text-muted-foreground" },
+  1: { label: "Urgent", color: "text-red-600" },
+  2: { label: "High", color: "text-orange-600" },
+  3: { label: "Medium", color: "text-yellow-600" },
+  4: { label: "Low", color: "text-muted-foreground" },
 };
 
 export function LinearImport({ projectId, onClose }: LinearImportProps) {
@@ -22,6 +29,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
   const addTask = useTaskStore((s) => s.addTask);
   const [filter, setFilter] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchIssues();
@@ -41,6 +49,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
   const handleImport = async (issue: LinearIssue) => {
     if (!apiKey) return;
     setImporting(issue.id);
+    setImportError(null);
     try {
       const detail = await fetchIssueDetail(apiKey, issue.id);
 
@@ -56,41 +65,49 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
 
       const title = `[${issue.identifier}] ${issue.title}`;
       await addTask(projectId, title, description, issue.branchName);
+      sendNotification("Task imported", title);
       onClose();
+    } catch (err) {
+      setImportError(`Failed to import issue: ${err}`);
     } finally {
       setImporting(null);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[560px] max-w-[90vw] max-h-[80vh] flex flex-col">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">
-          Import from Linear
-        </h2>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[560px] max-h-[80vh] !flex !flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>Import from Linear</DialogTitle>
+        </DialogHeader>
 
-        <input
+        <Input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="w-full bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 mb-3"
           placeholder="Filter issues..."
           autoFocus
         />
 
-        <div className="flex-1 overflow-y-auto min-h-0">
+        {importError && (
+          <Alert variant="destructive">
+            <AlertDescription>{importError}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {loading && (
-            <div className="text-sm text-zinc-500 text-center py-8">
+            <div className="text-sm text-muted-foreground text-center py-8">
               Loading issues...
             </div>
           )}
           {error && (
-            <div className="text-sm text-red-400 text-center py-8">
+            <div className="text-sm text-destructive text-center py-8">
               {error}
             </div>
           )}
           {!loading && !error && filtered.length === 0 && (
-            <div className="text-sm text-zinc-500 text-center py-8">
+            <div className="text-sm text-muted-foreground text-center py-8">
               {issues.length === 0
                 ? "No assigned issues found"
                 : "No issues match your filter"}
@@ -104,26 +121,26 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
                   key={issue.id}
                   onClick={() => handleImport(issue)}
                   disabled={importing !== null}
-                  className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-zinc-800 transition-colors flex items-start gap-3 disabled:opacity-50"
+                  className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-accent transition-colors flex items-start gap-3 disabled:opacity-50"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-mono text-zinc-500">
+                      <span className="text-xs font-mono text-muted-foreground">
                         {issue.identifier}
                       </span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                      <Badge variant="secondary">
                         {issue.status}
-                      </span>
+                      </Badge>
                       <span className={`text-xs ${priority.color}`}>
                         {priority.label}
                       </span>
                     </div>
-                    <div className="text-sm text-zinc-200 truncate">
+                    <div className="text-sm text-foreground truncate">
                       {issue.title}
                     </div>
                   </div>
                   {importing === issue.id && (
-                    <span className="text-xs text-zinc-500 mt-1">
+                    <span className="text-xs text-muted-foreground mt-1">
                       Importing...
                     </span>
                   )}
@@ -132,16 +149,13 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
             })}
         </div>
 
-        <div className="flex justify-end mt-4 pt-3 border-t border-zinc-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
+        <Separator />
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
