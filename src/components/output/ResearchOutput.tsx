@@ -1,16 +1,19 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { TextOutput } from "./TextOutput";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { ResearchQuestion, StageTemplate, StageSuggestion } from "../../lib/types";
+import { Separator } from "@/components/ui/separator";
+import * as repo from "../../lib/repositories";
+import { useProjectStore } from "../../stores/projectStore";
+import type { ResearchQuestion, StageTemplate, StageSuggestion, CompletionStrategy } from "../../lib/types";
 
 interface ResearchOutputProps {
   output: string;
   onApprove: () => void;
-  onApproveWithStages?: (selectedStageIds: string[]) => void;
+  onApproveWithStages?: (selectedStageIds: string[], completionStrategy?: CompletionStrategy) => void;
   onSubmitAnswers: (answers: string) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
@@ -87,6 +90,8 @@ export function ResearchOutput({
   );
 }
 
+const PR_STAGE_NAMES = new Set(["pr preparation", "pr review"]);
+
 function StageSelectionPanel({
   stageTemplates,
   suggestedStages,
@@ -95,9 +100,21 @@ function StageSelectionPanel({
 }: {
   stageTemplates: StageTemplate[];
   suggestedStages: StageSuggestion[];
-  onApprove: (selectedStageIds: string[]) => void;
+  onApprove: (selectedStageIds: string[], completionStrategy?: CompletionStrategy) => void;
   approving?: boolean;
 }) {
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const [completionStrategy, setCompletionStrategy] = useState<CompletionStrategy>("pr");
+
+  // Load default completion strategy from project settings
+  useEffect(() => {
+    if (activeProject) {
+      repo.getProjectSetting(activeProject.id, "default_completion_strategy").then((val) => {
+        if (val) setCompletionStrategy(val as CompletionStrategy);
+      });
+    }
+  }, [activeProject]);
+
   // Map AI suggestions to templates by normalized name
   const suggestionMap = useMemo(() => {
     const map = new Map<string, StageSuggestion>();
@@ -142,6 +159,21 @@ function StageSelectionPanel({
     return initial;
   });
 
+  // When completion strategy changes, auto-toggle PR stages
+  const handleStrategyChange = (strategy: CompletionStrategy) => {
+    setCompletionStrategy(strategy);
+    const isPr = strategy === "pr";
+    setChecked((prev) => {
+      const next = { ...prev };
+      for (const t of selectableStages) {
+        if (PR_STAGE_NAMES.has(t.name.trim().toLowerCase())) {
+          next[t.id] = isPr;
+        }
+      }
+      return next;
+    });
+  };
+
   const handleApprove = () => {
     const selectedIds: string[] = [];
     // Always include Research
@@ -149,13 +181,41 @@ function StageSelectionPanel({
     for (const t of selectableStages) {
       if (checked[t.id]) selectedIds.push(t.id);
     }
-    onApprove(selectedIds);
+    onApprove(selectedIds, completionStrategy);
   };
 
   const selectedCount = Object.values(checked).filter(Boolean).length;
 
   return (
     <div className="mt-6 space-y-3">
+      {/* Completion strategy selector */}
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">
+          How should this task be completed?
+        </h3>
+        <div className="flex gap-2">
+          {([
+            { value: "pr" as const, label: "Pull Request" },
+            { value: "direct_merge" as const, label: "Direct Merge" },
+            { value: "none" as const, label: "No Merge" },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleStrategyChange(opt.value)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                completionStrategy === opt.value
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-border text-muted-foreground hover:border-zinc-400"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Separator />
+
       <h3 className="text-sm font-medium text-foreground">
         Pipeline stages for this task
       </h3>
@@ -179,6 +239,8 @@ function StageSelectionPanel({
         {selectableStages.map((t) => {
           const key = t.name.trim().toLowerCase();
           const suggestion = suggestionMap.get(key);
+          const isPrStage = PR_STAGE_NAMES.has(key);
+          const dimmed = isPrStage && completionStrategy !== "pr";
 
           return (
             <label
@@ -187,7 +249,7 @@ function StageSelectionPanel({
                 checked[t.id]
                   ? "border-blue-500 bg-blue-50"
                   : "border-border hover:border-zinc-400"
-              }`}
+              } ${dimmed ? "opacity-50" : ""}`}
             >
               <Checkbox
                 checked={checked[t.id]}

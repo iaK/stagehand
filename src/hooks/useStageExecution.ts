@@ -14,6 +14,9 @@ import {
   ghCreatePr,
   gitWorktreeAdd,
   gitWorktreeRemove,
+  gitCheckoutBranch,
+  gitMerge,
+  gitPushCurrentBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -464,7 +467,8 @@ export function useStageExecution() {
 
       // PR Preparation: create the PR before marking as approved so failures
       // are surfaced to the user and the stage can be retried.
-      if (stage.name === "PR Preparation" && task.branch_name) {
+      // Only create PR when completion strategy is "pr" (the default).
+      if (stage.name === "PR Preparation" && task.branch_name && task.completion_strategy === "pr") {
         await createPullRequest(task, decision);
       }
 
@@ -627,6 +631,21 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
           current_stage_id: nextStage.id,
         });
       } else {
+        // No more stages — handle completion based on strategy
+        if (task.completion_strategy === "direct_merge" && task.branch_name) {
+          const project = useProjectStore.getState().activeProject;
+          if (project) {
+            const targetBranch = await gitDefaultBranch(project.path) ?? "main";
+            // Set pending merge — the UI will show a confirmation dialog
+            useProcessStore.getState().setPendingMerge({
+              branchName: task.branch_name,
+              targetBranch,
+            });
+            await loadExecutions(projectId, task.id);
+            return; // Don't mark as completed yet — wait for merge confirmation
+          }
+        }
+
         await updateTask(projectId, task.id, {
           status: "completed",
         });
@@ -665,6 +684,65 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     [activeProject, runStage],
   );
 
+  const performDirectMerge = useCallback(
+    async (task: Task) => {
+      if (!activeProject || !task.branch_name) return;
+
+      const pendingMerge = useProcessStore.getState().pendingMerge;
+      if (!pendingMerge) return;
+
+      // Merge the task branch into the target branch from the project root
+      const projectPath = activeProject.path;
+      await gitCheckoutBranch(projectPath, pendingMerge.targetBranch);
+      await gitMerge(projectPath, task.branch_name);
+      await gitPushCurrentBranch(projectPath);
+
+      useProcessStore.getState().clearPendingMerge();
+      sendNotification("Branch merged", `${task.branch_name} merged into ${pendingMerge.targetBranch}`);
+
+      // Mark task as completed
+      await updateTask(activeProject.id, task.id, {
+        status: "completed",
+      });
+
+      // Clean up worktree
+      if (task.worktree_path) {
+        try {
+          await gitWorktreeRemove(projectPath, task.worktree_path);
+        } catch {
+          // Non-critical
+        }
+      }
+
+      await loadExecutions(activeProject.id, task.id);
+    },
+    [activeProject, updateTask, loadExecutions],
+  );
+
+  const skipMerge = useCallback(
+    async (task: Task) => {
+      if (!activeProject) return;
+
+      useProcessStore.getState().clearPendingMerge();
+      sendNotification("Merge skipped", "Task completed without merging");
+
+      await updateTask(activeProject.id, task.id, {
+        status: "completed",
+      });
+
+      if (task.worktree_path) {
+        try {
+          await gitWorktreeRemove(activeProject.path, task.worktree_path);
+        } catch {
+          // Non-critical
+        }
+      }
+
+      await loadExecutions(activeProject.id, task.id);
+    },
+    [activeProject, updateTask, loadExecutions],
+  );
+
   const killCurrent = useCallback(async (stageId: string) => {
     const processId = useProcessStore.getState().stages[stageId]?.processId;
     if (!processId) return;
@@ -677,7 +755,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     }
   }, []);
 
-  return { runStage, approveStage, advanceFromStage, redoStage, killCurrent };
+  return { runStage, approveStage, advanceFromStage, redoStage, killCurrent, performDirectMerge, skipMerge };
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */

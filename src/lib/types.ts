@@ -44,12 +44,15 @@ export interface Task {
   branch_name: string | null;
   worktree_path: string | null;
   pr_url: string | null;
+  completion_strategy: CompletionStrategy;
   archived: number;
   created_at: string;
   updated_at: string;
 }
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
+
+export type CompletionStrategy = "pr" | "direct_merge" | "none";
 
 export interface StageExecution {
   id: string;

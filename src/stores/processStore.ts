@@ -24,10 +24,16 @@ export interface PendingCommit {
   fixId?: string;
 }
 
+export interface PendingMerge {
+  branchName: string;
+  targetBranch: string;
+}
+
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
+  pendingMerge: PendingMerge | null;
   committedStages: Record<string, string>; // stageId → short commit hash
 
   appendOutput: (stageId: string, line: string) => void;
@@ -39,6 +45,8 @@ interface ProcessStore {
   setPendingCommit: (commit: PendingCommit) => void;
   clearPendingCommit: () => void;
   setCommitted: (stageId: string, shortHash: string) => void;
+  setPendingMerge: (merge: PendingMerge) => void;
+  clearPendingMerge: () => void;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
@@ -49,6 +57,7 @@ export const useProcessStore = create<ProcessStore>((set) => ({
   stages: {},
   viewingStageId: null,
   pendingCommit: null,
+  pendingMerge: null,
   committedStages: {},
 
   appendOutput: (stageId, line) =>
@@ -128,4 +137,8 @@ export const useProcessStore = create<ProcessStore>((set) => ({
         [stageId]: shortHash,
       },
     })),
+
+  setPendingMerge: (merge) => set({ pendingMerge: merge }),
+
+  clearPendingMerge: () => set({ pendingMerge: null }),
 }));

@@ -170,6 +170,18 @@ export async function gitPush(workingDir: string, branchName: string): Promise<s
   return runGit(workingDir, "push", "-u", "origin", branchName);
 }
 
+export async function gitMerge(workingDir: string, branchName: string): Promise<string> {
+  return runGit(workingDir, "merge", branchName, "--no-ff");
+}
+
+export async function gitFetch(workingDir: string): Promise<string> {
+  return runGit(workingDir, "fetch", "origin");
+}
+
+export async function gitPushCurrentBranch(workingDir: string): Promise<string> {
+  return runGit(workingDir, "push");
+}
+
 export async function runGh(workingDir: string, ...args: string[]): Promise<string> {
   return invoke<string>("run_gh_command", {
     args,
