@@ -17,6 +17,7 @@ import {
   getChangedFiles,
   gitAddFiles,
   gitCommit,
+  gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -135,6 +136,15 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
             await gitWorktreeRemove(activeProject.path, task.worktree_path);
           } catch {
             // Non-critical
+          }
+        }
+
+        // Delete the branch after merge/close
+        if (task.branch_name) {
+          try {
+            await gitDeleteBranch(activeProject.path, task.branch_name);
+          } catch {
+            // Non-critical — branch cleanup is best-effort
           }
         }
 
@@ -539,6 +549,15 @@ Keep it under 72 characters for the first line.`,
           await gitWorktreeRemove(activeProject.path, task.worktree_path);
         } catch {
           // Non-critical — worktree cleanup is best-effort
+        }
+      }
+
+      // Delete the branch
+      if (task.branch_name) {
+        try {
+          await gitDeleteBranch(activeProject.path, task.branch_name);
+        } catch {
+          // Non-critical — branch cleanup is best-effort
         }
       }
 
