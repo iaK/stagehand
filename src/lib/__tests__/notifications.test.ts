@@ -1,153 +1,118 @@
 import { vi } from "vitest";
 import { sendNotification, requestNotificationPermission } from "../notifications";
 import { toast } from "sonner";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification as tauriSendNotification,
+} from "@tauri-apps/plugin-notification";
+
+const mockIsPermissionGranted = vi.mocked(isPermissionGranted);
+const mockRequestPermission = vi.mocked(requestPermission);
+const mockTauriSendNotification = vi.mocked(tauriSendNotification);
 
 describe("sendNotification", () => {
-  let instances: Array<{ onclick: (() => void) | null; close: ReturnType<typeof vi.fn> }>;
   let originalHiddenDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
-    instances = [];
     originalHiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
-
-    // Mock Notification as a proper class
-    class MockNotification {
-      onclick: (() => void) | null = null;
-      close = vi.fn();
-      static permission = "granted";
-      constructor(public title: string, public options?: { body?: string }) {
-        instances.push(this);
-      }
-    }
-
-    vi.stubGlobal("Notification", MockNotification);
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    // Restore original document.hidden descriptor
     if (originalHiddenDescriptor) {
       Object.defineProperty(document, "hidden", originalHiddenDescriptor);
     } else {
-      // If there was no own property, delete our override so the prototype value is used
       delete (document as unknown as Record<string, unknown>)["hidden"];
     }
   });
 
-  it("creates native Notification when document is hidden and permission granted", () => {
+  it("sends Tauri notification when document is hidden and permission granted", async () => {
     Object.defineProperty(document, "hidden", {
       value: true,
       configurable: true,
     });
+    mockIsPermissionGranted.mockResolvedValue(true);
 
-    sendNotification("Stage complete", "Research needs review");
+    await sendNotification("Stage complete", "Research needs review");
 
-    expect(instances).toHaveLength(1);
-    expect(instances[0]).toMatchObject({
+    expect(mockTauriSendNotification).toHaveBeenCalledWith({
       title: "Stage complete",
-      options: { body: "Research needs review" },
+      body: "Research needs review",
     });
     expect(toast).not.toHaveBeenCalled();
   });
 
-  it("falls back to toast when document is hidden but no Notification support", () => {
+  it("falls back to toast when document is hidden but permission not granted", async () => {
     Object.defineProperty(document, "hidden", {
       value: true,
       configurable: true,
     });
+    mockIsPermissionGranted.mockResolvedValue(false);
 
-    // Remove Notification from window
-    vi.stubGlobal("Notification", undefined);
-    // @ts-expect-error - deliberately removing Notification
-    delete window.Notification;
+    await sendNotification("Stage complete", "body text");
 
-    sendNotification("Stage complete", "body text");
-
+    expect(mockTauriSendNotification).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith("Stage complete", {
       description: "body text",
     });
   });
 
-  it("uses toast when document is visible", () => {
+  it("uses toast when document is visible", async () => {
     Object.defineProperty(document, "hidden", {
       value: false,
       configurable: true,
     });
 
-    sendNotification("Stage complete", "body text");
+    await sendNotification("Stage complete", "body text");
 
+    expect(mockTauriSendNotification).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith("Stage complete", {
       description: "body text",
     });
   });
 
-  it("notification click handler focuses window and closes notification", () => {
+  it("falls back to toast when Tauri API throws", async () => {
     Object.defineProperty(document, "hidden", {
       value: true,
       configurable: true,
     });
+    mockIsPermissionGranted.mockRejectedValue(new Error("Tauri not available"));
 
-    const focusSpy = vi.spyOn(window, "focus").mockImplementation(() => {});
+    await sendNotification("Stage complete", "body text");
 
-    sendNotification("Test", "body");
-
-    expect(instances).toHaveLength(1);
-    const notification = instances[0];
-    expect(notification.onclick).toBeDefined();
-    notification.onclick!();
-
-    expect(focusSpy).toHaveBeenCalled();
-    expect(notification.close).toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith("Stage complete", {
+      description: "body text",
+    });
   });
 });
 
 describe("requestNotificationPermission", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  it("returns true when permission is already granted", async () => {
+    mockIsPermissionGranted.mockResolvedValue(true);
+
+    const result = await requestNotificationPermission();
+
+    expect(result).toBe(true);
+    expect(mockRequestPermission).not.toHaveBeenCalled();
   });
 
-  it("calls requestPermission when permission is default", () => {
-    const requestPermission = vi.fn();
-    vi.stubGlobal("Notification", {
-      permission: "default",
-      requestPermission,
-    });
+  it("requests permission and returns true when granted", async () => {
+    mockIsPermissionGranted.mockResolvedValue(false);
+    mockRequestPermission.mockResolvedValue("granted");
 
-    requestNotificationPermission();
+    const result = await requestNotificationPermission();
 
-    expect(requestPermission).toHaveBeenCalled();
+    expect(result).toBe(true);
+    expect(mockRequestPermission).toHaveBeenCalled();
   });
 
-  it("does not call requestPermission when permission is granted", () => {
-    const requestPermission = vi.fn();
-    vi.stubGlobal("Notification", {
-      permission: "granted",
-      requestPermission,
-    });
+  it("requests permission and returns false when denied", async () => {
+    mockIsPermissionGranted.mockResolvedValue(false);
+    mockRequestPermission.mockResolvedValue("denied");
 
-    requestNotificationPermission();
+    const result = await requestNotificationPermission();
 
-    expect(requestPermission).not.toHaveBeenCalled();
-  });
-
-  it("does not call requestPermission when permission is denied", () => {
-    const requestPermission = vi.fn();
-    vi.stubGlobal("Notification", {
-      permission: "denied",
-      requestPermission,
-    });
-
-    requestNotificationPermission();
-
-    expect(requestPermission).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when Notification is not in window", () => {
-    vi.stubGlobal("Notification", undefined);
-    // @ts-expect-error - deliberately removing Notification
-    delete window.Notification;
-
-    // Should not throw
-    expect(() => requestNotificationPermission()).not.toThrow();
+    expect(result).toBe(false);
+    expect(mockRequestPermission).toHaveBeenCalled();
   });
 });

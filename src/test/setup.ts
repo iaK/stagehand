@@ -22,6 +22,13 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   confirm: vi.fn(),
 }));
 
+// Mock @tauri-apps/plugin-notification
+vi.mock("@tauri-apps/plugin-notification", () => ({
+  isPermissionGranted: vi.fn(async () => true),
+  requestPermission: vi.fn(async () => "granted" as const),
+  sendNotification: vi.fn(),
+}));
+
 // Mock @tauri-apps/api/path
 vi.mock("@tauri-apps/api/path", () => ({
   join: vi.fn(async (...parts: string[]) => parts.join("/")),
