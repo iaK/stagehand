@@ -83,6 +83,13 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       thinking_output: null,
       stage_result: null,
       stage_summary: null,
+      input_tokens: null,
+      output_tokens: null,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      total_cost_usd: null,
+      duration_ms: null,
+      num_turns: null,
       started_at: new Date().toISOString(),
     });
 
