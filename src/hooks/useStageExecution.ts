@@ -699,20 +699,17 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         });
 
         // Auto-start next stage if it doesn't require user input
-        if (nextStage.input_source !== "user" && nextStage.input_source !== "both") {
+        if (shouldAutoStartStage(nextStage)) {
           const freshTask = useTaskStore.getState().activeTask;
           if (freshTask && freshTask.id === task.id) {
-            sendNotification(
-              "Stage auto-started",
-              `${nextStage.name} started automatically`,
-              "info",
-              { projectId, taskId: task.id },
-            );
             // Fire-and-forget: don't await so the approval flow completes
-            // immediately and the UI can update to show the running state
+            // immediately and the UI can update to show the running state.
+            // Return early — runStage's "started" event handler will call
+            // loadExecutions, avoiding a race with the loadExecutions below.
             runStageRef.current(freshTask, nextStage).catch((err) => {
               console.error("Auto-start next stage failed:", err);
             });
+            return;
           }
         }
       } else {
@@ -1193,4 +1190,9 @@ export function validateGate(
     default:
       return true;
   }
+}
+
+/** Determine whether a stage should be auto-started after the previous stage completes. */
+export function shouldAutoStartStage(stage: StageTemplate): boolean {
+  return stage.input_source !== "user" && stage.input_source !== "both";
 }
