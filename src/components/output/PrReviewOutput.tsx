@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
 import type { PrReviewFix } from "../../lib/types";
 
 interface PrReviewOutputProps {
@@ -46,6 +47,8 @@ export function PrReviewOutput({
   error,
   streamOutput,
 }: PrReviewOutputProps) {
+  const [markingDone, setMarkingDone] = useState(false);
+
   const fixedCount = fixes.filter((f) => f.fix_status === "fixed").length;
   const skippedCount = fixes.filter((f) => f.fix_status === "skipped").length;
   const pendingCount = fixes.filter((f) => f.fix_status === "pending").length;
@@ -114,11 +117,13 @@ export function PrReviewOutput({
                 if (pendingCount > 0) {
                   if (!window.confirm(`There are still ${pendingCount} pending comment(s). Mark as done anyway?`)) return;
                 }
+                setMarkingDone(true);
                 onMarkDone();
               }}
-              disabled={!!fixingId}
+              disabled={!!fixingId || markingDone}
             >
-              Mark as Done
+              {markingDone && <Loader2 className="w-4 h-4 animate-spin" />}
+              {markingDone ? "Completing..." : "Mark as Done"}
             </Button>
           )}
         </div>

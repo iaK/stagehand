@@ -6,6 +6,7 @@ import { StructuredOutput } from "../output/StructuredOutput";
 import { ResearchOutput, QuestionCards } from "../output/ResearchOutput";
 import { FindingsOutput } from "../output/FindingsOutput";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
 interface StageOutputProps {
   execution: StageExecution;
@@ -42,6 +43,7 @@ export function StageOutput({
               disabled={approving}
               className="mt-4"
             >
+              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
               {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           )}
@@ -70,6 +72,7 @@ export function StageOutput({
           output={output}
           onSelect={(selected) => onApprove(JSON.stringify(selected))}
           isApproved={isApproved}
+          approving={approving}
         />
       );
     }
@@ -80,6 +83,7 @@ export function StageOutput({
           output={output}
           onComplete={(items) => onApprove(JSON.stringify(items))}
           isApproved={isApproved}
+          approving={approving}
         />
       );
 
@@ -90,6 +94,7 @@ export function StageOutput({
           stage={stage}
           onSubmit={(fields) => onApprove(JSON.stringify(fields))}
           isApproved={isApproved}
+          approving={approving}
         />
       );
 
@@ -124,6 +129,7 @@ export function StageOutput({
               disabled={approving}
               className="mt-4"
             >
+              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
               {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           )}
@@ -157,7 +163,8 @@ export function StageOutput({
                 disabled={approving}
                 className="mt-4"
               >
-                {approving ? "Approving..." : "Approve & Continue"}
+                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {approving ? "Approving..." : "Approve & Continue"}
               </Button>
             )}
           </div>
@@ -174,6 +181,7 @@ export function StageOutput({
           }}
           onSkipAll={() => onApprove()}
           isApproved={isApproved}
+          approving={approving}
         />
       );
 

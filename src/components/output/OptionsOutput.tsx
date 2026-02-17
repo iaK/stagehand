@@ -2,18 +2,21 @@ import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import type { OptionItem } from "../../lib/types";
 
 interface OptionsOutputProps {
   output: string;
   onSelect: (selected: OptionItem[]) => void;
   isApproved: boolean;
+  approving?: boolean;
 }
 
 export function OptionsOutput({
   output,
   onSelect,
   isApproved,
+  approving,
 }: OptionsOutputProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -91,10 +94,11 @@ export function OptionsOutput({
         <Button
           variant="success"
           onClick={handleSelect}
-          disabled={!selectedId}
+          disabled={!selectedId || approving}
           className="mt-4"
         >
-          Select Approach
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : "Select Approach"}
         </Button>
       )}
     </div>

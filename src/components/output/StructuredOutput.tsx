@@ -3,6 +3,7 @@ import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import type { StageTemplate, GateRule } from "../../lib/types";
 
 interface StructuredOutputProps {
@@ -10,6 +11,7 @@ interface StructuredOutputProps {
   stage: StageTemplate;
   onSubmit: (fields: Record<string, string>) => void;
   isApproved: boolean;
+  approving?: boolean;
 }
 
 export function StructuredOutput({
@@ -17,6 +19,7 @@ export function StructuredOutput({
   stage,
   onSubmit,
   isApproved,
+  approving,
 }: StructuredOutputProps) {
   let initialFields: Record<string, string> = {};
   try {
@@ -100,10 +103,11 @@ export function StructuredOutput({
         <Button
           variant="success"
           onClick={() => onSubmit(fields)}
-          disabled={!allFieldsFilled}
+          disabled={!allFieldsFilled || approving}
           className="mt-4"
         >
-          Approve & Continue
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : "Approve & Continue"}
         </Button>
       )}
     </div>

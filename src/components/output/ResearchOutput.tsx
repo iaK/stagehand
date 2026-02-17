@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2 } from "lucide-react";
 import type { ResearchQuestion, StageTemplate, StageSuggestion } from "../../lib/types";
 
 interface ResearchOutputProps {
@@ -42,6 +43,7 @@ export function ResearchOutput({
         <TextOutput content={output} />
         {!isApproved && (
           <Button variant="success" onClick={onApprove} disabled={approving} className="mt-4">
+            {approving && <Loader2 className="w-4 h-4 animate-spin" />}
             {approving ? "Approving..." : "Approve & Continue"}
           </Button>
         )}
@@ -79,6 +81,7 @@ export function ResearchOutput({
               Research complete — no further questions.
             </p>
             <Button variant="success" onClick={onApprove} disabled={approving}>
+              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
               {approving ? "Approving..." : "Approve & Continue"}
             </Button>
           </AlertDescription>
@@ -209,6 +212,7 @@ function StageSelectionPanel({
       </div>
 
       <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving}>
+        {approving && <Loader2 className="w-4 h-4 animate-spin" />}
         {approving ? "Approving..." : "Approve & Continue"}
       </Button>
     </div>

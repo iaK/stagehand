@@ -3,12 +3,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Loader2 } from "lucide-react";
 import type { ChecklistItem } from "../../lib/types";
 
 interface ChecklistOutputProps {
   output: string;
   onComplete: (items: ChecklistItem[]) => void;
   isApproved: boolean;
+  approving?: boolean;
 }
 
 const severityVariant: Record<string, "critical" | "warning" | "info"> = {
@@ -27,6 +29,7 @@ export function ChecklistOutput({
   output,
   onComplete,
   isApproved,
+  approving,
 }: ChecklistOutputProps) {
   let initialItems: ChecklistItem[] = [];
   try {
@@ -113,10 +116,11 @@ export function ChecklistOutput({
         <Button
           variant="success"
           onClick={() => onComplete(items)}
-          disabled={!allChecked}
+          disabled={!allChecked || approving}
           className="mt-4"
         >
-          {allChecked ? "All Items Reviewed" : "Review All Items to Continue"}
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : allChecked ? "All Items Reviewed" : "Review All Items to Continue"}
         </Button>
       )}
     </div>

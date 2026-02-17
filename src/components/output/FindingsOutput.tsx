@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
 import type { FindingItem } from "../../lib/types";
 
 interface FindingsOutputProps {
@@ -11,6 +12,7 @@ interface FindingsOutputProps {
   onApplySelected: (selectedFindings: string) => void;
   onSkipAll: () => void;
   isApproved: boolean;
+  approving?: boolean;
 }
 
 const severityVariant: Record<string, "critical" | "warning" | "info"> = {
@@ -30,6 +32,7 @@ export function FindingsOutput({
   onApplySelected,
   onSkipAll,
   isApproved,
+  approving,
 }: FindingsOutputProps) {
   let summary = "";
   let initialFindings: FindingItem[] = [];
@@ -46,8 +49,9 @@ export function FindingsOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={onSkipAll} className="mt-4">
-            Approve & Continue
+          <Button variant="success" onClick={onSkipAll} disabled={approving} className="mt-4">
+            {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {approving ? "Approving..." : "Approve & Continue"}
           </Button>
         )}
       </div>
@@ -66,8 +70,9 @@ export function FindingsOutput({
               <p className="text-sm font-medium mb-3">
                 No findings — everything looks good.
               </p>
-              <Button variant="success" onClick={onSkipAll}>
-                Approve & Continue
+              <Button variant="success" onClick={onSkipAll} disabled={approving}>
+                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {approving ? "Approving..." : "Approve & Continue"}
               </Button>
             </AlertDescription>
           </Alert>
@@ -84,6 +89,7 @@ export function FindingsOutput({
         onApplySelected={onApplySelected}
         onSkipAll={onSkipAll}
         isApproved={isApproved}
+        approving={approving}
       />
     </div>
   );
@@ -94,13 +100,16 @@ function FindingsCards({
   onApplySelected,
   onSkipAll,
   isApproved,
+  approving,
 }: {
   findings: FindingItem[];
   onApplySelected: (selectedFindings: string) => void;
   onSkipAll: () => void;
   isApproved: boolean;
+  approving?: boolean;
 }) {
   const [findings, setFindings] = useState<FindingItem[]>(initialFindings);
+  const [applying, setApplying] = useState(false);
 
   const selectedCount = findings.filter((f) => f.selected).length;
   const allSelected = selectedCount === findings.length;
@@ -119,6 +128,7 @@ function FindingsCards({
   };
 
   const handleApply = () => {
+    setApplying(true);
     const selected = findings.filter((f) => f.selected);
     const text = selected
       .map(
@@ -199,12 +209,14 @@ function FindingsCards({
           <Button
             variant="success"
             onClick={handleApply}
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || applying}
           >
-            Apply Selected ({selectedCount})
+            {applying && <Loader2 className="w-4 h-4 animate-spin" />}
+            {applying ? "Applying..." : `Apply Selected (${selectedCount})`}
           </Button>
-          <Button variant="outline" onClick={onSkipAll}>
-            Skip All
+          <Button variant="outline" onClick={onSkipAll} disabled={approving || applying}>
+            {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {approving ? "Skipping..." : "Skip All"}
           </Button>
         </div>
       )}
