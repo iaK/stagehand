@@ -322,19 +322,24 @@ export function QuestionCards({
                   <div className="flex-1">
                     <span className="text-sm text-muted-foreground">Other</span>
                     {selections[q.id] === null && (
-                      <MarkdownTextarea
-                        value={customText[q.id] ?? ""}
-                        onChange={(v) =>
-                          setCustomText((prev) => ({
-                            ...prev,
-                            [q.id]: v,
-                          }))
-                        }
-                        rows={2}
-                        placeholder="Type your answer..."
-                        autoFocus
-                        className="mt-2"
-                      />
+                      <div
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MarkdownTextarea
+                          value={customText[q.id] ?? ""}
+                          onChange={(v) =>
+                            setCustomText((prev) => ({
+                              ...prev,
+                              [q.id]: v,
+                            }))
+                          }
+                          rows={2}
+                          placeholder="Type your answer..."
+                          autoFocus
+                          className="mt-2"
+                        />
+                      </div>
                     )}
                   </div>
                 </label>

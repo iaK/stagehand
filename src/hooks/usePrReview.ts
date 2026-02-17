@@ -8,6 +8,7 @@ import {
   ghFetchPrReviews,
   ghFetchPrComments,
   ghFetchPrIssueComments,
+  ghFetchPrState,
   ghCommentOnPr,
   gitPush,
   gitWorktreeRemove,
@@ -105,6 +106,40 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
     try {
       const execId = await ensureExecution();
       if (!execId) return;
+
+      // Check if PR has been merged or closed — auto-complete the task
+      const prState = await ghFetchPrState(activeProject.path, parsed.owner, parsed.repo, parsed.number);
+      if (prState.state === "closed" || prState.merged) {
+        const label = prState.merged ? "merged" : "closed";
+
+        // Update execution
+        await repo.updateStageExecution(activeProject.id, execId, {
+          status: "approved",
+          raw_output: `PR ${label}`,
+          parsed_output: `PR ${label}`,
+          stage_result: `PR ${label}`,
+          stage_summary: `PR ${label}`,
+          completed_at: new Date().toISOString(),
+        });
+
+        // Clean up worktree
+        if (task.worktree_path) {
+          try {
+            await gitWorktreeRemove(activeProject.path, task.worktree_path);
+          } catch {
+            // Non-critical
+          }
+        }
+
+        // Mark task as completed
+        await updateTask(activeProject.id, task.id, { status: "completed" });
+        await loadExecutions(activeProject.id, task.id);
+        sendNotification("Task completed", `PR was ${label}`);
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+        return;
+      }
 
       const [reviews, comments, issueComments] = await Promise.all([
         ghFetchPrReviews(activeProject.path, parsed.owner, parsed.repo, parsed.number),

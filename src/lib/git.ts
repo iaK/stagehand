@@ -251,6 +251,26 @@ export async function ghFetchPrIssueComments(
   return parsePaginatedJson<GhIssueComment>(raw);
 }
 
+export interface GhPrState {
+  state: "open" | "closed";
+  merged: boolean;
+}
+
+export async function ghFetchPrState(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GhPrState> {
+  const raw = await runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/pulls/${prNumber}`,
+    "--jq", `{state: .state, merged: .merged}`,
+  );
+  return JSON.parse(raw);
+}
+
 export async function ghCommentOnPr(
   workingDir: string,
   owner: string,

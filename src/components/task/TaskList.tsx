@@ -38,6 +38,9 @@ export function TaskList({ onEdit }: TaskListProps) {
   const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
 
   const getTaskDotClass = (task: Task) => {
+    // Completed tasks always show green
+    if (task.status === "completed") return statusColors.completed;
+
     // For the active task, use detailed execution data
     if (task.id === activeTask?.id && task.current_stage_id && executions.length > 0) {
       const stageExecs = executions.filter(

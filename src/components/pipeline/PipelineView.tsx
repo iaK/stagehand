@@ -4,14 +4,9 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
-import { Button } from "@/components/ui/button";
 import type { StageTemplate } from "../../lib/types";
 
-interface PipelineViewProps {
-  onToggleHistory: () => void;
-}
-
-export function PipelineView({ onToggleHistory }: PipelineViewProps) {
+export function PipelineView() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const activeTask = useTaskStore((s) => s.activeTask);
   const executions = useTaskStore((s) => s.executions);
@@ -97,16 +92,17 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
           currentStageId={currentStageId ?? ""}
           executions={executions}
           onStageClick={setViewingStage}
+          isTaskCompleted={activeTask?.status === "completed"}
         />
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={onToggleHistory}
-          className="mr-4"
-        >
-          History
-        </Button>
       </div>
+
+      {/* Stage name + description bar */}
+      {viewingStage && (
+        <div className="border-b border-border px-6 py-2 flex items-baseline gap-2 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground shrink-0">{viewingStage.name}</h2>
+          <span className="text-xs text-muted-foreground truncate">{viewingStage.description}</span>
+        </div>
+      )}
 
       {/* Stage Content */}
       <div className="flex-1 overflow-y-auto">
