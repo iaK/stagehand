@@ -719,23 +719,20 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         });
         // Clean up worktree on completion (skip for 'none' strategy — branch is left for manual handling)
         if (task.worktree_path && task.completion_strategy !== "none") {
-          try {
-            const project = useProjectStore.getState().activeProject;
-            if (project) {
-              await gitWorktreeRemove(project.path, task.worktree_path);
-            }
-          } catch {
-            // Non-critical — worktree cleanup is best-effort
-          }
-          // Delete the branch after worktree removal
-          if (task.branch_name) {
+          const project = useProjectStore.getState().activeProject;
+          if (project) {
             try {
-              const project = useProjectStore.getState().activeProject;
-              if (project) {
-                await gitDeleteBranch(project.path, task.branch_name);
-              }
+              await gitWorktreeRemove(project.path, task.worktree_path);
             } catch {
-              // Non-critical — branch cleanup is best-effort
+              // Non-critical — worktree cleanup is best-effort
+            }
+            // Delete the branch after worktree removal
+            if (task.branch_name) {
+              try {
+                await gitDeleteBranch(project.path, task.branch_name);
+              } catch {
+                // Non-critical — branch cleanup is best-effort
+              }
             }
           }
         }

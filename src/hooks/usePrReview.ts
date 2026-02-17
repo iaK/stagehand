@@ -139,8 +139,8 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
           }
         }
 
-        // Delete the branch after merge/close
-        if (task.branch_name) {
+        // Delete the branch only after merge (not close — a closed PR may be reopened)
+        if (prState.merged && task.branch_name) {
           try {
             await gitDeleteBranch(activeProject.path, task.branch_name);
           } catch {
@@ -552,14 +552,9 @@ Keep it under 72 characters for the first line.`,
         }
       }
 
-      // Delete the branch
-      if (task.branch_name) {
-        try {
-          await gitDeleteBranch(activeProject.path, task.branch_name);
-        } catch {
-          // Non-critical — branch cleanup is best-effort
-        }
-      }
+      // Don't delete the branch here — the PR is still open and may receive
+      // more review comments. Branch deletion happens in fetchReviews when
+      // the PR is detected as merged.
 
       // Mark task as completed
       await updateTask(activeProject.id, task.id, { status: "completed" });
