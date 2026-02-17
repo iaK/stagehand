@@ -89,13 +89,13 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   const handleSkipCommit = async () => {
-    if (!activeTask) return;
+    if (!activeProject || !activeTask) return;
     if (pendingCommit?.fixId) {
       // PR Review fix — skip commit but keep changes
       await prReview.skipFixCommit(pendingCommit.fixId);
     } else {
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Commit skipped", stage.name, { projectId: activeProject?.id, taskId: activeTask.id });
+      sendNotification("Commit skipped", stage.name, { projectId: activeProject.id, taskId: activeTask.id });
       await advanceFromStage(activeTask, stage);
     }
   };
@@ -144,7 +144,7 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   const handleApprove = async (decision?: string) => {
-    if (!activeTask) return;
+    if (!activeProject || !activeTask) return;
     setApproving(true);
     setStageError(null);
     try {
@@ -152,7 +152,7 @@ export function StageView({ stage }: StageViewProps) {
       // Commit-eligible stages already send a "Ready to commit" notification
       const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
       if (!commitEligibleStages.includes(stage.name)) {
-        sendNotification("Stage approved", stage.name, { projectId: activeProject?.id, taskId: activeTask.id });
+        sendNotification("Stage approved", stage.name, { projectId: activeProject.id, taskId: activeTask.id });
       }
     } catch (err) {
       console.error("Failed to approve stage:", err);

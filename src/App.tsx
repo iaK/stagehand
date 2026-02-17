@@ -13,10 +13,13 @@ function App() {
 
   useEffect(() => {
     requestNotificationPermission();
-    registerNotificationClickHandler();
+    const unregisterPromise = registerNotificationClickHandler();
     checkClaudeAvailable().catch((err) => {
       setClaudeError(String(err));
     });
+    return () => {
+      unregisterPromise.then((u) => u.unregister());
+    };
   }, []);
 
   return (

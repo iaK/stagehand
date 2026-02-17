@@ -416,9 +416,9 @@ Keep it under 72 characters for the first line.`,
       setFixes((prev) =>
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "skipped" } : f)),
       );
-      sendNotification("Fix skipped", undefined, { projectId: activeProject.id });
+      sendNotification("Fix skipped", undefined, { projectId: activeProject.id, taskId: task?.id });
     },
-    [activeProject],
+    [activeProject, task],
   );
 
   const skipFixCommit = useCallback(
@@ -429,9 +429,9 @@ Keep it under 72 characters for the first line.`,
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "fixed" } : f)),
       );
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Fix commit skipped", undefined, { projectId: activeProject.id });
+      sendNotification("Fix commit skipped", undefined, { projectId: activeProject.id, taskId: task?.id });
     },
-    [activeProject],
+    [activeProject, task],
   );
 
   const markDone = useCallback(async () => {

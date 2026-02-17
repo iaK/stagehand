@@ -5,6 +5,7 @@ import {
   sendNotification as tauriSendNotification,
   onAction,
 } from "@tauri-apps/plugin-notification";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 
@@ -43,6 +44,8 @@ export async function registerNotificationClickHandler() {
   return onAction(async (event) => {
     const extra = (event.notification as { extra?: NotificationContext }).extra;
     if (!extra?.projectId) return;
+
+    await getCurrentWindow().setFocus();
 
     const { projects, setActiveProject } = useProjectStore.getState();
     const project = projects.find((p) => p.id === extra.projectId);
