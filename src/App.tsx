@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Layout } from "./components/layout/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { checkClaudeAvailable } from "./lib/claude";
-import { requestNotificationPermission } from "./lib/notifications";
+import { requestNotificationPermission, registerNotificationClickHandler } from "./lib/notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ function App() {
 
   useEffect(() => {
     requestNotificationPermission();
+    registerNotificationClickHandler();
     checkClaudeAvailable().catch((err) => {
       setClaudeError(String(err));
     });

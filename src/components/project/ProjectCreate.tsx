@@ -41,7 +41,7 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
     setCreating(true);
     try {
       await addProject(name.trim(), path.trim());
-      sendNotification("Project created", name.trim());
+      sendNotification("Project created", name.trim(), {});
       onClose();
     } catch (err) {
       setError(`Failed to create project: ${err}`);

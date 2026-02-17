@@ -47,7 +47,7 @@ export function ArchivedProjectsSettings() {
                   setError(null);
                   try {
                     await unarchiveProject(p.id);
-                    sendNotification("Project unarchived", p.name);
+                    sendNotification("Project unarchived", p.name, { projectId: p.id });
                   } catch (err) {
                     setError(`Failed to unarchive project: ${err}`);
                   }

@@ -81,7 +81,7 @@ export function TaskList({ onEdit }: TaskListProps) {
       }
     }
     await updateTask(activeProject.id, archiveTarget.id, { archived: 1 });
-    sendNotification("Task archived", archiveTarget.title);
+    sendNotification("Task archived", archiveTarget.title, { projectId: activeProject.id, taskId: archiveTarget.id });
     setArchiveTarget(null);
   };
 

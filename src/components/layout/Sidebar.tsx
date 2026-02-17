@@ -54,7 +54,7 @@ export function Sidebar() {
   const confirmArchive = async () => {
     if (!archiveTarget) return;
     await archiveProject(archiveTarget.id);
-    sendNotification("Project archived", archiveTarget.name);
+    sendNotification("Project archived", archiveTarget.name, { projectId: archiveTarget.id });
     setArchiveTarget(null);
   };
 

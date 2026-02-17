@@ -29,10 +29,10 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
     try {
       if (isEditing) {
         await updateTask(projectId, task.id, { title: title.trim() });
-        sendNotification("Task updated", title.trim());
+        sendNotification("Task updated", title.trim(), { projectId, taskId: task.id });
       } else {
         await addTask(projectId, title.trim());
-        sendNotification("Task created", title.trim());
+        sendNotification("Task created", title.trim(), { projectId });
       }
       onClose();
     } catch (err) {
