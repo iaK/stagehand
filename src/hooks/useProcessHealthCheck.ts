@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { listProcesses } from "../lib/claude";
+import { listProcessesDetailed, killProcess } from "../lib/claude";
 import * as repo from "../lib/repositories";
 
 const POLL_INTERVAL_MS = 5_000;
@@ -48,19 +48,39 @@ export function useProcessHealthCheck(stageId: string | null) {
 
       // Check 1: Is the process still tracked by the backend?
       try {
-        const running = await listProcesses();
-        if (processId && !running.includes(processId)) {
-          // Process is gone — mark the execution as crashed
+        const detailedProcesses = await listProcessesDetailed();
+        const runningIds = detailedProcesses.map((p) => p.processId);
+
+        if (processId && !runningIds.includes(processId)) {
+          // Process is gone — mark as crashed
           await markStageCrashed(projectId, stageId, taskId, "Process crashed unexpectedly");
           useProcessStore.getState().setStopped(sk);
           await loadExecutions(projectId, taskId);
           return;
         }
 
-        // If we don't have a processId in the store (e.g., after restart)
-        // but the DB still says running, and backend has no processes,
-        // this case is handled by loadExecutions stale detection.
-        if (!processId && running.length === 0) {
+        if (!processId) {
+          // Post-reload: processStore has no info, check by execution ID
+          const runningExec = executions.find(
+            (e) => e.stage_template_id === stageId && e.status === "running",
+          );
+          if (!runningExec) return;
+
+          const matchedProcess = detailedProcesses.find(
+            (p) => p.stageExecutionId === runningExec.id,
+          );
+
+          if (matchedProcess) {
+            // Backend process exists but Channel is dead — kill it
+            try {
+              await killProcess(matchedProcess.processId);
+            } catch {
+              // May already be exiting
+            }
+          }
+          // Either way, mark the execution as failed
+          await markStageCrashed(projectId, stageId, taskId, "Process lost connection");
+          useProcessStore.getState().setStopped(sk);
           await loadExecutions(projectId, taskId);
           return;
         }

@@ -22,6 +22,15 @@ export async function listProcesses(): Promise<string[]> {
   return invoke<string[]>("list_processes");
 }
 
+export interface ProcessInfo {
+  processId: string;
+  stageExecutionId: string | null;
+}
+
+export async function listProcessesDetailed(): Promise<ProcessInfo[]> {
+  return invoke<ProcessInfo[]>("list_processes_detailed");
+}
+
 export async function checkClaudeAvailable(): Promise<string> {
   return invoke<string>("check_claude_available");
 }

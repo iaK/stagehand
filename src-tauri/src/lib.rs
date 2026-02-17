@@ -48,6 +48,7 @@ pub fn run() {
             commands::process::spawn_claude,
             commands::process::kill_process,
             commands::process::list_processes,
+            commands::process::list_processes_detailed,
             commands::process::check_claude_available,
             commands::git::run_git_command,
             commands::git::run_gh_command,

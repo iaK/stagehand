@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { spawnClaude, killProcess } from "../lib/claude";
+import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
   hasUncommittedChanges,
@@ -869,42 +869,71 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
   const killCurrent = useCallback(async (taskId: string, stageId: string) => {
     const sk = stageKey(taskId, stageId);
     const state = useProcessStore.getState().stages[sk];
-    if (!state?.isRunning) return;
 
-    // Mark as killed before sending the signal so finalizeExecution knows
-    useProcessStore.getState().markKilled(sk);
+    if (state?.isRunning) {
+      // === Existing logic: processStore has state ===
+      useProcessStore.getState().markKilled(sk);
 
-    const processId = state.processId;
-    const isPlaceholder = !processId || processId === "spawning" || processId === "fixing";
+      const processId = state.processId;
+      const isPlaceholder = !processId || processId === "spawning" || processId === "fixing";
 
-    if (isPlaceholder) {
-      // Process not yet registered with the backend.
-      // Stop the stage immediately so the UI transitions to the failed/retry state.
-      // The "started" event handler will kill the real process when it arrives.
-      useProcessStore.getState().setStopped(sk);
+      if (isPlaceholder) {
+        useProcessStore.getState().setStopped(sk);
 
-      const project = useProjectStore.getState().activeProject;
-      if (project) {
-        const exec = useTaskStore.getState().executions.find(
-          (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
-        );
-        if (exec) {
-          await repo.updateStageExecution(project.id, exec.id, {
-            status: "failed",
-            error_message: "Stopped by user",
-            completed_at: new Date().toISOString(),
-          });
-          await useTaskStore.getState().loadExecutions(project.id, taskId);
+        const project = useProjectStore.getState().activeProject;
+        if (project) {
+          const exec = useTaskStore.getState().executions.find(
+            (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+          );
+          if (exec) {
+            await repo.updateStageExecution(project.id, exec.id, {
+              status: "failed",
+              error_message: "Stopped by user",
+              completed_at: new Date().toISOString(),
+            });
+            await useTaskStore.getState().loadExecutions(project.id, taskId);
+          }
         }
+        return;
+      }
+
+      try {
+        await killProcess(processId);
+      } catch {
+        // Process may have already exited
       }
       return;
     }
 
+    // === Post-reload fallback ===
+    // processStore is empty but DB says "running" — look up execution and kill backend process
+    const project = useProjectStore.getState().activeProject;
+    if (!project) return;
+
+    const exec = useTaskStore.getState().executions.find(
+      (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+    );
+    if (!exec) return;
+
+    // Try to find and kill the backend process for this execution
     try {
-      await killProcess(processId);
+      const detailed = await listProcessesDetailed();
+      const match = detailed.find((p) => p.stageExecutionId === exec.id);
+      if (match) {
+        await killProcess(match.processId);
+      }
     } catch {
-      // Process may have already exited
+      // Backend may be unreachable
     }
+
+    // Mark the DB execution as failed regardless (the Channel is dead)
+    await repo.updateStageExecution(project.id, exec.id, {
+      status: "failed",
+      error_message: "Stopped by user",
+      completed_at: new Date().toISOString(),
+    });
+    useProcessStore.getState().setStopped(sk);
+    await useTaskStore.getState().loadExecutions(project.id, taskId);
   }, []);
 
   return { runStage, approveStage, advanceFromStage, redoStage, killCurrent, performDirectMerge, skipMerge };
