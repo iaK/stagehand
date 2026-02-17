@@ -78,7 +78,7 @@ export function StageView({ stage }: StageViewProps) {
         const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
         useProcessStore.getState().setCommitted(stage.id, shortHash);
         useProcessStore.getState().clearPendingCommit();
-        sendNotification("Changes committed", shortHash);
+        sendNotification("Changes committed", shortHash, "success");
         await advanceFromStage(activeTask, stage);
       }
     } catch (e) {
@@ -95,7 +95,7 @@ export function StageView({ stage }: StageViewProps) {
       await prReview.skipFixCommit(pendingCommit.fixId);
     } else {
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Commit skipped", stage.name);
+      sendNotification("Commit skipped", stage.name, "info");
       await advanceFromStage(activeTask, stage);
     }
   };
@@ -152,7 +152,7 @@ export function StageView({ stage }: StageViewProps) {
       // Commit-eligible stages already send a "Ready to commit" notification
       const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
       if (!commitEligibleStages.includes(stage.name)) {
-        sendNotification("Stage approved", stage.name);
+        sendNotification("Stage approved", stage.name, "success");
       }
     } catch (err) {
       console.error("Failed to approve stage:", err);
@@ -218,15 +218,19 @@ export function StageView({ stage }: StageViewProps) {
   // PR Review: custom rendering — no standard stage flow
   if (stage.output_format === "pr_review") {
     const noPrUrl = !activeTask.pr_url;
+    const prReviewCompleted = isApproved || activeTask.status === "completed";
     return (
       <div className="p-6 max-w-4xl">
-        {/* Stage Header */}
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-foreground">{stage.name}</h2>
-          <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
-        </div>
-
-        {noPrUrl ? (
+        {prReviewCompleted ? (
+          <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
+            <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <AlertDescription className="text-emerald-800">
+              PR Review completed. Task marked as done.
+            </AlertDescription>
+          </Alert>
+        ) : noPrUrl ? (
           <Alert variant="destructive">
             <AlertDescription>
               No PR URL found on this task. Please create a PR first (via the PR Preparation stage).
@@ -253,7 +257,7 @@ export function StageView({ stage }: StageViewProps) {
               onMarkDone={prReview.markDone}
               onRefresh={prReview.fetchReviews}
               loading={prReview.loading}
-              isCompleted={activeTask.status === "completed"}
+              isCompleted={false}
               error={prReview.error}
               streamOutput={streamOutput}
             />
@@ -319,16 +323,11 @@ export function StageView({ stage }: StageViewProps) {
 
   return (
     <div className="p-6 max-w-4xl">
-      {/* Stage Header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-foreground">{stage.name}</h2>
-        <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
-        {latestExecution && latestExecution.attempt_number > 1 && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Attempt #{latestExecution.attempt_number}
-          </p>
-        )}
-      </div>
+      {latestExecution && latestExecution.attempt_number > 1 && (
+        <p className="text-xs text-muted-foreground mb-4">
+          Attempt #{latestExecution.attempt_number}
+        </p>
+      )}
 
       {/* Future stage -- not current, nothing has run */}
       {!isCurrentStage && !latestExecution && (

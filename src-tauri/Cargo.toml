@@ -24,6 +24,7 @@ tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
 dirs = "5"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync"] }
 uuid = { version = "1", features = ["v4"] }

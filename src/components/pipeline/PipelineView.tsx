@@ -5,14 +5,9 @@ import { useProcessStore } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { TaskOverview } from "../task/TaskOverview";
-import { Button } from "@/components/ui/button";
 import type { StageTemplate } from "../../lib/types";
 
-interface PipelineViewProps {
-  onToggleHistory: () => void;
-}
-
-export function PipelineView({ onToggleHistory }: PipelineViewProps) {
+export function PipelineView() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const activeTask = useTaskStore((s) => s.activeTask);
   const executions = useTaskStore((s) => s.executions);
@@ -131,14 +126,6 @@ export function PipelineView({ onToggleHistory }: PipelineViewProps) {
               executions={executions}
               onStageClick={setViewingStage}
             />
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={onToggleHistory}
-              className="mr-4"
-            >
-              History
-            </Button>
           </>
         )}
       </div>

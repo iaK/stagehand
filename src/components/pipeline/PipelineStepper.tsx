@@ -5,6 +5,7 @@ interface PipelineStepperProps {
   currentStageId: string | null;
   executions: StageExecution[];
   onStageClick: (stage: StageTemplate) => void;
+  isTaskCompleted?: boolean;
 }
 
 export function PipelineStepper({
@@ -12,8 +13,12 @@ export function PipelineStepper({
   currentStageId,
   executions,
   onStageClick,
+  isTaskCompleted,
 }: PipelineStepperProps) {
   const getStageStatus = (stage: StageTemplate) => {
+    // All stages are completed when the task is done
+    if (isTaskCompleted) return "completed";
+
     const stageExecs = executions.filter(
       (e) => e.stage_template_id === stage.id,
     );

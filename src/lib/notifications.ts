@@ -1,29 +1,48 @@
 import { toast } from "sonner";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification as tauriSendNotification,
+} from "@tauri-apps/plugin-notification";
 
-export function requestNotificationPermission() {
-  if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission();
+export async function requestNotificationPermission() {
+  let granted = await isPermissionGranted();
+  if (!granted) {
+    const permission = await requestPermission();
+    granted = permission === "granted";
   }
+  return granted;
 }
 
-export function sendNotification(title: string, body?: string) {
+export async function sendNotification(
+  title: string,
+  body?: string,
+  type: "success" | "error" | "info" = "info",
+) {
+  const showToast = () => {
+    const opts = { description: body };
+    switch (type) {
+      case "success":
+        return toast.success(title, opts);
+      case "error":
+        return toast.error(title, opts);
+      case "info":
+        return toast.info(title, opts);
+    }
+  };
+
   if (document.hidden) {
-    // Window not focused — try native OS notification
-    if (
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
-      const n = new Notification(title, { body });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-    } else {
-      // Permission not granted — fall back to toast (visible when user returns)
-      toast(title, { description: body });
+    try {
+      const granted = await isPermissionGranted();
+      if (granted) {
+        tauriSendNotification({ title, body });
+      } else {
+        showToast();
+      }
+    } catch {
+      showToast();
     }
   } else {
-    // Window focused — in-app toast
-    toast(title, { description: body });
+    showToast();
   }
 }

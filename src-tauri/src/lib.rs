@@ -22,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(ProcessManager::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
