@@ -196,6 +196,13 @@ export function useStageExecution() {
           thinking_output: null,
           stage_result: null,
           stage_summary: null,
+          input_tokens: null,
+          output_tokens: null,
+          cache_creation_input_tokens: null,
+          cache_read_input_tokens: null,
+          total_cost_usd: null,
+          duration_ms: null,
+          num_turns: null,
           started_at: new Date().toISOString(),
         };
 
@@ -216,6 +223,15 @@ export function useStageExecution() {
         let rawOutput = "";
         let resultText = "";
         let thinkingText = "";
+        let usageData: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_creation_input_tokens?: number;
+          cache_read_input_tokens?: number;
+          total_cost_usd?: number;
+          duration_ms?: number;
+          num_turns?: number;
+        } | null = null;
 
         // Capture task.id so completion handler uses the correct task even if activeTask changes
         const taskId = task.id;
@@ -257,6 +273,18 @@ export function useStageExecution() {
                     resultText = text;
                     appendOutput(sk, text);
                   }
+                  // Capture usage data from result event
+                  if (parsed.usage) {
+                    usageData = {
+                      input_tokens: parsed.usage.input_tokens,
+                      output_tokens: parsed.usage.output_tokens,
+                      cache_creation_input_tokens: parsed.usage.cache_creation_input_tokens,
+                      cache_read_input_tokens: parsed.usage.cache_read_input_tokens,
+                      total_cost_usd: parsed.total_cost_usd,
+                      duration_ms: parsed.duration_ms,
+                      num_turns: parsed.num_turns,
+                    };
+                  }
                   // Don't add result to thinkingText — it's the final structured output
                 } else if (parsed.type === "content_block_delta") {
                   if (parsed.delta?.text) {
@@ -289,6 +317,7 @@ export function useStageExecution() {
                 event.exit_code,
                 thinkingText,
                 attemptNumber,
+                usageData,
               );
               break;
             case "error":
@@ -375,6 +404,15 @@ export function useStageExecution() {
       exitCode: number | null,
       thinkingText?: string,
       attemptNumber?: number,
+      usageData?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        cache_creation_input_tokens?: number;
+        cache_read_input_tokens?: number;
+        total_cost_usd?: number;
+        duration_ms?: number;
+        num_turns?: number;
+      } | null,
     ) => {
       if (!activeProject) return;
 
@@ -391,6 +429,7 @@ export function useStageExecution() {
           thinking_output: savedThinking,
           error_message: wasKilled ? "Stopped by user" : `Process exited with code ${exitCode}`,
           completed_at: new Date().toISOString(),
+          ...(usageData ?? {}),
         });
         if (!wasKilled) {
           sendNotification("Stage failed", `${stage.name} encountered an error`, "error");
@@ -409,6 +448,7 @@ export function useStageExecution() {
           parsed_output: parsedOutput,
           thinking_output: savedThinking,
           completed_at: new Date().toISOString(),
+          ...(usageData ?? {}),
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success");
       }

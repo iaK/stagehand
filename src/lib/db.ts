@@ -171,6 +171,14 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE stage_executions ADD COLUMN stage_summary TEXT
   `).catch(() => { /* column already exists */ });
 
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN input_tokens INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN output_tokens INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN cache_creation_input_tokens INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN cache_read_input_tokens INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN total_cost_usd REAL`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN duration_ms INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN num_turns INTEGER`).catch(() => {});
+
   await db.execute(`
     ALTER TABLE tasks ADD COLUMN branch_name TEXT
   `).catch(() => { /* column already exists */ });

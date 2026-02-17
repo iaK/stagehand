@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { gitLog, type GitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
+import type { StageExecution } from "../../lib/types";
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -32,6 +33,22 @@ function formatRelativeTime(iso: string): string {
   return `${diffDays}d ago`;
 }
 
+function formatTokenCount(n: number): string {
+  return n.toLocaleString();
+}
+
+function formatDuration(ms: number): string {
+  const totalSecs = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  if (mins === 0) return `${secs}s`;
+  return `${mins}m ${secs}s`;
+}
+
+function formatCost(usd: number): string {
+  return `$${usd.toFixed(2)}`;
+}
+
 const statusConfig: Record<string, { label: string; variant: "success" | "info" | "secondary" | "critical" }> = {
   completed: { label: "Completed", variant: "success" },
   in_progress: { label: "In Progress", variant: "info" },
@@ -42,10 +59,41 @@ const statusConfig: Record<string, { label: string; variant: "success" | "info" 
 export function TaskOverview() {
   const activeTask = useTaskStore((s) => s.activeTask);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const executions = useTaskStore((s) => s.executions);
   const activeProject = useProjectStore((s) => s.activeProject);
 
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [commitsLoading, setCommitsLoading] = useState(true);
+  const [showTokenDetails, setShowTokenDetails] = useState(false);
+
+  const tokenTotals = useMemo(() => {
+    const withData = executions.filter((e) => e.total_cost_usd != null);
+    if (withData.length === 0) return null;
+    return {
+      total_cost_usd: withData.reduce((s, e) => s + (e.total_cost_usd ?? 0), 0),
+      input_tokens: withData.reduce((s, e) => s + (e.input_tokens ?? 0), 0),
+      output_tokens: withData.reduce((s, e) => s + (e.output_tokens ?? 0), 0),
+      cache_creation_input_tokens: withData.reduce((s, e) => s + (e.cache_creation_input_tokens ?? 0), 0),
+      cache_read_input_tokens: withData.reduce((s, e) => s + (e.cache_read_input_tokens ?? 0), 0),
+      duration_ms: withData.reduce((s, e) => s + (e.duration_ms ?? 0), 0),
+      num_turns: withData.reduce((s, e) => s + (e.num_turns ?? 0), 0),
+    };
+  }, [executions]);
+
+  const perStageUsage = useMemo(() => {
+    if (!tokenTotals) return [];
+    const byStage = new Map<string, StageExecution>();
+    for (const exec of executions) {
+      if (exec.total_cost_usd == null) continue;
+      const existing = byStage.get(exec.stage_template_id);
+      if (!existing || exec.attempt_number > existing.attempt_number) {
+        byStage.set(exec.stage_template_id, exec);
+      }
+    }
+    return stageTemplates
+      .filter((t) => byStage.has(t.id))
+      .map((t) => ({ stage: t, execution: byStage.get(t.id)! }));
+  }, [executions, stageTemplates, tokenTotals]);
 
   useEffect(() => {
     if (!activeTask || !activeProject) {
@@ -125,6 +173,94 @@ export function TaskOverview() {
           <span className="text-xs text-muted-foreground">Finished</span>
           <p className="text-sm font-medium">{formatDate(activeTask.updated_at)}</p>
         </div>
+      )}
+
+      {/* Token Usage */}
+      {tokenTotals && (
+        <>
+          <Separator />
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Token Usage</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-xs text-muted-foreground">Total Cost</span>
+                  <p className="text-sm font-medium">{formatCost(tokenTotals.total_cost_usd)}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Tokens</span>
+                  <p className="text-sm font-medium">
+                    {formatTokenCount(tokenTotals.input_tokens)} in / {formatTokenCount(tokenTotals.output_tokens)} out
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Duration</span>
+                  <p className="text-sm font-medium">{formatDuration(tokenTotals.duration_ms)}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Turns</span>
+                  <p className="text-sm font-medium">{tokenTotals.num_turns}</p>
+                </div>
+              </div>
+
+              {perStageUsage.length > 1 && (
+                <div>
+                  <button
+                    onClick={() => setShowTokenDetails((v) => !v)}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showTokenDetails ? "Hide details" : "Show details"}
+                  </button>
+
+                  {showTokenDetails && (
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border text-muted-foreground">
+                            <th className="text-left py-1.5 pr-3 font-medium">Stage</th>
+                            <th className="text-right py-1.5 px-3 font-medium">Cost</th>
+                            <th className="text-right py-1.5 px-3 font-medium">Input</th>
+                            <th className="text-right py-1.5 px-3 font-medium">Output</th>
+                            <th className="text-right py-1.5 px-3 font-medium">Cache Read</th>
+                            <th className="text-right py-1.5 px-3 font-medium">Duration</th>
+                            <th className="text-right py-1.5 pl-3 font-medium">Turns</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {perStageUsage.map(({ stage, execution }) => (
+                            <tr key={stage.id} className="border-b border-border/50">
+                              <td className="py-1.5 pr-3">{stage.name}</td>
+                              <td className="text-right py-1.5 px-3">
+                                {execution.total_cost_usd != null ? formatCost(execution.total_cost_usd) : "\u2014"}
+                              </td>
+                              <td className="text-right py-1.5 px-3">
+                                {execution.input_tokens != null ? formatTokenCount(execution.input_tokens) : "\u2014"}
+                              </td>
+                              <td className="text-right py-1.5 px-3">
+                                {execution.output_tokens != null ? formatTokenCount(execution.output_tokens) : "\u2014"}
+                              </td>
+                              <td className="text-right py-1.5 px-3">
+                                {execution.cache_read_input_tokens != null ? formatTokenCount(execution.cache_read_input_tokens) : "\u2014"}
+                              </td>
+                              <td className="text-right py-1.5 px-3">
+                                {execution.duration_ms != null ? formatDuration(execution.duration_ms) : "\u2014"}
+                              </td>
+                              <td className="text-right py-1.5 pl-3">
+                                {execution.num_turns != null ? execution.num_turns : "\u2014"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <Separator />

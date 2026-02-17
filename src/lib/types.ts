@@ -67,6 +67,13 @@ export interface StageExecution {
   thinking_output: string | null;
   stage_result: string | null;
   stage_summary: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  total_cost_usd: number | null;
+  duration_ms: number | null;
+  num_turns: number | null;
   started_at: string;
   completed_at: string | null;
 }

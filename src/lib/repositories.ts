@@ -308,8 +308,8 @@ export async function createStageExecution(
 ): Promise<StageExecution> {
   const db = await getProjectDb(projectId);
   await db.execute(
-    `INSERT INTO stage_executions (id, task_id, stage_template_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, stage_result, stage_summary, started_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+    `INSERT INTO stage_executions (id, task_id, stage_template_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, stage_result, stage_summary, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_cost_usd, duration_ms, num_turns, started_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
     [
       execution.id,
       execution.task_id,
@@ -326,6 +326,13 @@ export async function createStageExecution(
       execution.thinking_output,
       execution.stage_result,
       execution.stage_summary,
+      execution.input_tokens,
+      execution.output_tokens,
+      execution.cache_creation_input_tokens,
+      execution.cache_read_input_tokens,
+      execution.total_cost_usd,
+      execution.duration_ms,
+      execution.num_turns,
       execution.started_at,
     ],
   );
@@ -348,6 +355,13 @@ export async function updateStageExecution(
       | "stage_result"
       | "stage_summary"
       | "completed_at"
+      | "input_tokens"
+      | "output_tokens"
+      | "cache_creation_input_tokens"
+      | "cache_read_input_tokens"
+      | "total_cost_usd"
+      | "duration_ms"
+      | "num_turns"
     >
   >,
 ): Promise<void> {
