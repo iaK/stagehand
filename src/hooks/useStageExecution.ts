@@ -446,6 +446,12 @@ export function useStageExecution() {
       // Extract a concise summary for this stage
       const stageSummary = extractStageSummary(stage, latest, decision);
 
+      // PR Preparation: create the PR before marking as approved so failures
+      // are surfaced to the user and the stage can be retried.
+      if (stage.name === "PR Preparation" && task.branch_name) {
+        await createPullRequest(task, decision);
+      }
+
       // Update execution with decision and computed stage_result
       await repo.updateStageExecution(activeProject.id, latest.id, {
         status: "approved",
@@ -461,15 +467,6 @@ export function useStageExecution() {
         await generatePendingCommit(task, stage);
         await loadExecutions(activeProject.id, task.id);
         return;
-      }
-
-      // PR Preparation: create the actual PR and save URL to the task
-      if (stage.name === "PR Preparation" && task.branch_name) {
-        try {
-          await createPullRequest(task, decision);
-        } catch {
-          // PR creation is non-critical — still advance
-        }
       }
 
       // Non-commit stages: advance immediately
@@ -653,7 +650,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
-function extractJson(text: string): string | null {
+export function extractJson(text: string): string | null {
   if (!text) return null;
 
   // First try: parse the whole thing
@@ -700,7 +697,7 @@ function extractJson(text: string): string | null {
 }
 
 /** Extract a clean, human-readable output from a stage for its stage_result. */
-function extractStageOutput(
+export function extractStageOutput(
   stage: StageTemplate,
   execution: StageExecution,
   decision?: string,
@@ -751,7 +748,7 @@ function extractStageOutput(
   }
 }
 
-function formatSelectedApproach(decision: string): string {
+export function formatSelectedApproach(decision: string): string {
   try {
     const selected = JSON.parse(decision);
     if (!Array.isArray(selected) || selected.length === 0) return decision;
@@ -770,7 +767,7 @@ function formatSelectedApproach(decision: string): string {
 }
 
 /** Extract a concise summary from a stage's output for use in PR preparation. */
-function extractStageSummary(
+export function extractStageSummary(
   stage: StageTemplate,
   execution: StageExecution,
   decision?: string,
@@ -825,7 +822,7 @@ function extractStageSummary(
 }
 
 /** Extract first N sentences from text. */
-function truncateToSentences(text: string, n: number): string {
+export function truncateToSentences(text: string, n: number): string {
   // Strip markdown headers for cleaner extraction
   const cleaned = text.replace(/^#+\s+.*$/gm, "").trim();
   // Match sentences ending with . ! or ?
@@ -838,7 +835,7 @@ function truncateToSentences(text: string, n: number): string {
 }
 
 /** Extract summary from implementation (text format) output. */
-function extractImplementationSummary(raw: string): string | null {
+export function extractImplementationSummary(raw: string): string | null {
   if (!raw.trim()) return null;
 
   // Look for explicit summary sections near end of output
@@ -859,7 +856,7 @@ function extractImplementationSummary(raw: string): string | null {
   return truncateToSentences(raw, 3);
 }
 
-function validateGate(
+export function validateGate(
   rule: GateRule,
   decision: string | undefined,
   _execution: StageExecution,
