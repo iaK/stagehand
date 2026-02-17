@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import { listProcessesDetailed, killProcess } from "../lib/claude";
 import { useProcessStore } from "../stores/processStore";
+import { useProjectStore } from "../stores/projectStore";
+import { useTaskStore } from "../stores/taskStore";
+import * as repo from "../lib/repositories";
 
 export function useOrphanedProcessCleanup() {
   useEffect(() => {
@@ -17,13 +20,30 @@ export function useOrphanedProcessCleanup() {
             .filter(Boolean),
         );
 
-        for (const proc of processes) {
-          if (!knownProcessIds.has(proc.processId)) {
-            // Kill the orphaned backend process
-            try {
-              await killProcess(proc.processId);
-            } catch {
-              // May already be exiting
+        const orphans = processes.filter((p) => !knownProcessIds.has(p.processId));
+
+        for (const proc of orphans) {
+          // Kill the orphaned backend process
+          try {
+            await killProcess(proc.processId);
+          } catch {
+            // May already be exiting
+          }
+
+          // Mark the corresponding DB execution as failed
+          if (proc.stageExecutionId) {
+            const projectId = useProjectStore.getState().activeProject?.id;
+            const taskId = useTaskStore.getState().activeTask?.id;
+            if (projectId && taskId) {
+              try {
+                await repo.updateStageExecution(projectId, proc.stageExecutionId, {
+                  status: "failed",
+                  error_message: "Process orphaned after reload",
+                  completed_at: new Date().toISOString(),
+                });
+              } catch {
+                // Execution may not exist or already be updated
+              }
             }
           }
         }

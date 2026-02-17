@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
-import { listProcessesDetailed } from "../lib/claude";
+import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
 
 interface TaskStore {
@@ -69,12 +69,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   loadExecutions: async (projectId, taskId) => {
     const executions = await repo.listStageExecutions(projectId, taskId);
 
-    // Check the backend for actually running processes
-    let detailedProcesses: Array<{ processId: string; stageExecutionId: string | null }> | null = null;
-    try {
-      detailedProcesses = await listProcessesDetailed();
-    } catch {
-      // If we can't reach the backend, don't assume anything about running state
+    // Check the backend for actually running processes (only if needed)
+    const hasRunning = executions.some((e) => e.status === "running");
+    let detailedProcesses: ProcessInfo[] | null = null;
+    if (hasRunning) {
+      try {
+        detailedProcesses = await listProcessesDetailed();
+      } catch {
+        // If we can't reach the backend, don't assume anything about running state
+      }
     }
 
     // Clean up stale "running" executions whose process is no longer alive

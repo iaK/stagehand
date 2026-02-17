@@ -61,7 +61,7 @@ export function useProcessHealthCheck(stageId: string | null) {
 
         if (!processId) {
           // Post-reload: processStore has no info, check by execution ID
-          const runningExec = executions.find(
+          const runningExec = useTaskStore.getState().executions.find(
             (e) => e.stage_template_id === stageId && e.status === "running",
           );
           if (!runningExec) return;
