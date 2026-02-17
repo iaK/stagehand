@@ -23,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { sendNotification } from "../../lib/notifications";
-import type { StageTemplate } from "../../lib/types";
+import type { StageTemplate, CompletionStrategy } from "../../lib/types";
 
 interface StageViewProps {
   stage: StageTemplate;
@@ -181,7 +181,7 @@ export function StageView({ stage }: StageViewProps) {
     await redoStage(activeTask, stage, answers);
   };
 
-  const handleApproveWithStages = async (selectedStageIds: string[]) => {
+  const handleApproveWithStages = async (selectedStageIds: string[], completionStrategy?: CompletionStrategy) => {
     if (!activeTask || !activeProject) return;
     setApproving(true);
     try {
@@ -204,6 +204,14 @@ export function StageView({ stage }: StageViewProps) {
           return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
         })
         .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
+
+      // Persist the completion strategy on the task if provided
+      if (completionStrategy) {
+        await useTaskStore.getState().updateTask(activeProject.id, activeTask.id, {
+          completion_strategy: completionStrategy,
+        });
+      }
+
       // Persist selected stages before approving
       await setTaskStages(activeProject.id, activeTask.id, stages);
       await approveStage(activeTask, stage);

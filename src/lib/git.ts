@@ -135,10 +135,22 @@ export async function gitDefaultBranch(workingDir: string): Promise<string | nul
     const ref = await runGit(workingDir, "symbolic-ref", "refs/remotes/origin/HEAD");
     // Returns e.g. "refs/remotes/origin/main"
     const branch = ref.trim().replace("refs/remotes/origin/", "");
-    return branch || null;
+    if (branch) return branch;
   } catch {
-    return null;
+    // origin/HEAD not set — fall through to check common branch names
   }
+
+  // Try common default branch names
+  for (const candidate of ["main", "master"]) {
+    try {
+      await runGit(workingDir, "rev-parse", "--verify", `refs/remotes/origin/${candidate}`);
+      return candidate;
+    } catch {
+      // Branch doesn't exist — try next
+    }
+  }
+
+  return null;
 }
 
 export async function gitWorktreeAdd(
@@ -168,6 +180,29 @@ export async function gitWorktreeList(
 
 export async function gitPush(workingDir: string, branchName: string): Promise<string> {
   return runGit(workingDir, "push", "-u", "origin", branchName);
+}
+
+export async function gitMerge(workingDir: string, branchName: string): Promise<string> {
+  return runGit(workingDir, "merge", branchName, "--no-ff");
+}
+
+export async function gitFetch(workingDir: string, branch?: string): Promise<string> {
+  if (branch) {
+    return runGit(workingDir, "fetch", "origin", branch);
+  }
+  return runGit(workingDir, "fetch", "origin");
+}
+
+export async function gitPull(workingDir: string): Promise<string> {
+  return runGit(workingDir, "pull");
+}
+
+export async function gitMergeAbort(workingDir: string): Promise<string> {
+  return runGit(workingDir, "merge", "--abort");
+}
+
+export async function gitPushCurrentBranch(workingDir: string): Promise<string> {
+  return runGit(workingDir, "push");
 }
 
 export async function runGh(workingDir: string, ...args: string[]): Promise<string> {
