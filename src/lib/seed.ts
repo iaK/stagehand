@@ -54,6 +54,7 @@ Additionally, suggest which pipeline stages this task needs. The available stage
 - "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
 - "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
 - "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
+- "Merge": Merge the task branch directly into the main branch (alternative to PR flow)
 
 For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
 Include your suggestions in the "suggested_stages" array.
@@ -605,6 +606,25 @@ Respond with a JSON object:
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "pr_review",
+      output_schema: null,
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: null,
+      result_mode: "replace",
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      name: "Merge",
+      description:
+        "Merge the task branch into the target branch and push.",
+      sort_order: 8,
+      prompt_template: "",
+      input_source: "previous_stage",
+      output_format: "merge",
       output_schema: null,
       gate_rules: JSON.stringify({ type: "require_approval" }),
       persona_name: null,

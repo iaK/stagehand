@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
-import { useStageExecution, COMMIT_ELIGIBLE_STAGES } from "../../hooks/useStageExecution";
+import { useStageExecution, COMMIT_ELIGIBLE_STAGES, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
@@ -17,6 +17,8 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { usePrReview } from "../../hooks/usePrReview";
 import { PrReviewOutput } from "../output/PrReviewOutput";
+import { MergeStageView } from "./MergeStageView";
+import * as repo from "../../lib/repositories";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -24,7 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { sendNotification } from "../../lib/notifications";
 import { Loader2 } from "lucide-react";
-import type { StageTemplate, CompletionStrategy } from "../../lib/types";
+import type { StageTemplate } from "../../lib/types";
 
 interface StageViewProps {
   stage: StageTemplate;
@@ -119,6 +121,26 @@ export function StageView({ stage }: StageViewProps) {
     stage.input_source === "user" || stage.input_source === "both";
   const isCommitEligible = COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number]);
 
+  // Re-generate pending commit on mount/navigation if the stage is awaiting_user
+  // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
+  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
+  useEffect(() => {
+    if (
+      isCommitEligible &&
+      isCurrentStage &&
+      stageStatus === "awaiting_user" &&
+      !isRunning &&
+      !pendingCommit?.stageId &&
+      !noChangesToCommit &&
+      !commitMessageLoading &&
+      !committedHash &&
+      activeTask &&
+      activeProject
+    ) {
+      generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
+    }
+  }, [isCommitEligible, isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
+
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
     if (activeTask?.description && needsUserInput && !latestExecution) {
@@ -182,7 +204,7 @@ export function StageView({ stage }: StageViewProps) {
     await redoStage(activeTask, stage, answers);
   };
 
-  const handleApproveWithStages = async (selectedStageIds: string[], completionStrategy?: CompletionStrategy) => {
+  const handleApproveWithStages = async (selectedStageIds: string[]) => {
     if (!activeTask || !activeProject) return;
     setApproving(true);
     try {
@@ -198,6 +220,15 @@ export function StageView({ stage }: StageViewProps) {
         }
       }
 
+      // Auto-include Merge stage when project uses merge strategy
+      const strategy = await repo.getCompletionStrategy(activeProject.id);
+      if (strategy === "merge") {
+        const mergeTemplate = stageTemplates.find((t) => t.name === "Merge");
+        if (mergeTemplate && !ids.includes(mergeTemplate.id)) {
+          ids.push(mergeTemplate.id);
+        }
+      }
+
       // Build stages with sort orders from the templates
       const stages = ids
         .map((id) => {
@@ -205,13 +236,6 @@ export function StageView({ stage }: StageViewProps) {
           return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
         })
         .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
-
-      // Persist the completion strategy on the task if provided
-      if (completionStrategy) {
-        await useTaskStore.getState().updateTask(activeProject.id, activeTask.id, {
-          completion_strategy: completionStrategy,
-        });
-      }
 
       // Persist selected stages before approving
       await setTaskStages(activeProject.id, activeTask.id, stages);
@@ -224,6 +248,11 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   if (!activeProject || !activeTask) return null;
+
+  // Merge: custom rendering
+  if (stage.output_format === "merge") {
+    return <MergeStageView stage={stage} />;
+  }
 
   // PR Review: custom rendering — no standard stage flow
   if (stage.output_format === "pr_review") {

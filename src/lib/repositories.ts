@@ -6,6 +6,7 @@ import type {
   Task,
   StageExecution,
   PrReviewFix,
+  CompletionStrategy,
 } from "./types";
 
 // === Settings ===
@@ -54,6 +55,10 @@ export async function setProjectSetting(projectId: string, key: string, value: s
 export async function deleteProjectSetting(projectId: string, key: string): Promise<void> {
   const db = await getProjectDb(projectId);
   await db.execute("DELETE FROM settings WHERE key = $1", [key]);
+}
+
+export async function getCompletionStrategy(projectId: string): Promise<CompletionStrategy> {
+  return (await getProjectSetting(projectId, "default_completion_strategy") ?? "pr") as CompletionStrategy;
 }
 
 // === Projects ===
@@ -207,13 +212,10 @@ export async function createTask(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Read default completion strategy from project settings
-  const defaultStrategy = await getProjectSetting(projectId, "default_completion_strategy") ?? "pr";
-
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, completion_strategy, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, defaultStrategy, now, now],
+    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, now, now],
   );
 
   return {
@@ -226,7 +228,6 @@ export async function createTask(
     branch_name: branchName ?? null,
     worktree_path: worktreePath ?? null,
     pr_url: null,
-    completion_strategy: defaultStrategy as Task["completion_strategy"],
     archived: 0,
     created_at: now,
     updated_at: now,
@@ -236,7 +237,7 @@ export async function createTask(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "completion_strategy">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];

@@ -121,7 +121,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
           <div>
             <Label className="text-sm font-semibold">Task Completion Strategy</Label>
             <p className="text-xs text-muted-foreground mt-1 mb-2">
-              How completed tasks are integrated into the main branch. This is the default for new tasks and can be changed per-task.
+              How completed tasks are integrated into the main branch. Controls which terminal stages appear in the pipeline.
             </p>
             <RadioGroup
               value={completionStrategy}
@@ -140,24 +140,13 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
                 </div>
               </label>
               <label className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                completionStrategy === "direct_merge" ? "border-blue-500 bg-blue-50" : "border-border hover:border-zinc-400"
+                completionStrategy === "merge" ? "border-blue-500 bg-blue-50" : "border-border hover:border-zinc-400"
               }`}>
-                <RadioGroupItem value="direct_merge" className="mt-0.5" />
+                <RadioGroupItem value="merge" className="mt-0.5" />
                 <div>
                   <span className="text-sm font-medium text-foreground">Direct Merge</span>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Merge the task branch directly into the main branch. Skips PR stages.
-                  </p>
-                </div>
-              </label>
-              <label className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                completionStrategy === "none" ? "border-blue-500 bg-blue-50" : "border-border hover:border-zinc-400"
-              }`}>
-                <RadioGroupItem value="none" className="mt-0.5" />
-                <div>
-                  <span className="text-sm font-medium text-foreground">None</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Leave the branch as-is. No merge or PR creation. The task completes after the last stage.
+                    Merge the task branch directly into the main branch. Adds a Merge stage to the pipeline.
                   </p>
                 </div>
               </label>

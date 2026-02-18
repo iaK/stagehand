@@ -14,12 +14,7 @@ import {
   gitDefaultBranch,
   ghCreatePr,
   gitWorktreeAdd,
-  gitWorktreeAddDetached,
   gitWorktreeRemove,
-  gitMerge,
-  gitFetch,
-  gitMergeAbort,
-  gitPushHeadTo,
   gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
@@ -569,9 +564,12 @@ export function useStageExecution() {
 
       // PR Preparation: create the PR before marking as approved so failures
       // are surfaced to the user and the stage can be retried.
-      // Only create PR when completion strategy is "pr" (the default).
-      if (stage.name === "PR Preparation" && task.branch_name && task.completion_strategy === "pr") {
-        await createPullRequest(task, decision);
+      // Read strategy from project settings instead of task.
+      if (stage.name === "PR Preparation" && task.branch_name) {
+        const strategy = await repo.getCompletionStrategy(activeProject.id);
+        if (strategy === "pr") {
+          await createPullRequest(task, decision);
+        }
       }
 
       // Update execution with decision and computed stage_result
@@ -653,29 +651,14 @@ export function useStageExecution() {
           }
         }
       } else {
-        // No more stages — handle completion based on strategy
-        if (task.completion_strategy === "direct_merge" && task.branch_name) {
-          const project = useProjectStore.getState().activeProject;
-          if (project) {
-            const targetBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(project.path) ?? "main";
-            // Set pending merge — the UI will show a confirmation dialog
-            useProcessStore.getState().setPendingMerge({
-              taskId: task.id,
-              branchName: task.branch_name,
-              targetBranch,
-            });
-            if (useTaskStore.getState().activeTask?.id === task.id) {
-              await loadExecutions(projectId, task.id);
-            }
-            return; // Don't mark as completed yet — wait for merge confirmation
-          }
-        }
-
+        // No more stages — task is complete
         await updateTask(projectId, task.id, {
           status: "completed",
         });
-        // Clean up worktree on completion (skip for 'none' strategy — branch is left for manual handling)
-        if (task.worktree_path && task.completion_strategy !== "none") {
+
+        // Clean up worktree on completion (safety net — for merge stages,
+        // performMerge already cleaned up; for PR flow, clean up here)
+        if (task.worktree_path) {
           const project = useProjectStore.getState().activeProject;
           if (project) {
             try {
@@ -683,7 +666,6 @@ export function useStageExecution() {
             } catch {
               // Non-critical — worktree cleanup is best-effort
             }
-            // Delete the branch after worktree removal
             if (task.branch_name) {
               try {
                 await gitDeleteBranch(project.path, task.branch_name);
@@ -709,126 +691,6 @@ export function useStageExecution() {
       await runStage(task, stage, feedback);
     },
     [activeProject, runStage],
-  );
-
-  const performDirectMerge = useCallback(
-    async (task: Task) => {
-      if (!activeProject || !task.branch_name) return;
-
-      const pendingMerge = useProcessStore.getState().pendingMerge;
-      if (!pendingMerge) return;
-
-      const projectPath = activeProject.path;
-      const targetBranch = pendingMerge.targetBranch;
-
-      // Use a temporary worktree to perform the merge so we don't
-      // disturb the project root's checkout or any other worktrees.
-      const mergeWorktreePath = `${projectPath}/.stagehand-worktrees/_merge-${targetBranch.replace(/\//g, "--")}-${Date.now()}`;
-
-      try {
-        // Fetch the latest target branch from remote before merging
-        await gitFetch(projectPath, targetBranch);
-
-        // Create a detached worktree at origin/<targetBranch>.
-        // Using detached HEAD avoids "branch already checked out" errors
-        // when the target branch is checked out in the main worktree.
-        await gitWorktreeAddDetached(projectPath, mergeWorktreePath, `origin/${targetBranch}`);
-
-        // Merge the task branch into the detached HEAD
-        try {
-          await gitMerge(mergeWorktreePath, task.branch_name);
-        } catch (mergeErr) {
-          // Merge failed (e.g. conflict) — abort and clean up
-          try {
-            await gitMergeAbort(mergeWorktreePath);
-          } catch {
-            // Abort may fail if merge didn't start — ignore
-          }
-          try {
-            await gitWorktreeRemove(projectPath, mergeWorktreePath);
-          } catch {
-            // Best-effort cleanup
-          }
-          throw mergeErr;
-        }
-
-        // Push the merged HEAD to the target branch on remote
-        try {
-          await gitPushHeadTo(mergeWorktreePath, targetBranch);
-        } catch (pushErr) {
-          // Push failed — clean up the temp worktree (merge is local only)
-          try {
-            await gitWorktreeRemove(projectPath, mergeWorktreePath);
-          } catch {
-            // Best-effort cleanup
-          }
-          throw pushErr;
-        }
-
-        // Clean up the temporary merge worktree
-        try {
-          await gitWorktreeRemove(projectPath, mergeWorktreePath);
-        } catch {
-          // Non-critical
-        }
-      } catch (err) {
-        // Re-throw so MergeConfirmation can display the error
-        throw err;
-      }
-
-      useProcessStore.getState().clearPendingMerge();
-      sendNotification("Branch merged", `${task.branch_name} merged into ${targetBranch}`);
-
-      // Mark task as completed
-      await updateTask(activeProject.id, task.id, {
-        status: "completed",
-      });
-
-      // Clean up task worktree
-      if (task.worktree_path) {
-        try {
-          await gitWorktreeRemove(projectPath, task.worktree_path);
-        } catch {
-          // Non-critical
-        }
-      }
-
-      // Delete the merged feature branch
-      if (task.branch_name) {
-        try {
-          await gitDeleteBranch(projectPath, task.branch_name);
-        } catch {
-          // Non-critical — branch cleanup is best-effort
-        }
-      }
-
-      await loadExecutions(activeProject.id, task.id);
-    },
-    [activeProject, updateTask, loadExecutions],
-  );
-
-  const skipMerge = useCallback(
-    async (task: Task) => {
-      if (!activeProject) return;
-
-      useProcessStore.getState().clearPendingMerge();
-      sendNotification("Merge skipped", "Task completed without merging");
-
-      await updateTask(activeProject.id, task.id, {
-        status: "completed",
-      });
-
-      if (task.worktree_path) {
-        try {
-          await gitWorktreeRemove(activeProject.path, task.worktree_path);
-        } catch {
-          // Non-critical
-        }
-      }
-
-      await loadExecutions(activeProject.id, task.id);
-    },
-    [activeProject, updateTask, loadExecutions],
   );
 
   /** Mark all "running" executions for this stage as failed (queries DB directly). */
@@ -920,11 +782,11 @@ export function useStageExecution() {
     }, 3000);
   }, [failStaleExecutions]);
 
-  return { runStage, approveStage, redoStage, killCurrent, performDirectMerge, skipMerge };
+  return { runStage, approveStage, redoStage, killCurrent };
 }
 
 /** Generate a pending commit for a commit-eligible stage that just finished. */
-async function generatePendingCommit(
+export async function generatePendingCommit(
   task: Task,
   stage: StageTemplate,
   projectPath: string,
@@ -1062,6 +924,8 @@ export function extractStageOutput(
     }
     case "pr_review":
       return raw || "PR Review completed";
+    case "merge":
+      return raw || "Branch merged successfully";
     default:
       return raw;
   }
@@ -1131,6 +995,8 @@ export function extractStageSummary(
       return truncateToSentences(raw, 3);
     }
     case "pr_review":
+      return raw ? truncateToSentences(raw, 3) : null;
+    case "merge":
       return raw ? truncateToSentences(raw, 3) : null;
     case "text": {
       return extractImplementationSummary(raw);
@@ -1224,5 +1090,6 @@ export function validateGate(
 
 /** Determine whether a stage should be auto-started after the previous stage completes. */
 export function shouldAutoStartStage(stage: StageTemplate): boolean {
+  if (stage.output_format === "merge") return false;
   return stage.input_source !== "user" && stage.input_source !== "both";
 }

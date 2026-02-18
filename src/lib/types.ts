@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_review";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_review" | "merge";
 export type ResultMode = "replace" | "append" | "passthrough";
 
 export interface Task {
@@ -44,7 +44,6 @@ export interface Task {
   branch_name: string | null;
   worktree_path: string | null;
   pr_url: string | null;
-  completion_strategy: CompletionStrategy;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -52,7 +51,7 @@ export interface Task {
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 
-export type CompletionStrategy = "pr" | "direct_merge" | "none";
+export type CompletionStrategy = "pr" | "merge";
 
 export interface StageExecution {
   id: string;

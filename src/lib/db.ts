@@ -210,6 +210,10 @@ async function initProjectSchema(db: Database): Promise<void> {
   // Migrate PR Preparation to use {{stage_summaries}}
   await migratePrPrepSummaries(db);
 
+  // Migrate old completion strategy values
+  await db.execute("UPDATE settings SET value = 'merge' WHERE key = 'default_completion_strategy' AND value = 'direct_merge'").catch(() => {});
+  await db.execute("UPDATE settings SET value = 'pr' WHERE key = 'default_completion_strategy' AND value = 'none'").catch(() => {});
+
   // Add pr_review_fixes table and PR Review stage template
   await db.execute(`
     CREATE TABLE IF NOT EXISTS pr_review_fixes (
@@ -274,6 +278,7 @@ async function initProjectSchema(db: Database): Promise<void> {
   }
 
   await migratePrReviewStage(db);
+  await migrateMergeStage(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
@@ -319,6 +324,7 @@ Additionally, suggest which pipeline stages this task needs. The available stage
 - "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
 - "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
 - "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
+- "Merge": Merge the task branch directly into the main branch (alternative to PR flow)
 
 For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
 Include your suggestions in the "suggested_stages" array.
@@ -887,6 +893,48 @@ async function migratePrReviewStage(db: Database): Promise<void> {
         "",
         "previous_stage",
         "pr_review",
+        null,
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        null,
+        "replace",
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+async function migrateMergeStage(db: Database): Promise<void> {
+  // Check if Merge stage already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Merge' AND sort_order = 8",
+  );
+  if (existing.length > 0) return;
+
+  // Only add if PR Review exists at sort_order 7 (ensures project has full pipeline)
+  const prReviewRows = await db.select<{ id: string; project_id: string }[]>(
+    "SELECT id, project_id FROM stage_templates WHERE name = 'PR Review' AND sort_order = 7",
+  );
+  if (prReviewRows.length === 0) return;
+
+  const now = new Date().toISOString();
+  for (const row of prReviewRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "Merge",
+        "Merge the task branch into the target branch and push.",
+        8,
+        "",
+        "previous_stage",
+        "merge",
         null,
         JSON.stringify({ type: "require_approval" }),
         null,

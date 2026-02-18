@@ -1,0 +1,263 @@
+import { useState, useEffect } from "react";
+import { useProjectStore } from "../../stores/projectStore";
+import { useTaskStore } from "../../stores/taskStore";
+import { useGitHubStore } from "../../stores/githubStore";
+import { performMerge } from "../../lib/merge";
+import {
+  gitDefaultBranch,
+  gitDiffNameOnly,
+  gitDiffStatBranch,
+  gitFetch,
+  gitWorktreeRemove,
+  gitDeleteBranch,
+} from "../../lib/git";
+import { getTaskWorkingDir } from "../../lib/worktree";
+import * as repo from "../../lib/repositories";
+import { sendNotification } from "../../lib/notifications";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
+import type { StageTemplate } from "../../lib/types";
+
+interface MergeStageViewProps {
+  stage: StageTemplate;
+}
+
+type MergeState = "loading" | "preview" | "merging" | "success" | "error" | "completed";
+
+export function MergeStageView({ stage }: MergeStageViewProps) {
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const executions = useTaskStore((s) => s.executions);
+  const updateTask = useTaskStore((s) => s.updateTask);
+  const loadExecutions = useTaskStore((s) => s.loadExecutions);
+
+  const [mergeState, setMergeState] = useState<MergeState>("loading");
+  const [targetBranch, setTargetBranch] = useState<string>("main");
+  const [changedFiles, setChangedFiles] = useState<string[]>([]);
+  const [diffStat, setDiffStat] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Check if this stage already has an approved execution
+  const latestExecution = executions
+    .filter((e) => e.stage_template_id === stage.id)
+    .sort((a, b) => b.attempt_number - a.attempt_number)[0] ?? null;
+
+  const isApproved = latestExecution?.status === "approved";
+
+  // Load merge preview data on mount
+  useEffect(() => {
+    if (!activeProject || !activeTask?.branch_name) {
+      setMergeState("preview");
+      return;
+    }
+    if (isApproved) {
+      setMergeState("completed");
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+        const defaultBr = useGitHubStore.getState().defaultBranch
+          ?? await gitDefaultBranch(activeProject.path)
+          ?? "main";
+        setTargetBranch(defaultBr);
+
+        // Fetch remote so diff is accurate
+        await gitFetch(activeProject.path, defaultBr).catch(() => {});
+
+        const files = await gitDiffNameOnly(workDir, `origin/${defaultBr}`).catch(() => [] as string[]);
+        const stat = await gitDiffStatBranch(workDir, `origin/${defaultBr}`).catch(() => "");
+
+        if (!cancelled) {
+          setChangedFiles(files);
+          setDiffStat(stat);
+          setMergeState("preview");
+        }
+      } catch {
+        if (!cancelled) setMergeState("preview");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeProject?.id, activeTask?.id, isApproved]);
+
+  const handleMerge = async () => {
+    if (!activeProject || !activeTask?.branch_name) return;
+    setMergeState("merging");
+    setError(null);
+
+    try {
+      // Create an execution record for this stage
+      const executionId = crypto.randomUUID();
+      await repo.createStageExecution(activeProject.id, {
+        id: executionId,
+        task_id: activeTask.id,
+        stage_template_id: stage.id,
+        attempt_number: 1,
+        status: "running",
+        input_prompt: "",
+        user_input: null,
+        raw_output: null,
+        parsed_output: null,
+        user_decision: null,
+        session_id: null,
+        error_message: null,
+        thinking_output: null,
+        stage_result: null,
+        stage_summary: null,
+        input_tokens: null,
+        output_tokens: null,
+        cache_creation_input_tokens: null,
+        cache_read_input_tokens: null,
+        total_cost_usd: null,
+        duration_ms: null,
+        num_turns: null,
+        started_at: new Date().toISOString(),
+      });
+
+      await performMerge({
+        projectPath: activeProject.path,
+        branchName: activeTask.branch_name,
+        targetBranch,
+        taskWorktreePath: activeTask.worktree_path,
+      });
+
+      // Mark execution as approved
+      await repo.updateStageExecution(activeProject.id, executionId, {
+        status: "approved",
+        parsed_output: `Merged ${activeTask.branch_name} into ${targetBranch}`,
+        stage_result: `Merged ${activeTask.branch_name} into ${targetBranch}`,
+        stage_summary: `Branch merged into ${targetBranch}`,
+        completed_at: new Date().toISOString(),
+      });
+
+      sendNotification("Branch merged", `${activeTask.branch_name} merged into ${targetBranch}`, "success", {
+        projectId: activeProject.id,
+        taskId: activeTask.id,
+      });
+
+      // Mark task as completed
+      await updateTask(activeProject.id, activeTask.id, {
+        status: "completed",
+      });
+
+      // Clean up worktree and branch
+      if (activeTask.worktree_path) {
+        try {
+          await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
+        } catch {
+          // Non-critical
+        }
+      }
+      if (activeTask.branch_name) {
+        try {
+          await gitDeleteBranch(activeProject.path, activeTask.branch_name);
+        } catch {
+          // Non-critical
+        }
+      }
+
+      await loadExecutions(activeProject.id, activeTask.id);
+      setMergeState("success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setMergeState("error");
+    }
+  };
+
+  if (!activeProject || !activeTask) return null;
+
+  if (mergeState === "completed" || mergeState === "success") {
+    return (
+      <div className="p-6 max-w-4xl">
+        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
+          <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <AlertDescription className="text-emerald-800">
+            Branch merged successfully. Task complete.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (mergeState === "loading") {
+    return (
+      <div className="p-6 max-w-4xl">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading merge preview...
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeTask.branch_name) {
+    return (
+      <div className="p-6 max-w-4xl">
+        <Alert variant="destructive">
+          <AlertDescription>
+            No branch associated with this task. Cannot merge.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-4xl">
+      <div className="p-4 bg-muted/50 border border-border rounded-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          <span className="text-sm font-medium text-foreground">
+            Merge Branch
+          </span>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-3">
+          Merge <code className="font-mono text-foreground bg-zinc-100 px-1 rounded">{activeTask.branch_name}</code> into <code className="font-mono text-foreground bg-zinc-100 px-1 rounded">{targetBranch}</code>
+        </p>
+
+        {changedFiles.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-medium text-muted-foreground mb-1">
+              {changedFiles.length} file{changedFiles.length !== 1 ? "s" : ""} changed
+            </p>
+            <div className="max-h-32 overflow-y-auto text-xs font-mono text-muted-foreground bg-zinc-50 border border-border rounded p-2">
+              {changedFiles.map((f) => (
+                <div key={f}>{f}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {diffStat && (
+          <pre className="text-xs text-muted-foreground bg-zinc-50 border border-border rounded p-2 mb-3 overflow-x-auto">
+            {diffStat}
+          </pre>
+        )}
+
+        {error && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <Button
+          onClick={handleMerge}
+          disabled={mergeState === "merging"}
+          size="sm"
+        >
+          {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
+          {mergeState === "merging" ? "Merging..." : "Merge & Push"}
+        </Button>
+      </div>
+    </div>
+  );
+}

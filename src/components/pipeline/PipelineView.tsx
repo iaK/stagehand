@@ -4,7 +4,6 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
-import { MergeConfirmation } from "./MergeConfirmation";
 import { TaskOverview } from "../task/TaskOverview";
 import type { StageTemplate } from "../../lib/types";
 
@@ -146,7 +145,6 @@ export function PipelineView() {
               <p className="text-muted-foreground">No stage selected</p>
             </div>
           )}
-          {activeTask && <MergeConfirmation task={activeTask} />}
         </div>
       )}
     </div>

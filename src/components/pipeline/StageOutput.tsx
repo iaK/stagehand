@@ -1,4 +1,4 @@
-import type { StageTemplate, StageExecution, ResearchQuestion, CompletionStrategy } from "../../lib/types";
+import type { StageTemplate, StageExecution, ResearchQuestion } from "../../lib/types";
 import { TextOutput } from "../output/TextOutput";
 import { OptionsOutput } from "../output/OptionsOutput";
 import { ChecklistOutput } from "../output/ChecklistOutput";
@@ -12,7 +12,7 @@ interface StageOutputProps {
   execution: StageExecution;
   stage: StageTemplate;
   onApprove: (decision?: string) => void;
-  onApproveWithStages?: (selectedStageIds: string[], completionStrategy?: CompletionStrategy) => void;
+  onApproveWithStages?: (selectedStageIds: string[]) => void;
   onSubmitAnswers?: (answers: string) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
@@ -202,6 +202,13 @@ export function StageOutput({
       return isApproved ? (
         <div>
           <TextOutput content={output || "PR Review completed."} />
+        </div>
+      ) : null;
+
+    case "merge":
+      return isApproved ? (
+        <div>
+          <TextOutput content={output || "Branch merged successfully."} />
         </div>
       ) : null;
 

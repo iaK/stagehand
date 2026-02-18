@@ -29,17 +29,10 @@ export interface PendingCommit {
   fixId?: string;
 }
 
-export interface PendingMerge {
-  taskId: string;
-  branchName: string;
-  targetBranch: string;
-}
-
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
-  pendingMerge: PendingMerge | null;
   committedStages: Record<string, string>; // stageId → short commit hash
   commitMessageLoadingStageId: string | null;
   commitGenerationNonce: number;
@@ -54,8 +47,6 @@ interface ProcessStore {
   setPendingCommit: (commit: PendingCommit) => void;
   clearPendingCommit: () => void;
   setCommitted: (stageId: string, shortHash: string) => void;
-  setPendingMerge: (merge: PendingMerge) => void;
-  clearPendingMerge: () => void;
   setCommitMessageLoading: (stageId: string | null) => void;
   setNoChangesToCommit: (stageId: string | null) => void;
 }
@@ -68,7 +59,6 @@ export const useProcessStore = create<ProcessStore>((set) => ({
   stages: {},
   viewingStageId: null,
   pendingCommit: null,
-  pendingMerge: null,
   committedStages: {},
   commitMessageLoadingStageId: null,
   commitGenerationNonce: 0,
@@ -155,10 +145,6 @@ export const useProcessStore = create<ProcessStore>((set) => ({
         [stageId]: shortHash,
       },
     })),
-
-  setPendingMerge: (merge) => set({ pendingMerge: merge }),
-
-  clearPendingMerge: () => set({ pendingMerge: null }),
 
   setCommitMessageLoading: (stageId) => set({ commitMessageLoadingStageId: stageId }),
 
