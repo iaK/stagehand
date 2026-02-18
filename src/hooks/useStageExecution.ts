@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
@@ -483,6 +483,9 @@ export function useStageExecution() {
     [activeProject, loadExecutions],
   );
 
+  const runStageRef = useRef(runStage);
+  runStageRef.current = runStage;
+
   const approveStage = useCallback(
     async (task: Task, stage: StageTemplate, decision?: string) => {
       if (!activeProject) return;
@@ -702,6 +705,21 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         await updateTask(projectId, task.id, {
           current_stage_id: nextStage.id,
         });
+
+        // Auto-start next stage if it doesn't require user input
+        if (shouldAutoStartStage(nextStage)) {
+          const freshTask = useTaskStore.getState().activeTask;
+          if (freshTask && freshTask.id === task.id) {
+            // Fire-and-forget: don't await so the approval flow completes
+            // immediately and the UI can update to show the running state.
+            // Return early — runStage's "started" event handler will call
+            // loadExecutions, avoiding a race with the loadExecutions below.
+            runStageRef.current(freshTask, nextStage).catch((err) => {
+              console.error("Auto-start next stage failed:", err);
+            });
+            return;
+          }
+        }
       } else {
         // No more stages — handle completion based on strategy
         if (task.completion_strategy === "direct_merge" && task.branch_name) {
@@ -1226,4 +1244,9 @@ export function validateGate(
     default:
       return true;
   }
+}
+
+/** Determine whether a stage should be auto-started after the previous stage completes. */
+export function shouldAutoStartStage(stage: StageTemplate): boolean {
+  return stage.input_source !== "user" && stage.input_source !== "both";
 }
