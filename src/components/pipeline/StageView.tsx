@@ -414,9 +414,15 @@ export function StageView({ stage }: StageViewProps) {
               <AlertDescription className="text-emerald-800">
                 {stage.output_format === "research"
                   ? "Research Complete"
-                  : latestExecution.attempt_number > 1
-                    ? "Findings Applied"
-                    : "Review Complete"}
+                  : (() => {
+                      // Detect Phase 1 (findings JSON) vs Phase 2 (text) from content
+                      const out = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
+                      try {
+                        const p = JSON.parse(out);
+                        if (p.findings && Array.isArray(p.findings)) return "Review Complete";
+                      } catch { /* not JSON */ }
+                      return latestExecution.attempt_number > 1 ? "Findings Applied" : "Review Complete";
+                    })()}
               </AlertDescription>
             </Alert>
           )}

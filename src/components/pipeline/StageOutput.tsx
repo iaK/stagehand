@@ -152,9 +152,19 @@ export function StageOutput({
         />
       );
 
-    case "findings":
-      // Phase 2 (attempt > 1): agent outputs text summary of applied fixes
-      if (execution.attempt_number > 1) {
+    case "findings": {
+      // Detect Phase 1 (JSON findings) vs Phase 2 (text summary) from content,
+      // not attempt_number — a redo can re-run Phase 1 at attempt > 1.
+      let isFindingsJson = false;
+      try {
+        const parsed = JSON.parse(output);
+        if (parsed.findings && Array.isArray(parsed.findings)) {
+          isFindingsJson = true;
+        }
+      } catch { /* not JSON — Phase 2 text */ }
+
+      if (!isFindingsJson) {
+        // Phase 2: text summary of applied fixes
         return (
           <div>
             <TextOutput content={output} />
@@ -172,7 +182,7 @@ export function StageOutput({
           </div>
         );
       }
-      // Phase 1 (attempt 1): render selectable findings
+      // Phase 1: render selectable findings
       return (
         <FindingsOutput
           output={output}
@@ -186,6 +196,7 @@ export function StageOutput({
           approving={approving}
         />
       );
+    }
 
     case "pr_review":
       return isApproved ? (

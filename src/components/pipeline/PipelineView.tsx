@@ -46,8 +46,7 @@ export function PipelineView() {
     }
   }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);
 
-  // Auto-select current stage only when the task changes (not when currentStageId
-  // advances within the same task — that would yank the user away from what they're viewing)
+  // Auto-select current stage when it advances (approval, auto-start, task change)
   useEffect(() => {
     if (currentStageId && filteredStages.length > 0) {
       const current = filteredStages.find(
@@ -59,8 +58,7 @@ export function PipelineView() {
     } else {
       setViewingStage(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTaskId, filteredStages]);
+  }, [activeTaskId, currentStageId, filteredStages]);
 
   // Reset tab view when task changes
   useEffect(() => {

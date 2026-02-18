@@ -319,6 +319,27 @@ function TimelineOutput({
     }
   }
 
+  // Findings: extract summary from JSON instead of showing raw JSON
+  if (stage.output_format === "findings") {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed.summary) {
+        return (
+          <div className="p-3 text-sm">
+            <TextOutput content={parsed.summary} />
+            {parsed.findings?.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {parsed.findings.length} finding{parsed.findings.length !== 1 ? "s" : ""} identified
+              </p>
+            )}
+          </div>
+        );
+      }
+    } catch {
+      // Not JSON — Phase 2 text output, fall through
+    }
+  }
+
   return (
     <div className="p-3 text-sm">
       <TextOutput content={output} />

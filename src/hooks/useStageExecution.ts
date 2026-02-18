@@ -146,7 +146,14 @@ export function useStageExecution() {
             // For findings redo: userInput contains the selected findings text.
             // Route it into priorAttemptOutput so {{#if prior_attempt_output}} activates
             // with the selected items, and clear effectiveUserInput.
-            priorAttemptOutput = userInput;
+            // If userInput is empty (e.g. "Redo with Feedback" with no text),
+            // leave priorAttemptOutput undefined so the Phase 1 review template
+            // activates with the json_schema.
+            if (userInput) {
+              priorAttemptOutput = userInput;
+            } else {
+              priorAttemptOutput = undefined;
+            }
             effectiveUserInput = undefined;
           } else {
             // Preserve original user input from the first attempt
@@ -337,6 +344,7 @@ export function useStageExecution() {
                 thinkingText,
                 attemptNumber,
                 usageData,
+                !!priorAttemptOutput,
               );
               break;
             case "error":
@@ -378,7 +386,7 @@ export function useStageExecution() {
             jsonSchema:
               stage.output_format !== "text" &&
               stage.output_schema &&
-              !(stage.output_format === "findings" && attemptNumber > 1)
+              !(stage.output_format === "findings" && !!priorAttemptOutput)
                 ? stage.output_schema
                 : undefined,
           },
@@ -427,7 +435,7 @@ export function useStageExecution() {
       resultText: string,
       exitCode: number | null,
       thinkingText?: string,
-      attemptNumber?: number,
+      _attemptNumber?: number,
       usageData?: {
         input_tokens?: number;
         output_tokens?: number;
@@ -437,6 +445,7 @@ export function useStageExecution() {
         duration_ms?: number;
         num_turns?: number;
       } | null,
+      isFindingsApply?: boolean,
     ) => {
       if (!activeProject) return;
 
@@ -461,8 +470,7 @@ export function useStageExecution() {
       } else {
         // Try to parse structured output
         let parsedOutput = resultText;
-        const isFindingsPhase2 = stage.output_format === "findings" && (attemptNumber ?? 1) > 1;
-        if (stage.output_format !== "text" && !isFindingsPhase2) {
+        if (stage.output_format !== "text" && !isFindingsApply) {
           parsedOutput = extractJson(resultText) ?? extractJson(rawOutput) ?? resultText;
         }
 
