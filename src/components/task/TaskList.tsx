@@ -6,22 +6,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { sendNotification } from "../../lib/notifications";
 import { gitWorktreeRemove, gitDeleteBranch } from "../../lib/git";
+import { statusColors, pipelineColors } from "../../lib/taskStatus";
 import type { Task } from "../../lib/types";
-
-const statusColors: Record<string, string> = {
-  pending: "bg-zinc-400",
-  in_progress: "bg-blue-500",
-  completed: "bg-emerald-500",
-  failed: "bg-red-500",
-};
-
-const pipelineColors: Record<string, string> = {
-  running: "bg-blue-500 animate-pulse",
-  awaiting_user: "bg-amber-500",
-  approved: "bg-emerald-500",
-  failed: "bg-red-500",
-  pending: "bg-zinc-400",
-};
 
 interface TaskListProps {
   onEdit: (task: Task) => void;

@@ -533,6 +533,33 @@ export async function updatePrReviewFix(
   );
 }
 
+export async function getProjectTaskSummary(
+  projectId: string,
+): Promise<{ taskStatuses: string[]; execStatuses: string[] }> {
+  const db = await getProjectDb(projectId);
+
+  const [tasks, execRows] = await Promise.all([
+    db.select<{ status: string }[]>(
+      "SELECT status FROM tasks WHERE project_id = $1 AND archived = 0",
+      [projectId],
+    ),
+    db.select<{ status: string }[]>(
+      `SELECT se.status FROM stage_executions se
+       INNER JOIN (
+         SELECT task_id, MAX(started_at) as max_started
+         FROM stage_executions GROUP BY task_id
+       ) latest ON se.task_id = latest.task_id AND se.started_at = latest.max_started
+       INNER JOIN tasks t ON t.id = se.task_id AND t.project_id = $1 AND t.archived = 0`,
+      [projectId],
+    ),
+  ]);
+
+  return {
+    taskStatuses: tasks.map((t) => t.status),
+    execStatuses: execRows.map((e) => e.status),
+  };
+}
+
 export async function getApprovedStageSummaries(
   projectId: string,
   taskId: string,

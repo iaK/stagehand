@@ -10,6 +10,7 @@ vi.mock("../../lib/repositories", () => ({
   deleteProject: vi.fn(),
   updateProject: vi.fn(),
   setProjectSetting: vi.fn(),
+  getProjectTaskSummary: vi.fn(),
 }));
 
 // Mock repoScanner
@@ -36,6 +37,7 @@ describe("projectStore", () => {
       activeProject: null,
       loading: false,
       showArchived: false,
+      projectStatuses: {},
     });
   });
 
@@ -107,6 +109,40 @@ describe("projectStore", () => {
       expect(useProjectStore.getState().projects).toEqual([projectB]);
       // Active project should switch since the archived one was active
       expect(useProjectStore.getState().activeProject).toEqual(projectB);
+    });
+  });
+
+  describe("loadProjectStatuses", () => {
+    it("populates projectStatuses with aggregate dot classes", async () => {
+      const projectA = makeProject({ name: "A" });
+      const projectB = makeProject({ name: "B" });
+      useProjectStore.setState({ projects: [projectA, projectB] });
+
+      vi.mocked(repo.getProjectTaskSummary)
+        .mockResolvedValueOnce({ taskStatuses: ["completed", "in_progress"], execStatuses: ["running"] })
+        .mockResolvedValueOnce({ taskStatuses: ["pending"], execStatuses: ["awaiting_user"] });
+
+      await useProjectStore.getState().loadProjectStatuses();
+
+      const statuses = useProjectStore.getState().projectStatuses;
+      // Project A: running (urgency 4) beats in_progress (3) and completed (0)
+      expect(statuses[projectA.id]).toBe("bg-blue-500 animate-pulse");
+      // Project B: awaiting_user (urgency 6) beats pending (2)
+      expect(statuses[projectB.id]).toBe("bg-amber-500");
+    });
+
+    it("returns gray for projects with no tasks", async () => {
+      const project = makeProject({ name: "Empty" });
+      useProjectStore.setState({ projects: [project] });
+
+      vi.mocked(repo.getProjectTaskSummary).mockResolvedValueOnce({
+        taskStatuses: [],
+        execStatuses: [],
+      });
+
+      await useProjectStore.getState().loadProjectStatuses();
+
+      expect(useProjectStore.getState().projectStatuses[project.id]).toBe("bg-zinc-400");
     });
   });
 });

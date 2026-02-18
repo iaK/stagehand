@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Project } from "../lib/types";
 import * as repo from "../lib/repositories";
+import { aggregateProjectDotClass } from "../lib/taskStatus";
 import { scanRepository } from "../lib/repoScanner";
 import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
 
@@ -10,8 +11,10 @@ interface ProjectStore {
   activeProject: Project | null;
   loading: boolean;
   showArchived: boolean;
+  projectStatuses: Record<string, string>;
   loadProjects: () => Promise<void>;
   loadArchivedProjects: () => Promise<void>;
+  loadProjectStatuses: () => Promise<void>;
   setActiveProject: (project: Project | null) => void;
   setShowArchived: (show: boolean) => void;
   addProject: (name: string, path: string) => Promise<Project>;
@@ -26,6 +29,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   activeProject: null,
   loading: false,
   showArchived: false,
+  projectStatuses: {},
 
   loadProjects: async () => {
     set({ loading: true });
@@ -43,6 +47,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loadArchivedProjects: async () => {
     const archivedProjects = await repo.listArchivedProjects();
     set({ archivedProjects });
+  },
+
+  loadProjectStatuses: async () => {
+    const projects = get().projects;
+    const entries = await Promise.all(
+      projects.map(async (p) => {
+        const summary = await repo.getProjectTaskSummary(p.id);
+        return [p.id, aggregateProjectDotClass(summary.taskStatuses, summary.execStatuses)] as const;
+      }),
+    );
+    set({ projectStatuses: Object.fromEntries(entries) });
   },
 
   setActiveProject: (project) => set({ activeProject: project }),

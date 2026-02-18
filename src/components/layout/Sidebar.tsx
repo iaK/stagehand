@@ -22,6 +22,8 @@ export function Sidebar() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const archiveProject = useProjectStore((s) => s.archiveProject);
+  const projectStatuses = useProjectStore((s) => s.projectStatuses);
+  const loadProjectStatuses = useProjectStore((s) => s.loadProjectStatuses);
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
@@ -34,14 +36,14 @@ export function Sidebar() {
   const loadGitHubForProject = useGitHubStore((s) => s.loadForProject);
 
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    loadProjects().then(() => loadProjectStatuses());
+  }, [loadProjects, loadProjectStatuses]);
 
   useEffect(() => {
     if (activeProject) {
-      loadTasks(activeProject.id).catch((err) =>
-        console.error("Failed to load tasks:", err),
-      );
+      loadTasks(activeProject.id)
+        .then(() => loadProjectStatuses())
+        .catch((err) => console.error("Failed to load tasks:", err));
       loadStageTemplates(activeProject.id).catch((err) =>
         console.error("Failed to load stage templates:", err),
       );
@@ -52,7 +54,7 @@ export function Sidebar() {
         console.error("Failed to load GitHub settings:", err),
       );
     }
-  }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject, loadGitHubForProject]);
+  }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject, loadGitHubForProject, loadProjectStatuses]);
 
   const confirmArchive = async () => {
     if (!archiveTarget) return;
@@ -85,7 +87,12 @@ export function Sidebar() {
             <SelectContent>
               {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
-                  {p.name}
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${projectStatuses[p.id] ?? "bg-zinc-400"}`}
+                    />
+                    {p.name}
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
