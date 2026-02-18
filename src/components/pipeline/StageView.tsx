@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
-import { useStageExecution } from "../../hooks/useStageExecution";
+import { useStageExecution, COMMIT_ELIGIBLE_STAGES } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { sendNotification } from "../../lib/notifications";
+import { Loader2 } from "lucide-react";
 import type { StageTemplate, CompletionStrategy } from "../../lib/types";
 
 interface StageViewProps {
@@ -40,8 +41,9 @@ export function StageView({ stage }: StageViewProps) {
     (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
   );
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
+  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
-  const { runStage, approveStage, advanceFromStage, redoStage, killCurrent } =
+  const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
   const prReview = usePrReview(stage, activeTask);
@@ -71,7 +73,7 @@ export function StageView({ stage }: StageViewProps) {
         // PR Review fix commit — don't advance
         await prReview.commitFix(pendingCommit.fixId, commitMessage);
       } else {
-        // Standard commit — advance to next stage
+        // Standard commit — commit then approve (which advances)
         const workDir = getTaskWorkingDir(activeTask, activeProject.path);
         await gitAdd(workDir);
         const result = await gitCommit(workDir, commitMessage);
@@ -80,7 +82,7 @@ export function StageView({ stage }: StageViewProps) {
         useProcessStore.getState().setCommitted(stage.id, shortHash);
         useProcessStore.getState().clearPendingCommit();
         sendNotification("Changes committed", shortHash, "success", { projectId: activeProject.id, taskId: activeTask.id });
-        await advanceFromStage(activeTask, stage);
+        await approveStage(activeTask, stage);
       }
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
@@ -97,7 +99,7 @@ export function StageView({ stage }: StageViewProps) {
     } else {
       useProcessStore.getState().clearPendingCommit();
       sendNotification("Commit skipped", stage.name, "info", { projectId: activeProject.id, taskId: activeTask.id });
-      await advanceFromStage(activeTask, stage);
+      await approveStage(activeTask, stage);
     }
   };
 
@@ -119,6 +121,7 @@ export function StageView({ stage }: StageViewProps) {
   const isApproved = stageStatus === "approved";
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
+  const isCommitEligible = COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number]);
 
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
@@ -150,9 +153,9 @@ export function StageView({ stage }: StageViewProps) {
     setStageError(null);
     try {
       await approveStage(activeTask, stage, decision);
-      // Commit-eligible stages already send a "Ready to commit" notification
-      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
-      if (!commitEligibleStages.includes(stage.name)) {
+      // Skip notification for commit-eligible stages — handleCommit/handleSkipCommit
+      // already send their own notification before calling approveStage directly
+      if (!isCommitEligible) {
         sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
       }
     } catch (err) {
@@ -164,6 +167,7 @@ export function StageView({ stage }: StageViewProps) {
 
   const handleRedo = async () => {
     if (!activeTask) return;
+    useProcessStore.getState().clearPendingCommit();
     setShowFeedback(false);
     setStageError(null);
     try {
@@ -436,57 +440,6 @@ export function StageView({ stage }: StageViewProps) {
         </div>
       )}
 
-      {/* COMMIT CONFIRMATION — shown after approval, blocks advancement */}
-      {pendingCommit?.stageId === stage.id && (
-        <div className="mb-6 p-4 bg-muted/50 border border-border rounded-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-            </svg>
-            <span className="text-sm font-medium text-foreground">
-              Commit Changes
-            </span>
-          </div>
-
-          {pendingCommit.diffStat && (
-            <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
-              {pendingCommit.diffStat}
-            </pre>
-          )}
-
-          <Textarea
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            rows={3}
-            className="font-mono mb-3 resize-none"
-          />
-
-          {commitError && (
-            <Alert variant="destructive" className="mb-3">
-              <AlertDescription>{commitError}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              onClick={handleCommit}
-              disabled={committing || !commitMessage.trim()}
-              size="sm"
-            >
-              {committing ? "Committing..." : "Commit"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkipCommit}
-              disabled={committing}
-            >
-              Skip
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* COMMITTED BADGE */}
       {committedHash && isApproved && (
         <Alert className="mb-6 border-emerald-200 bg-emerald-50 text-emerald-700">
@@ -559,7 +512,76 @@ export function StageView({ stage }: StageViewProps) {
                 isApproved={false}
                 stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
                 approving={approving}
+                isCommitEligible={isCommitEligible}
               />
+
+              {/* Inline commit dialog for commit-eligible stages */}
+              {isCommitEligible && isCurrentStage && (
+                pendingCommit?.stageId === stage.id ? (
+                  <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                      </svg>
+                      <span className="text-sm font-medium text-foreground">
+                        Commit Changes
+                      </span>
+                    </div>
+
+                    {pendingCommit.diffStat && (
+                      <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
+                        {pendingCommit.diffStat}
+                      </pre>
+                    )}
+
+                    <Textarea
+                      value={commitMessage}
+                      onChange={(e) => setCommitMessage(e.target.value)}
+                      rows={3}
+                      className="font-mono mb-3 resize-none"
+                    />
+
+                    {commitError && (
+                      <Alert variant="destructive" className="mb-3">
+                        <AlertDescription>{commitError}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleCommit}
+                        disabled={committing || !commitMessage.trim()}
+                        size="sm"
+                      >
+                        {committing ? "Committing..." : "Commit"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleSkipCommit}
+                        disabled={committing}
+                      >
+                        Skip Commit
+                      </Button>
+                    </div>
+                  </div>
+                ) : commitMessageLoading ? (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating commit message...
+                  </div>
+                ) : (
+                  <Button
+                    variant="success"
+                    onClick={() => handleApprove()}
+                    disabled={approving}
+                    className="mt-4"
+                  >
+                    {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {approving ? "Approving..." : "Approve & Continue"}
+                  </Button>
+                )
+              )}
 
               {stageError && (
                 <Alert variant="destructive" className="mt-4">
