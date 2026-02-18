@@ -33,6 +33,9 @@ import type {
   ClaudeStreamEvent,
 } from "../lib/types";
 
+/** Stage names whose output may produce git changes eligible for committing. */
+export const COMMIT_ELIGIBLE_STAGES = ["Implementation", "Refinement", "Security Review"] as const;
+
 export function useStageExecution() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
@@ -362,9 +365,8 @@ export function useStageExecution() {
 
         // For commit-eligible stages, instruct the agent not to commit —
         // the app handles committing after the user reviews changes.
-        const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
         let systemPrompt = stage.persona_system_prompt ?? undefined;
-        if (commitEligibleStages.includes(stage.name)) {
+        if (COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number])) {
           const noCommitRule =
             "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
           systemPrompt = systemPrompt
@@ -481,6 +483,14 @@ export function useStageExecution() {
           ...(usageData ?? {}),
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
+
+        // Fire-and-forget: generate commit message in background for commit-eligible stages
+        if (COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number])) {
+          const task = useTaskStore.getState().activeTask;
+          if (task && task.id === taskId) {
+            generatePendingCommitRef.current(task, stage).catch(() => {});
+          }
+        }
       }
 
       // Only update the store if this task is still active — prevents state bleeding into other tasks
@@ -563,104 +573,9 @@ export function useStageExecution() {
         stage_summary: stageSummary,
       });
 
-      // For commit-eligible stages, generate pending commit and wait for user decision
-      // (advanceFromStage will be called after the user commits or skips)
-      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
-      if (commitEligibleStages.includes(stage.name)) {
-        await generatePendingCommit(task, stage);
-        await loadExecutions(activeProject.id, task.id);
-        return;
-      }
-
-      // Non-commit stages: advance immediately
       await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
-  );
-
-  const generatePendingCommit = useCallback(
-    async (task: Task, stage: StageTemplate) => {
-      if (!activeProject) return;
-
-      const workDir = getTaskWorkingDir(task, activeProject.path);
-
-      const gitRepo = await isGitRepo(activeProject.path);
-      if (!gitRepo) {
-        // Not a git repo — skip commit, advance directly
-        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
-        return;
-      }
-
-      const hasChanges = await hasUncommittedChanges(workDir);
-      if (!hasChanges) {
-        // No changes to commit — advance directly
-        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
-        return;
-      }
-
-      const diffStat = await gitDiffStat(workDir).catch(() => "");
-
-      // Generate commit message using Claude (lightweight one-shot)
-      let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
-      try {
-        const commitRules = await repo.getProjectSetting(
-          activeProject.id,
-          "github_commit_rules",
-        );
-
-        const prompt = `Generate a concise git commit message for the following changes.
-
-Task: ${task.title}
-Stage: ${stage.name}
-
-Changes (git diff --stat):
-${diffStat}
-
-${commitRules ? `Repository commit conventions:\n${commitRules}\n\n` : ""}
-Return ONLY the commit message text, nothing else. No quotes, no markdown, no explanation.
-Keep it under 72 characters for the first line. Add a blank line and body if needed.`;
-
-        let resultText = "";
-        await new Promise<void>((resolve) => {
-          spawnClaude(
-            {
-              prompt,
-              workingDirectory: workDir,
-              maxTurns: 1,
-              allowedTools: [],
-              outputFormat: "text",
-              noSessionPersistence: true,
-            },
-            (event: ClaudeStreamEvent) => {
-              if (event.type === "stdout_line") {
-                resultText += event.line + "\n";
-              } else if (event.type === "completed" || event.type === "error") {
-                resolve();
-              }
-            },
-          ).catch(() => resolve());
-        });
-
-        const cleaned = resultText.trim();
-        if (cleaned.length > 0) {
-          commitMessage = cleaned;
-        }
-      } catch {
-        // Use fallback message
-      }
-
-      // Set pending commit — StageView will show the approval dialog
-      useProcessStore.getState().setPendingCommit({
-        stageId: stage.id,
-        stageName: stage.name,
-        message: commitMessage,
-        diffStat,
-      });
-      sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success", { projectId: activeProject.id, taskId: task.id });
-    },
-    [activeProject],
   );
 
   const createPullRequest = useCallback(
@@ -777,15 +692,6 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       }
     },
     [updateTask, loadExecutions],
-  );
-
-  const advanceFromStage = useCallback(
-    async (task: Task, stage: StageTemplate) => {
-      if (!activeProject) return;
-      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
-    },
-    [activeProject, advanceFromStageInner],
   );
 
   const redoStage = useCallback(
@@ -1006,7 +912,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     }, 3000);
   }, [failStaleExecutions]);
 
-  return { runStage, approveStage, advanceFromStage, redoStage, killCurrent, performDirectMerge, skipMerge };
+  return { runStage, approveStage, redoStage, killCurrent, performDirectMerge, skipMerge };
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
