@@ -273,9 +273,10 @@ export function useStageExecution() {
               setRunning(sk, event.process_id);
               appendOutput(sk, `[Process started: ${event.process_id}]`);
               // Refresh executions so the UI transitions to show the live stream
-              // Only if this task is still the active one — otherwise we'd overwrite another task's data
               if (useTaskStore.getState().activeTask?.id === taskId) {
                 loadExecutions(activeProject!.id, taskId);
+              } else {
+                useTaskStore.getState().refreshTaskExecStatuses(activeProject!.id);
               }
               break;
             case "stdout_line":
@@ -360,6 +361,8 @@ export function useStageExecution() {
               }).then(() => {
                 if (useTaskStore.getState().activeTask?.id === taskId) {
                   loadExecutions(activeProject!.id, taskId);
+                } else {
+                  useTaskStore.getState().refreshTaskExecStatuses(activeProject!.id);
                 }
               });
               break;
@@ -413,6 +416,8 @@ export function useStageExecution() {
         }
         if (useTaskStore.getState().activeTask?.id === task.id) {
           await loadExecutions(activeProject.id, task.id).catch(() => {});
+        } else {
+          await useTaskStore.getState().refreshTaskExecStatuses(activeProject.id).catch(() => {});
         }
       }
     },
@@ -497,9 +502,12 @@ export function useStageExecution() {
         }
       }
 
-      // Only update the store if this task is still active — prevents state bleeding into other tasks
+      // Update detailed executions only if this task is still active — prevents state bleeding
       if (useTaskStore.getState().activeTask?.id === taskId) {
         await loadExecutions(activeProject.id, taskId);
+      } else {
+        // Always refresh sidebar dot colors so they update even for non-active tasks
+        await useTaskStore.getState().refreshTaskExecStatuses(activeProject.id);
       }
     },
     [activeProject, loadExecutions],
@@ -564,12 +572,12 @@ export function useStageExecution() {
 
       // PR Preparation: create the PR before marking as approved so failures
       // are surfaced to the user and the stage can be retried.
-      // Read strategy from project settings instead of task.
+      // The completion strategy was already baked into the task's stage
+      // selection at Research-approval time, so if this task has a PR
+      // Preparation stage we always create the PR — regardless of the
+      // current project-level setting (which may have changed since).
       if (stage.name === "PR Preparation" && task.branch_name) {
-        const strategy = await repo.getCompletionStrategy(activeProject.id);
-        if (strategy === "pr") {
-          await createPullRequest(task, decision);
-        }
+        await createPullRequest(task, decision);
       }
 
       // Update execution with decision and computed stage_result
@@ -677,9 +685,11 @@ export function useStageExecution() {
         }
       }
 
-      // Only update the store if this task is still active
+      // Update detailed executions if active, otherwise just refresh sidebar statuses
       if (useTaskStore.getState().activeTask?.id === task.id) {
         await loadExecutions(projectId, task.id);
+      } else {
+        await useTaskStore.getState().refreshTaskExecStatuses(projectId);
       }
     },
     [updateTask, loadExecutions],

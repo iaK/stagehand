@@ -35,6 +35,7 @@ interface TaskStore {
     projectId: string,
     executionId: string,
   ) => Promise<void>;
+  refreshTaskExecStatuses: (projectId: string) => Promise<void>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -179,5 +180,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ]);
       set({ executions, taskExecStatuses });
     }
+  },
+
+  refreshTaskExecStatuses: async (projectId) => {
+    const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
+    set({ taskExecStatuses });
   },
 }));
