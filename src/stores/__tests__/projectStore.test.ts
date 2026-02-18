@@ -144,5 +144,23 @@ describe("projectStore", () => {
 
       expect(useProjectStore.getState().projectStatuses[project.id]).toBe("bg-zinc-400");
     });
+
+    it("gracefully degrades to gray when a project query fails", async () => {
+      const projectA = makeProject({ name: "A" });
+      const projectB = makeProject({ name: "B" });
+      useProjectStore.setState({ projects: [projectA, projectB] });
+
+      vi.mocked(repo.getProjectTaskSummary)
+        .mockRejectedValueOnce(new Error("DB corrupted"))
+        .mockResolvedValueOnce({ taskStatuses: ["in_progress"], execStatuses: ["awaiting_user"] });
+
+      await useProjectStore.getState().loadProjectStatuses();
+
+      const statuses = useProjectStore.getState().projectStatuses;
+      // Failed project falls back to gray
+      expect(statuses[projectA.id]).toBe("bg-zinc-400");
+      // Successful project still gets its correct status
+      expect(statuses[projectB.id]).toBe("bg-amber-500");
+    });
   });
 });

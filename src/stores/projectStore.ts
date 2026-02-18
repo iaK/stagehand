@@ -49,13 +49,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ archivedProjects });
   },
 
+  // Note: opens a separate SQLite DB per project (N+1). Acceptable for typical
+  // usage (few projects) but may lag with 20+ projects.
   loadProjectStatuses: async () => {
     const projects = get().projects;
-    const entries = await Promise.all(
+    const results = await Promise.allSettled(
       projects.map(async (p) => {
         const summary = await repo.getProjectTaskSummary(p.id);
         return [p.id, aggregateProjectDotClass(summary.taskStatuses, summary.execStatuses)] as const;
       }),
+    );
+    const entries = results.map((r, i) =>
+      r.status === "fulfilled" ? r.value : [projects[i].id, "bg-zinc-400"] as const,
     );
     set({ projectStatuses: Object.fromEntries(entries) });
   },
