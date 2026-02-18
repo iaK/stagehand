@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
-import { listProcesses } from "../lib/claude";
+import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
 
 interface TaskStore {
@@ -69,37 +69,44 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   loadExecutions: async (projectId, taskId) => {
     const executions = await repo.listStageExecutions(projectId, taskId);
 
-    // Check the backend for actually running processes
-    let runningProcessIds: string[] | null = null;
-    try {
-      runningProcessIds = await listProcesses();
-    } catch {
-      // If we can't reach the backend, don't assume anything about running state
+    // Check the backend for actually running processes (only if needed)
+    const hasRunning = executions.some((e) => e.status === "running");
+    let detailedProcesses: ProcessInfo[] | null = null;
+    if (hasRunning) {
+      try {
+        detailedProcesses = await listProcessesDetailed();
+      } catch {
+        // If we can't reach the backend, don't assume anything about running state
+      }
     }
 
     // Clean up stale "running" executions whose process is no longer alive
-    // Only do this when we could actually reach the backend
-    if (runningProcessIds !== null && runningProcessIds.length === 0) {
+    if (detailedProcesses !== null) {
+      const runningExecIds = new Set(
+        detailedProcesses.map((p) => p.stageExecutionId).filter(Boolean),
+      );
+
       for (const exec of executions) {
         if (exec.status === "running") {
-          // Skip if the process store thinks this stage is actively running
-          // (process may be spawning or not yet registered with the backend)
           const sk = stageKey(exec.task_id, exec.stage_template_id);
           const stageState = useProcessStore.getState().stages[sk];
+          // Skip if processStore thinks this is actively running (current session spawn)
           if (stageState?.isRunning) continue;
 
-          try {
-            await repo.updateStageExecution(projectId, exec.id, {
-              status: "failed",
-              error_message: "Process crashed or was interrupted",
-              completed_at: new Date().toISOString(),
-            });
-            exec.status = "failed";
-            exec.error_message = "Process crashed or was interrupted";
-            // Also reset the process store so the Retry button isn't stuck disabled
-            useProcessStore.getState().setStopped(sk);
-          } catch (err) {
-            console.error("Failed to clean up stale execution:", exec.id, err);
+          // If this execution's ID is NOT in the backend's running processes, it's orphaned
+          if (!runningExecIds.has(exec.id)) {
+            try {
+              await repo.updateStageExecution(projectId, exec.id, {
+                status: "failed",
+                error_message: "Process crashed or was interrupted",
+                completed_at: new Date().toISOString(),
+              });
+              exec.status = "failed";
+              exec.error_message = "Process crashed or was interrupted";
+              useProcessStore.getState().setStopped(sk);
+            } catch (err) {
+              console.error("Failed to clean up stale execution:", exec.id, err);
+            }
           }
         }
       }

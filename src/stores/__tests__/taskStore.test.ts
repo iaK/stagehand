@@ -17,7 +17,7 @@ vi.mock("../../lib/repositories", () => ({
 
 // Mock claude
 vi.mock("../../lib/claude", () => ({
-  listProcesses: vi.fn().mockResolvedValue([]),
+  listProcessesDetailed: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock processStore to avoid cross-store issues

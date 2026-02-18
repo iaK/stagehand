@@ -165,6 +165,28 @@ pub async fn list_processes(
     Ok(process_manager.list_running().await)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessInfo {
+    pub process_id: String,
+    pub stage_execution_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn list_processes_detailed(
+    process_manager: State<'_, ProcessManager>,
+) -> Result<Vec<ProcessInfo>, String> {
+    Ok(process_manager
+        .list_running_detailed()
+        .await
+        .into_iter()
+        .map(|(process_id, stage_execution_id)| ProcessInfo {
+            process_id,
+            stage_execution_id,
+        })
+        .collect())
+}
+
 #[tauri::command]
 pub async fn check_claude_available() -> Result<String, String> {
     let output = Command::new("claude")

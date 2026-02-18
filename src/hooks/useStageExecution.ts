@@ -3,7 +3,7 @@ import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { useGitHubStore } from "../stores/githubStore";
-import { spawnClaude, killProcess } from "../lib/claude";
+import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
   hasUncommittedChanges,
@@ -931,26 +931,45 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     if (!state?.isRunning) {
       // No running process in the store — but there may be a stale "running"
       // execution in the DB (e.g. process crashed without cleanup, app restarted).
-      // Mark it as failed so the UI can recover.
+      // Try to find and kill any backend process, then mark as failed.
       const project = useProjectStore.getState().activeProject;
-      if (project) {
-        await failStaleExecutions(project.id, taskId, stageId);
+      if (!project) return;
+
+      const exec = useTaskStore.getState().executions.find(
+        (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+      );
+      if (!exec) return;
+
+      // Try to find and kill the backend process for this execution
+      try {
+        const detailed = await listProcessesDetailed();
+        const match = detailed.find((p) => p.stageExecutionId === exec.id);
+        if (match) {
+          await killProcess(match.processId);
+        }
+      } catch {
+        // Backend may be unreachable
       }
+
+      // Mark the DB execution as failed
+      await repo.updateStageExecution(project.id, exec.id, {
+        status: "failed",
+        error_message: "Stopped by user",
+        completed_at: new Date().toISOString(),
+      });
+      useProcessStore.getState().setStopped(sk);
+      await useTaskStore.getState().loadExecutions(project.id, taskId);
       return;
     }
 
-    // Mark as killed before sending the signal so finalizeExecution knows
+    // === processStore has running state ===
     useProcessStore.getState().markKilled(sk);
 
     const processId = state.processId;
     const isPlaceholder = !processId || processId === "spawning" || processId === "fixing";
 
     if (isPlaceholder) {
-      // Process not yet registered with the backend.
-      // Stop the stage immediately so the UI transitions to the failed/retry state.
-      // The "started" event handler will kill the real process when it arrives.
       useProcessStore.getState().setStopped(sk);
-
       const project = useProjectStore.getState().activeProject;
       if (project) {
         // Query DB directly — the execution may not be in the store yet
