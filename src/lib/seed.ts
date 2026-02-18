@@ -573,10 +573,10 @@ Task: {{task_description}}
 {{stage_summaries}}
 {{/if}}
 
-{{#if stage_outputs}}
+{{#if all_stage_outputs}}
 ## Full Stage Outputs
 
-{{stage_outputs}}
+{{all_stage_outputs}}
 {{/if}}
 
 {{#if user_input}}

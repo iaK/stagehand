@@ -4,8 +4,8 @@ describe("getDefaultStageTemplates", () => {
   const projectId = "test-project-id";
   const templates = getDefaultStageTemplates(projectId);
 
-  it("returns 9 stage templates", () => {
-    expect(templates).toHaveLength(9);
+  it("returns 10 stage templates", () => {
+    expect(templates).toHaveLength(10);
   });
 
   it("all templates have the correct project_id", () => {
@@ -14,9 +14,9 @@ describe("getDefaultStageTemplates", () => {
     }
   });
 
-  it("sort orders are 0 through 8", () => {
+  it("sort orders are 0 through 9", () => {
     const sortOrders = templates.map((t) => t.sort_order);
-    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("each template has the expected name", () => {
@@ -28,6 +28,7 @@ describe("getDefaultStageTemplates", () => {
       "Implementation",
       "Refinement",
       "Security Review",
+      "Documentation",
       "PR Preparation",
       "PR Review",
       "Merge",
@@ -41,6 +42,7 @@ describe("getDefaultStageTemplates", () => {
     expect(byName["Implementation"].commits_changes).toBe(1);
     expect(byName["Refinement"].commits_changes).toBe(1);
     expect(byName["Security Review"].commits_changes).toBe(1);
+    expect(byName["Documentation"].commits_changes).toBe(1);
     expect(byName["Research"].commits_changes).toBe(0);
     expect(byName["PR Preparation"].commits_changes).toBe(0);
 
@@ -62,6 +64,7 @@ describe("getDefaultStageTemplates", () => {
     expect(byName["Implementation"].commit_prefix).toBe("feat");
     expect(byName["Refinement"].commit_prefix).toBe("fix");
     expect(byName["Security Review"].commit_prefix).toBe("fix");
+    expect(byName["Documentation"].commit_prefix).toBe("docs");
     expect(byName["Research"].commit_prefix).toBeNull();
   });
 

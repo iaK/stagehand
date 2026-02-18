@@ -1053,10 +1053,10 @@ Task: {{task_description}}
 {{stage_summaries}}
 {{/if}}
 
-{{#if stage_outputs}}
+{{#if all_stage_outputs}}
 ## Full Stage Outputs
 
-{{stage_outputs}}
+{{all_stage_outputs}}
 {{/if}}
 
 {{#if user_input}}
@@ -1086,10 +1086,10 @@ async function migrateDocumentationStage(db: Database): Promise<void> {
 
   const now = new Date().toISOString();
 
-  // Bump sort_order for PR Preparation, PR Review, and Merge (only where >= 6)
+  // Bump sort_order for all stages at sort_order >= 6 to make room for Documentation
   await db.execute(
     `UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1
-     WHERE sort_order >= 6 AND name IN ('PR Preparation', 'PR Review', 'Merge')`,
+     WHERE sort_order >= 6`,
     [now],
   );
 
