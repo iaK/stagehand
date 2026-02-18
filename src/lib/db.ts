@@ -295,6 +295,9 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   await migratePrReviewStage(db);
   await migrateMergeStage(db);
+
+  // Add Documentation stage between Security Review and PR Preparation
+  await migrateDocumentationStage(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
@@ -1038,4 +1041,93 @@ async function migrateMergeStage(db: Database): Promise<void> {
       ],
     );
   }
+}
+
+const DOCUMENTATION_PROMPT = `You are a senior technical writer documenting changes made during a development task.
+
+Task: {{task_description}}
+
+{{#if stage_summaries}}
+## Stage Summaries
+
+{{stage_summaries}}
+{{/if}}
+
+{{#if stage_outputs}}
+## Full Stage Outputs
+
+{{stage_outputs}}
+{{/if}}
+
+{{#if user_input}}
+Developer instructions:
+{{user_input}}
+{{/if}}
+
+Your job:
+1. **Read existing documentation** at the target path (if provided) to understand the current style, structure, and conventions.
+2. **Synthesize** the work done across all completed stages into clear, accurate documentation.
+3. **Write documentation files** using the Write tool. Match the existing documentation style if updating existing docs, or follow standard conventions for new docs.
+
+Focus on:
+- What changed and why
+- How to use any new features or APIs
+- Updated configuration or setup instructions if applicable
+- Code examples where helpful
+
+Keep the documentation concise and developer-focused. Do not include implementation details that aren't relevant to users of the code.`;
+
+async function migrateDocumentationStage(db: Database): Promise<void> {
+  // Idempotency: bail if Documentation already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Documentation'",
+  );
+  if (existing.length > 0) return;
+
+  const now = new Date().toISOString();
+
+  // Bump sort_order for PR Preparation, PR Review, and Merge (only where >= 6)
+  await db.execute(
+    `UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1
+     WHERE sort_order >= 6 AND name IN ('PR Preparation', 'PR Review', 'Merge')`,
+    [now],
+  );
+
+  // Insert Documentation stage for every project
+  const projectRows = await db.select<{ project_id: string }[]>(
+    "SELECT DISTINCT project_id FROM stage_templates",
+  );
+
+  for (const row of projectRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "Documentation",
+        "Write or update documentation based on the changes made in this task.",
+        6,
+        DOCUMENTATION_PROMPT,
+        "both",
+        "text",
+        null,
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        null,
+        "replace",
+        now,
+        now,
+      ],
+    );
+  }
+
+  // Set behavior flags
+  await db.execute(
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'docs', updated_at = $1 WHERE name = 'Documentation'`,
+    [now],
+  );
 }

@@ -559,10 +559,66 @@ Respond with a JSON object:
     {
       id: crypto.randomUUID(),
       project_id: projectId,
+      name: "Documentation",
+      description:
+        "Write or update documentation based on the changes made in this task.",
+      sort_order: 6,
+      prompt_template: `You are a senior technical writer documenting changes made during a development task.
+
+Task: {{task_description}}
+
+{{#if stage_summaries}}
+## Stage Summaries
+
+{{stage_summaries}}
+{{/if}}
+
+{{#if stage_outputs}}
+## Full Stage Outputs
+
+{{stage_outputs}}
+{{/if}}
+
+{{#if user_input}}
+Developer instructions:
+{{user_input}}
+{{/if}}
+
+Your job:
+1. **Read existing documentation** at the target path (if provided) to understand the current style, structure, and conventions.
+2. **Synthesize** the work done across all completed stages into clear, accurate documentation.
+3. **Write documentation files** using the Write tool. Match the existing documentation style if updating existing docs, or follow standard conventions for new docs.
+
+Focus on:
+- What changed and why
+- How to use any new features or APIs
+- Updated configuration or setup instructions if applicable
+- Code examples where helpful
+
+Keep the documentation concise and developer-focused. Do not include implementation details that aren't relevant to users of the code.`,
+      input_source: "both",
+      output_format: "text",
+      output_schema: null,
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: null,
+      result_mode: "replace",
+      commits_changes: 1,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: "docs",
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
       name: "PR Preparation",
       description:
         "Generate a pull request title, description, and test plan.",
-      sort_order: 6,
+      sort_order: 7,
       prompt_template: `Prepare a pull request for the following completed task.
 
 Task: {{task_description}}
@@ -630,7 +686,7 @@ Respond with a JSON object:
       name: "PR Review",
       description:
         "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
-      sort_order: 7,
+      sort_order: 8,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "pr_review",
@@ -654,7 +710,7 @@ Respond with a JSON object:
       name: "Merge",
       description:
         "Merge the task branch into the target branch and push.",
-      sort_order: 8,
+      sort_order: 9,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "merge",
