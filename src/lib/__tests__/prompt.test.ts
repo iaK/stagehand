@@ -115,4 +115,81 @@ describe("renderPrompt", () => {
     );
     expect(result).toBe("## Summaries\n### Research\nFound the bug.");
   });
+
+  it("substitutes {{stages.StageName.output}}", () => {
+    const result = renderPrompt(
+      "Research: {{stages.Research.output}}",
+      {
+        taskDescription: "task",
+        stageOutputs: {
+          Research: { output: "Found the bug in auth.", summary: "Auth bug found." },
+        },
+      },
+    );
+    expect(result).toBe("Research: Found the bug in auth.");
+  });
+
+  it("substitutes {{stages.StageName.summary}}", () => {
+    const result = renderPrompt(
+      "Summary: {{stages.Research.summary}}",
+      {
+        taskDescription: "task",
+        stageOutputs: {
+          Research: { output: "Full output", summary: "Short summary" },
+        },
+      },
+    );
+    expect(result).toBe("Summary: Short summary");
+  });
+
+  it("handles {{#if stages.X.output}} conditional", () => {
+    const withData = renderPrompt(
+      "{{#if stages.Research.output}}Has research: {{stages.Research.output}}{{else}}No research{{/if}}",
+      {
+        taskDescription: "task",
+        stageOutputs: {
+          Research: { output: "Found bug", summary: "" },
+        },
+      },
+    );
+    expect(withData).toBe("Has research: Found bug");
+
+    const withoutData = renderPrompt(
+      "{{#if stages.Research.output}}Has research{{else}}No research{{/if}}",
+      { taskDescription: "task" },
+    );
+    expect(withoutData).toBe("No research");
+  });
+
+  it("returns empty for missing stage in {{stages.X.output}}", () => {
+    const result = renderPrompt(
+      "Output: {{stages.Missing.output}}",
+      { taskDescription: "task" },
+    );
+    expect(result).toBe("Output:");
+  });
+
+  it("substitutes {{all_stage_outputs}}", () => {
+    const result = renderPrompt(
+      "All: {{all_stage_outputs}}",
+      {
+        taskDescription: "task",
+        allStageOutputs: "## Research\nBug found\n\n---\n\n## Planning\nStep 1",
+      },
+    );
+    expect(result).toContain("## Research");
+    expect(result).toContain("## Planning");
+  });
+
+  it("substitutes {{available_stages}}", () => {
+    const result = renderPrompt(
+      "Stages:\n{{available_stages}}",
+      {
+        taskDescription: "task",
+        availableStages: '- "Implementation": Write code\n- "Refinement": Review code',
+      },
+    );
+    expect(result).toContain("Implementation");
+    expect(result).toContain("Refinement");
+  });
 });

@@ -20,6 +20,7 @@ import {
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
+import { detectInteractionType } from "../lib/outputDetection";
 import type {
   Task,
   StageTemplate,
@@ -28,7 +29,12 @@ import type {
   ClaudeStreamEvent,
 } from "../lib/types";
 
-/** Stage names whose output may produce git changes eligible for committing. */
+/** Check whether a stage may produce git changes eligible for committing. */
+export function isCommitEligibleStage(stage: StageTemplate): boolean {
+  return !!stage.commits_changes;
+}
+
+/** @deprecated Use isCommitEligibleStage(stage) instead. Kept for backward compat. */
 export const COMMIT_ELIGIBLE_STAGES = ["Implementation", "Refinement", "Security Review"] as const;
 
 export function useStageExecution() {
@@ -47,7 +53,7 @@ export function useStageExecution() {
       if (!activeProject) return;
 
       // Create worktree on first stage execution if task has no worktree yet
-      if (stage.output_format === "research" && !task.worktree_path) {
+      if (stage.sort_order === 0 && !task.worktree_path) {
         try {
           const gitRepo = await isGitRepo(activeProject.path);
           if (gitRepo) {
@@ -89,8 +95,8 @@ export function useStageExecution() {
         }
       }
 
-      // Clear task_stages when re-running Research so user re-selects stages
-      if (stage.output_format === "research") {
+      // Clear task_stages when re-running a stage that triggers stage selection
+      if (stage.triggers_stage_selection) {
         const prevAttemptCheck = executions.filter((e) => e.stage_template_id === stage.id);
         if (prevAttemptCheck.length > 0) {
           await repo.setTaskStages(activeProject.id, task.id, []);
@@ -160,16 +166,41 @@ export function useStageExecution() {
           }
         }
 
-        // Fetch approved stage summaries for {{stage_summaries}}
-        const summaries = await repo.getApprovedStageSummaries(
+        // Fetch approved stage outputs for template variables
+        const approvedOutputs = await repo.getApprovedStageOutputs(
           activeProject.id,
           task.id,
         );
-        const stageSummariesText = summaries.length > 0
-          ? summaries
+
+        // Build {{stage_summaries}} text
+        const stageSummariesText = approvedOutputs.length > 0
+          ? approvedOutputs
+              .filter((s) => s.stage_summary)
               .map((s) => `### ${s.stage_name}\n${s.stage_summary}`)
               .join("\n\n")
           : undefined;
+
+        // Build {{stages.StageName.output}} / {{stages.StageName.summary}} map
+        const stageOutputsMap: Record<string, { output: string; summary: string }> = {};
+        for (const s of approvedOutputs) {
+          stageOutputsMap[s.stage_name] = {
+            output: s.stage_result ?? "",
+            summary: s.stage_summary ?? "",
+          };
+        }
+
+        // Build {{all_stage_outputs}} — concatenated summaries with headers
+        const allStageOutputsText = approvedOutputs.length > 0
+          ? approvedOutputs
+              .map((s) => `## ${s.stage_name}\n${s.stage_summary || s.stage_result}`)
+              .join("\n\n---\n\n")
+          : undefined;
+
+        // Build {{available_stages}} — list of non-first stages for Research prompt
+        const availableStagesText = taskStageTemplates
+          .filter((t) => t.sort_order > 0)
+          .map((t) => `- "${t.name}": ${t.description}`)
+          .join("\n");
 
         // Render prompt
         const prompt = renderPrompt(stage.prompt_template, {
@@ -179,6 +210,9 @@ export function useStageExecution() {
           userDecision: prevExec?.user_decision ?? undefined,
           priorAttemptOutput,
           stageSummaries: stageSummariesText,
+          stageOutputs: stageOutputsMap,
+          allStageOutputs: allStageOutputsText,
+          availableStages: availableStagesText || undefined,
         });
 
         // Always use a fresh session — context is passed via the prompt template
@@ -372,7 +406,7 @@ export function useStageExecution() {
         // For commit-eligible stages, instruct the agent not to commit —
         // the app handles committing after the user reviews changes.
         let systemPrompt = stage.persona_system_prompt ?? undefined;
-        if (COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number])) {
+        if (isCommitEligibleStage(stage)) {
           const noCommitRule =
             "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
           systemPrompt = systemPrompt
@@ -390,7 +424,6 @@ export function useStageExecution() {
             outputFormat: "stream-json",
             allowedTools: allowedTools,
             jsonSchema:
-              stage.output_format !== "text" &&
               stage.output_schema &&
               !(stage.output_format === "findings" && !!priorAttemptOutput)
                 ? stage.output_schema
@@ -478,7 +511,7 @@ export function useStageExecution() {
       } else {
         // Try to parse structured output
         let parsedOutput = resultText;
-        if (stage.output_format !== "text" && !isFindingsApply) {
+        if (stage.output_schema && !isFindingsApply) {
           parsedOutput = extractJson(resultText) ?? extractJson(rawOutput) ?? resultText;
         }
 
@@ -493,7 +526,7 @@ export function useStageExecution() {
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
 
         // Generate pending commit for commit-eligible stages
-        if (COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number])) {
+        if (isCommitEligibleStage(stage)) {
           const task = useTaskStore.getState().activeTask;
           const project = useProjectStore.getState().activeProject;
           if (task && task.id === taskId && project) {
@@ -576,7 +609,7 @@ export function useStageExecution() {
       // selection at Research-approval time, so if this task has a PR
       // Preparation stage we always create the PR — regardless of the
       // current project-level setting (which may have changed since).
-      if (stage.name === "PR Preparation" && task.branch_name) {
+      if (stage.creates_pr && task.branch_name) {
         await createPullRequest(task, decision);
       }
 
@@ -816,7 +849,7 @@ export async function generatePendingCommit(
 
     const diffStat = await gitDiffStat(workDir).catch(() => "");
     const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const prefix = stage.name === "Implementation" ? "feat" : "fix";
+    const prefix = stage.commit_prefix ?? "feat";
     const commitMsg = `${prefix}: ${slug}`;
 
     store.setPendingCommit({
@@ -895,7 +928,12 @@ export function extractStageOutput(
 ): string {
   const raw = execution.parsed_output ?? execution.raw_output ?? "";
 
-  switch (stage.output_format) {
+  // Resolve effective format for "auto" stages
+  const format = stage.output_format === "auto"
+    ? detectInteractionType(raw, "auto")
+    : stage.output_format;
+
+  switch (format) {
     case "research": {
       // Extract the markdown research text from the JSON envelope
       try {
@@ -968,7 +1006,12 @@ export function extractStageSummary(
   const raw = execution.parsed_output ?? execution.raw_output ?? "";
   if (!raw.trim()) return null;
 
-  switch (stage.output_format) {
+  // Resolve effective format for "auto" stages
+  const format = stage.output_format === "auto"
+    ? detectInteractionType(raw, "auto")
+    : stage.output_format;
+
+  switch (format) {
     case "research": {
       try {
         const data = JSON.parse(raw);

@@ -198,6 +198,19 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE tasks ADD COLUMN completion_strategy TEXT NOT NULL DEFAULT 'pr'
   `).catch(() => { /* column already exists */ });
 
+  // Add behavior flag columns to stage_templates
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN commits_changes INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN creates_pr INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN is_terminal INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN triggers_stage_selection INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN commit_prefix TEXT`).catch(() => {});
+
+  // Migrate existing stages to set behavior flags by (name, sort_order)
+  await migrateBehaviorFlags(db);
+
+  // Migrate Research prompt to use {{available_stages}} instead of hardcoded list
+  await migrateResearchAvailableStages(db);
+
   // Migrate Research stage: text → research format
   await migrateResearchStage(db);
 
@@ -320,14 +333,7 @@ If you have questions, include them in the "questions" array. For each question:
 If all questions have been answered and the research is complete, return an empty "questions" array.
 
 Additionally, suggest which pipeline stages this task needs. The available stages are:
-- "High-Level Approaches": Brainstorm and compare multiple approaches (useful for complex tasks with multiple viable solutions)
-- "Planning": Create a detailed implementation plan (useful for non-trivial changes)
-- "Implementation": Write the actual code changes (almost always needed)
-- "Refinement": Self-review the implementation for quality issues (useful for larger changes)
-- "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
-- "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
-- "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
-- "Merge": Merge the task branch directly into the main branch (alternative to PR flow)
+{{available_stages}}
 
 For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
 Include your suggestions in the "suggested_stages" array.
@@ -515,6 +521,84 @@ Respond with a JSON object:
     }
   ]
 }{{/if}}`;
+
+async function migrateBehaviorFlags(db: Database): Promise<void> {
+  // Only run if flags haven't been set yet (check if any row has commits_changes = 1)
+  const alreadyMigrated = await db.select<{ cnt: number }[]>(
+    "SELECT COUNT(*) as cnt FROM stage_templates WHERE commits_changes = 1 OR creates_pr = 1 OR is_terminal = 1 OR triggers_stage_selection = 1",
+  );
+  if (alreadyMigrated[0]?.cnt > 0) return;
+
+  const now = new Date().toISOString();
+
+  // Implementation (sort_order 3): commits_changes, commit_prefix = "feat"
+  await db.execute(
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Implementation' AND sort_order = 3`,
+    [now],
+  );
+
+  // Refinement (sort_order 4): commits_changes, commit_prefix = "fix"
+  await db.execute(
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Refinement' AND sort_order = 4`,
+    [now],
+  );
+
+  // Security Review (sort_order 5): commits_changes, commit_prefix = "fix"
+  await db.execute(
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Security Review' AND sort_order = 5`,
+    [now],
+  );
+
+  // PR Preparation (sort_order 6): creates_pr
+  await db.execute(
+    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation' AND sort_order = 6`,
+    [now],
+  );
+
+  // Research (sort_order 0): triggers_stage_selection
+  await db.execute(
+    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research' AND sort_order = 0`,
+    [now],
+  );
+
+  // PR Review (sort_order 7): is_terminal
+  await db.execute(
+    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'PR Review' AND sort_order = 7`,
+    [now],
+  );
+
+  // Merge: is_terminal (any sort_order since it varies)
+  await db.execute(
+    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'Merge'`,
+    [now],
+  );
+}
+
+async function migrateResearchAvailableStages(db: Database): Promise<void> {
+  // Find Research stages that still have the hardcoded stage list
+  const rows = await db.select<{ id: string; prompt_template: string }[]>(
+    "SELECT id, prompt_template FROM stage_templates WHERE name = 'Research' AND output_format = 'research' AND sort_order = 0",
+  );
+  for (const row of rows) {
+    // Check if the prompt has the hardcoded list but not the {{available_stages}} variable
+    if (
+      row.prompt_template.includes('"High-Level Approaches"') &&
+      !row.prompt_template.includes("{{available_stages}}")
+    ) {
+      // Replace the hardcoded stage list with the template variable
+      const updated = row.prompt_template.replace(
+        /The available stages are:\n(?:- "[^"]+":? [^\n]*\n)+/,
+        "The available stages are:\n{{available_stages}}\n",
+      );
+      if (updated !== row.prompt_template) {
+        await db.execute(
+          "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
+          [updated, new Date().toISOString(), row.id],
+        );
+      }
+    }
+  }
+}
 
 async function migrateFindingsStages(db: Database): Promise<void> {
   const now = new Date().toISOString();

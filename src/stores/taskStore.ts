@@ -36,6 +36,10 @@ interface TaskStore {
     executionId: string,
   ) => Promise<void>;
   refreshTaskExecStatuses: (projectId: string) => Promise<void>;
+  createStageTemplate: (projectId: string, template: Omit<StageTemplate, "id" | "created_at" | "updated_at">) => Promise<StageTemplate>;
+  deleteStageTemplate: (projectId: string, templateId: string) => Promise<void>;
+  reorderStageTemplates: (projectId: string, orderedIds: string[]) => Promise<void>;
+  duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -185,5 +189,31 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   refreshTaskExecStatuses: async (projectId) => {
     const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
     set({ taskExecStatuses });
+  },
+
+  createStageTemplate: async (projectId, template) => {
+    const created = await repo.createStageTemplate(projectId, template);
+    const stageTemplates = await repo.listStageTemplates(projectId);
+    set({ stageTemplates });
+    return created;
+  },
+
+  deleteStageTemplate: async (projectId, templateId) => {
+    await repo.deleteStageTemplate(projectId, templateId);
+    const stageTemplates = await repo.listStageTemplates(projectId);
+    set({ stageTemplates });
+  },
+
+  reorderStageTemplates: async (projectId, orderedIds) => {
+    await repo.reorderStageTemplates(projectId, orderedIds);
+    const stageTemplates = await repo.listStageTemplates(projectId);
+    set({ stageTemplates });
+  },
+
+  duplicateStageTemplate: async (projectId, templateId) => {
+    const created = await repo.duplicateStageTemplate(projectId, templateId);
+    const stageTemplates = await repo.listStageTemplates(projectId);
+    set({ stageTemplates });
+    return created;
   },
 }));

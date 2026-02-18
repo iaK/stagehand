@@ -92,14 +92,15 @@ export async function createProject(name: string, path: string): Promise<Project
   const templates = getDefaultStageTemplates(id);
   for (const t of templates) {
     await projectDb.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
-        t.allowed_tools, t.result_mode,
+        t.allowed_tools, t.result_mode, t.commits_changes, t.creates_pr,
+        t.is_terminal, t.triggers_stage_selection, t.commit_prefix,
       ],
     );
   }
@@ -165,6 +166,13 @@ export async function updateStageTemplate(
       | "gate_rules"
       | "sort_order"
       | "allowed_tools"
+      | "result_mode"
+      | "persona_system_prompt"
+      | "commits_changes"
+      | "creates_pr"
+      | "is_terminal"
+      | "triggers_stage_selection"
+      | "commit_prefix"
     >
   >,
 ): Promise<void> {
@@ -188,6 +196,121 @@ export async function updateStageTemplate(
     `UPDATE stage_templates SET ${sets.join(", ")} WHERE id = $${idx}`,
     values,
   );
+}
+
+export async function createStageTemplate(
+  projectId: string,
+  template: Omit<StageTemplate, "id" | "created_at" | "updated_at">,
+): Promise<StageTemplate> {
+  const db = await getProjectDb(projectId);
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await db.execute(
+    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+    [
+      id, template.project_id, template.name, template.description,
+      template.sort_order, template.prompt_template, template.input_source,
+      template.output_format, template.output_schema, template.gate_rules,
+      template.persona_name, template.persona_system_prompt, template.persona_model,
+      template.preparation_prompt, template.allowed_tools, template.result_mode,
+      template.commits_changes, template.creates_pr, template.is_terminal,
+      template.triggers_stage_selection, template.commit_prefix, now, now,
+    ],
+  );
+
+  return { id, ...template, created_at: now, updated_at: now };
+}
+
+export async function deleteStageTemplate(
+  projectId: string,
+  templateId: string,
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+
+  // Refuse if active tasks reference this template
+  const activeTasks = await db.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) as cnt FROM tasks
+     WHERE current_stage_id = $1 AND status != 'completed' AND archived = 0`,
+    [templateId],
+  );
+  if (activeTasks[0]?.cnt > 0) {
+    throw new Error("Cannot delete stage: active tasks are using it");
+  }
+
+  // Refuse if running/awaiting_user executions reference this template
+  const activeExecs = await db.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) as cnt FROM stage_executions
+     WHERE stage_template_id = $1 AND status IN ('running', 'awaiting_user')`,
+    [templateId],
+  );
+  if (activeExecs[0]?.cnt > 0) {
+    throw new Error("Cannot delete stage: it has running or pending executions");
+  }
+
+  await db.execute("DELETE FROM stage_templates WHERE id = $1", [templateId]);
+}
+
+export async function reorderStageTemplates(
+  projectId: string,
+  orderedIds: string[],
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+  const now = new Date().toISOString();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.execute(
+      "UPDATE stage_templates SET sort_order = $1, updated_at = $2 WHERE id = $3",
+      [i, now, orderedIds[i]],
+    );
+  }
+}
+
+export async function duplicateStageTemplate(
+  projectId: string,
+  templateId: string,
+): Promise<StageTemplate> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<StageTemplate[]>(
+    "SELECT * FROM stage_templates WHERE id = $1",
+    [templateId],
+  );
+  if (rows.length === 0) throw new Error("Template not found");
+
+  const source = rows[0];
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Place after the source template
+  await db.execute(
+    "UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1 WHERE project_id = $2 AND sort_order > $3",
+    [now, projectId, source.sort_order],
+  );
+
+  const newTemplate: StageTemplate = {
+    ...source,
+    id,
+    name: `${source.name} (Copy)`,
+    sort_order: source.sort_order + 1,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await db.execute(
+    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+    [
+      newTemplate.id, newTemplate.project_id, newTemplate.name, newTemplate.description,
+      newTemplate.sort_order, newTemplate.prompt_template, newTemplate.input_source,
+      newTemplate.output_format, newTemplate.output_schema, newTemplate.gate_rules,
+      newTemplate.persona_name, newTemplate.persona_system_prompt, newTemplate.persona_model,
+      newTemplate.preparation_prompt, newTemplate.allowed_tools, newTemplate.result_mode,
+      newTemplate.commits_changes, newTemplate.creates_pr, newTemplate.is_terminal,
+      newTemplate.triggers_stage_selection, newTemplate.commit_prefix, now, now,
+    ],
+  );
+
+  return newTemplate;
 }
 
 // === Tasks ===
@@ -559,6 +682,21 @@ export async function getProjectTaskSummary(
     taskStatuses: tasks.map((t) => t.status),
     execStatuses: execRows.map((e) => e.status),
   };
+}
+
+export async function getApprovedStageOutputs(
+  projectId: string,
+  taskId: string,
+): Promise<{ stage_name: string; stage_result: string; stage_summary: string }[]> {
+  const db = await getProjectDb(projectId);
+  return db.select<{ stage_name: string; stage_result: string; stage_summary: string }[]>(
+    `SELECT st.name AS stage_name, se.stage_result, se.stage_summary
+     FROM stage_executions se
+     JOIN stage_templates st ON se.stage_template_id = st.id
+     WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
+     ORDER BY st.sort_order ASC`,
+    [taskId],
+  );
 }
 
 export async function getApprovedStageSummaries(

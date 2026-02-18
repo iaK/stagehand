@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
-import { useStageExecution, COMMIT_ELIGIBLE_STAGES, generatePendingCommit } from "../../hooks/useStageExecution";
+import { useStageExecution, isCommitEligibleStage, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
@@ -118,7 +118,7 @@ export function StageView({ stage }: StageViewProps) {
   const isApproved = stageStatus === "approved";
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
-  const isCommitEligible = COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number]);
+  const isCommitEligible = isCommitEligibleStage(stage);
 
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
@@ -207,13 +207,13 @@ export function StageView({ stage }: StageViewProps) {
     if (!activeTask || !activeProject) return;
     setApproving(true);
     try {
-      // Auto-include PR Review whenever PR Preparation is selected
+      // Auto-include PR Review whenever a creates_pr stage is selected
       let ids = [...selectedStageIds];
-      const hasPrPrep = stageTemplates.some(
-        (t) => ids.includes(t.id) && t.name === "PR Preparation",
+      const hasPrCreator = stageTemplates.some(
+        (t) => ids.includes(t.id) && t.creates_pr,
       );
-      if (hasPrPrep) {
-        const prReviewTemplate = stageTemplates.find((t) => t.name === "PR Review");
+      if (hasPrCreator) {
+        const prReviewTemplate = stageTemplates.find((t) => t.output_format === "pr_review");
         if (prReviewTemplate && !ids.includes(prReviewTemplate.id)) {
           ids.push(prReviewTemplate.id);
         }
@@ -532,10 +532,10 @@ export function StageView({ stage }: StageViewProps) {
                 execution={latestExecution}
                 stage={stage}
                 onApprove={handleApprove}
-                onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
+                onApproveWithStages={stage.triggers_stage_selection ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
                 isApproved={false}
-                stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
+                stageTemplates={stage.triggers_stage_selection ? stageTemplates : undefined}
                 approving={approving}
                 isCommitEligible={isCommitEligible}
               />

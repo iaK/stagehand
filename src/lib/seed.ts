@@ -47,14 +47,7 @@ If you have questions, include them in the "questions" array. For each question:
 If all questions have been answered and the research is complete, return an empty "questions" array.
 
 Additionally, suggest which pipeline stages this task needs. The available stages are:
-- "High-Level Approaches": Brainstorm and compare multiple approaches (useful for complex tasks with multiple viable solutions)
-- "Planning": Create a detailed implementation plan (useful for non-trivial changes)
-- "Implementation": Write the actual code changes (almost always needed)
-- "Refinement": Self-review the implementation for quality issues (useful for larger changes)
-- "Security Review": Check for security vulnerabilities (useful when dealing with auth, user input, APIs, or data handling)
-- "PR Preparation": Prepare a pull request with title and description (useful when changes will be submitted as a PR)
-- "PR Review": Fetch and address PR reviewer comments after the PR is created (include whenever PR Preparation is selected)
-- "Merge": Merge the task branch directly into the main branch (alternative to PR flow)
+{{available_stages}}
 
 For simple bug fixes, you might only need Implementation. For large features, you might need all stages.
 Include your suggestions in the "suggested_stages" array.
@@ -118,6 +111,11 @@ Respond with a JSON object matching this structure:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
       result_mode: "replace",
+      commits_changes: 0,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 1,
+      commit_prefix: null,
     },
     {
       id: crypto.randomUUID(),
@@ -228,6 +226,11 @@ Respond with a JSON object matching this structure:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       result_mode: "append",
+      commits_changes: 0,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: null,
     },
     {
       id: crypto.randomUUID(),
@@ -317,6 +320,11 @@ Respond with a JSON object matching this structure:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       result_mode: "replace",
+      commits_changes: 0,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: null,
     },
     {
       id: crypto.randomUUID(),
@@ -343,6 +351,11 @@ Follow the plan carefully. Write clean, well-structured code. Run tests if appli
       preparation_prompt: null,
       allowed_tools: null, // Full tool access
       result_mode: "replace",
+      commits_changes: 1,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: "feat",
     },
     {
       id: crypto.randomUUID(),
@@ -439,6 +452,11 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       result_mode: "append",
+      commits_changes: 1,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: "fix",
     },
     {
       id: crypto.randomUUID(),
@@ -532,6 +550,11 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       result_mode: "append",
+      commits_changes: 1,
+      creates_pr: 0,
+      is_terminal: 0,
+      triggers_stage_selection: 0,
+      commit_prefix: "fix",
     },
     {
       id: crypto.randomUUID(),
@@ -595,6 +618,11 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       result_mode: "replace",
+      commits_changes: 0,
+      creates_pr: 1,
+      is_terminal: 1,
+      triggers_stage_selection: 0,
+      commit_prefix: null,
     },
     {
       id: crypto.randomUUID(),
@@ -614,6 +642,11 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       result_mode: "replace",
+      commits_changes: 0,
+      creates_pr: 0,
+      is_terminal: 1,
+      triggers_stage_selection: 0,
+      commit_prefix: null,
     },
     {
       id: crypto.randomUUID(),
@@ -633,6 +666,11 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       result_mode: "replace",
+      commits_changes: 0,
+      creates_pr: 0,
+      is_terminal: 1,
+      triggers_stage_selection: 0,
+      commit_prefix: null,
     },
   ];
 }

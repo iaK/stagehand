@@ -92,8 +92,7 @@ export function ResearchOutput({
   );
 }
 
-const PR_STAGE_NAMES = new Set(["pr preparation", "pr review"]);
-const MERGE_STAGE_NAMES = new Set(["merge"]);
+// Terminal stages are now identified by the is_terminal flag on StageTemplate
 
 function StageSelectionPanel({
   stageTemplates,
@@ -137,8 +136,7 @@ function StageSelectionPanel({
     const terminal: StageTemplate[] = [];
     for (const t of stageTemplates) {
       if (t.sort_order === 0) continue; // Research — always included separately
-      const key = t.name.trim().toLowerCase();
-      if (PR_STAGE_NAMES.has(key) || MERGE_STAGE_NAMES.has(key)) {
+      if (t.is_terminal) {
         terminal.push(t);
       } else {
         middle.push(t);
@@ -177,11 +175,14 @@ function StageSelectionPanel({
       if (checked[t.id]) selectedIds.push(t.id);
     }
     // Include terminal stages based on strategy
+    // PR flow: include stages that create PRs or have pr_review format
+    // Merge flow: include stages with merge format
     for (const t of terminalStages) {
-      const key = t.name.trim().toLowerCase();
-      if (completionStrategy === "pr" && PR_STAGE_NAMES.has(key)) {
+      const isPrRelated = t.creates_pr || t.output_format === "pr_review";
+      const isMergeRelated = t.output_format === "merge";
+      if (completionStrategy === "pr" && isPrRelated) {
         selectedIds.push(t.id);
-      } else if (completionStrategy === "merge" && MERGE_STAGE_NAMES.has(key)) {
+      } else if (completionStrategy === "merge" && isMergeRelated) {
         selectedIds.push(t.id);
       }
     }
@@ -244,9 +245,10 @@ function StageSelectionPanel({
 
         {/* Terminal stages: locked based on project completion strategy */}
         {terminalStages.map((t) => {
-          const key = t.name.trim().toLowerCase();
-          const isActive = (completionStrategy === "pr" && PR_STAGE_NAMES.has(key))
-            || (completionStrategy === "merge" && MERGE_STAGE_NAMES.has(key));
+          const isPrRelated = t.creates_pr || t.output_format === "pr_review";
+          const isMergeRelated = t.output_format === "merge";
+          const isActive = (completionStrategy === "pr" && isPrRelated)
+            || (completionStrategy === "merge" && isMergeRelated);
           if (!isActive) return null;
 
           return (

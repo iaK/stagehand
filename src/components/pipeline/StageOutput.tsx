@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import type { StageTemplate, StageExecution, ResearchQuestion } from "../../lib/types";
+import { detectInteractionType } from "../../lib/outputDetection";
 import { TextOutput } from "../output/TextOutput";
 import { OptionsOutput } from "../output/OptionsOutput";
 import { ChecklistOutput } from "../output/ChecklistOutput";
@@ -33,7 +35,13 @@ export function StageOutput({
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
-  switch (stage.output_format) {
+  // Resolve the effective format: for "auto", detect from content; otherwise use the explicit format
+  const effectiveFormat = useMemo(
+    () => detectInteractionType(output, stage.output_format),
+    [output, stage.output_format],
+  );
+
+  switch (effectiveFormat) {
     case "text":
       return (
         <div>
