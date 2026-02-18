@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { sendNotification } from "../../lib/notifications";
-import { gitWorktreeRemove } from "../../lib/git";
+import { gitWorktreeRemove, gitDeleteBranch } from "../../lib/git";
 import type { Task } from "../../lib/types";
 
 const statusColors: Record<string, string> = {
@@ -81,6 +81,14 @@ export function TaskList({ onEdit }: TaskListProps) {
         await gitWorktreeRemove(activeProject.path, archiveTarget.worktree_path);
       } catch {
         // Worktree may already be gone
+      }
+    }
+    // Delete the branch if it exists
+    if (archiveTarget.branch_name) {
+      try {
+        await gitDeleteBranch(activeProject.path, archiveTarget.branch_name);
+      } catch {
+        // Non-critical — branch may already be gone
       }
     }
     await updateTask(activeProject.id, archiveTarget.id, { archived: 1 });

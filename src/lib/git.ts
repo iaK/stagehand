@@ -81,6 +81,10 @@ export async function gitBranchExists(workingDir: string, name: string): Promise
   }
 }
 
+export async function gitDeleteBranch(workingDir: string, branchName: string): Promise<string> {
+  return runGit(workingDir, "branch", "-D", branchName);
+}
+
 export async function hasUncommittedChanges(workingDir: string): Promise<boolean> {
   try {
     const status = await gitStatus(workingDir);

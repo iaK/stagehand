@@ -20,6 +20,7 @@ import {
   gitPull,
   gitMergeAbort,
   gitPushCurrentBranch,
+  gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -725,13 +726,21 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         });
         // Clean up worktree on completion (skip for 'none' strategy — branch is left for manual handling)
         if (task.worktree_path && task.completion_strategy !== "none") {
-          try {
-            const project = useProjectStore.getState().activeProject;
-            if (project) {
+          const project = useProjectStore.getState().activeProject;
+          if (project) {
+            try {
               await gitWorktreeRemove(project.path, task.worktree_path);
+            } catch {
+              // Non-critical — worktree cleanup is best-effort
             }
-          } catch {
-            // Non-critical — worktree cleanup is best-effort
+            // Delete the branch after worktree removal
+            if (task.branch_name) {
+              try {
+                await gitDeleteBranch(project.path, task.branch_name);
+              } catch {
+                // Non-critical — branch cleanup is best-effort
+              }
+            }
           }
         }
       }
@@ -841,6 +850,15 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
           await gitWorktreeRemove(projectPath, task.worktree_path);
         } catch {
           // Non-critical
+        }
+      }
+
+      // Delete the merged feature branch
+      if (task.branch_name) {
+        try {
+          await gitDeleteBranch(projectPath, task.branch_name);
+        } catch {
+          // Non-critical — branch cleanup is best-effort
         }
       }
 

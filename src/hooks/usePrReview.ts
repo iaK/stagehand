@@ -17,6 +17,7 @@ import {
   getChangedFiles,
   gitAddFiles,
   gitCommit,
+  gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -135,6 +136,15 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
             await gitWorktreeRemove(activeProject.path, task.worktree_path);
           } catch {
             // Non-critical
+          }
+        }
+
+        // Delete the branch only after merge (not close — a closed PR may be reopened)
+        if (prState.merged && task.branch_name) {
+          try {
+            await gitDeleteBranch(activeProject.path, task.branch_name);
+          } catch {
+            // Non-critical — branch cleanup is best-effort
           }
         }
 
@@ -541,6 +551,10 @@ Keep it under 72 characters for the first line.`,
           // Non-critical — worktree cleanup is best-effort
         }
       }
+
+      // Don't delete the branch here — the PR is still open and may receive
+      // more review comments. Branch deletion happens in fetchReviews when
+      // the PR is detected as merged.
 
       // Mark task as completed
       await updateTask(activeProject.id, task.id, { status: "completed" });
