@@ -19,7 +19,6 @@ interface StageOutputProps {
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
   approving?: boolean;
-  isCommitEligible?: boolean;
 }
 
 export function StageOutput({
@@ -31,7 +30,6 @@ export function StageOutput({
   isApproved,
   stageTemplates,
   approving,
-  isCommitEligible,
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
@@ -46,17 +44,6 @@ export function StageOutput({
       return (
         <div>
           <TextOutput content={output} />
-          {!isCommitEligible && !isApproved && (
-            <Button
-              variant="success"
-              onClick={() => onApprove()}
-              disabled={approving}
-              className="mt-4"
-            >
-              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {approving ? "Approving..." : "Approve & Continue"}
-            </Button>
-          )}
         </div>
       );
 
@@ -98,6 +85,7 @@ export function StageOutput({
       );
 
     case "structured":
+    case "pr_preparation":
       return (
         <StructuredOutput
           output={output}
@@ -176,17 +164,6 @@ export function StageOutput({
         return (
           <div>
             <TextOutput content={output} />
-            {!isCommitEligible && !isApproved && (
-              <Button
-                variant="success"
-                onClick={() => onApprove()}
-                disabled={approving}
-                className="mt-4"
-              >
-                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {approving ? "Approving..." : "Approve & Continue"}
-              </Button>
-            )}
           </div>
         );
       }

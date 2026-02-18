@@ -8,6 +8,7 @@ export type DetectedType =
   | "research"
   | "findings"
   | "plan"
+  | "pr_preparation"
   | "pr_review"
   | "merge";
 
@@ -26,6 +27,7 @@ export function detectInteractionType(
   // Integration formats: always trust the hint
   if (formatHint === "merge") return "merge";
   if (formatHint === "pr_review") return "pr_review";
+  if (formatHint === "pr_preparation") return "pr_preparation";
 
   // Explicit non-auto hints: trust them
   if (formatHint && formatHint !== "auto") return formatHint as DetectedType;

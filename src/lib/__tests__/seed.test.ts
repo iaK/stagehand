@@ -34,35 +34,13 @@ describe("getDefaultStageTemplates", () => {
     ]);
   });
 
-  it("behavior flags are set correctly", () => {
+  it("special stages have correct output formats", () => {
     const byName = Object.fromEntries(templates.map((t) => [t.name, t]));
 
-    // commits_changes
-    expect(byName["Implementation"].commits_changes).toBe(1);
-    expect(byName["Refinement"].commits_changes).toBe(1);
-    expect(byName["Security Review"].commits_changes).toBe(1);
-    expect(byName["Research"].commits_changes).toBe(0);
-    expect(byName["PR Preparation"].commits_changes).toBe(0);
-
-    // creates_pr
-    expect(byName["PR Preparation"].creates_pr).toBe(1);
-    expect(byName["Implementation"].creates_pr).toBe(0);
-
-    // is_terminal
-    expect(byName["PR Preparation"].is_terminal).toBe(1);
-    expect(byName["PR Review"].is_terminal).toBe(1);
-    expect(byName["Merge"].is_terminal).toBe(1);
-    expect(byName["Implementation"].is_terminal).toBe(0);
-
-    // triggers_stage_selection
-    expect(byName["Research"].triggers_stage_selection).toBe(1);
-    expect(byName["Implementation"].triggers_stage_selection).toBe(0);
-
-    // commit_prefix
-    expect(byName["Implementation"].commit_prefix).toBe("feat");
-    expect(byName["Refinement"].commit_prefix).toBe("fix");
-    expect(byName["Security Review"].commit_prefix).toBe("fix");
-    expect(byName["Research"].commit_prefix).toBeNull();
+    expect(byName["Research"].output_format).toBe("research");
+    expect(byName["PR Preparation"].output_format).toBe("pr_preparation");
+    expect(byName["PR Review"].output_format).toBe("pr_review");
+    expect(byName["Merge"].output_format).toBe("merge");
   });
 
   it("all templates have unique IDs", () => {

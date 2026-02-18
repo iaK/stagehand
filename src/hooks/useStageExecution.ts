@@ -3,6 +3,7 @@ import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { useGitHubStore } from "../stores/githubStore";
+import { invoke } from "@tauri-apps/api/core";
 import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
@@ -28,14 +29,6 @@ import type {
   GateRule,
   ClaudeStreamEvent,
 } from "../lib/types";
-
-/** Check whether a stage may produce git changes eligible for committing. */
-export function isCommitEligibleStage(stage: StageTemplate): boolean {
-  return !!stage.commits_changes;
-}
-
-/** @deprecated Use isCommitEligibleStage(stage) instead. Kept for backward compat. */
-export const COMMIT_ELIGIBLE_STAGES = ["Implementation", "Refinement", "Security Review"] as const;
 
 export function useStageExecution() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -95,8 +88,8 @@ export function useStageExecution() {
         }
       }
 
-      // Clear task_stages when re-running a stage that triggers stage selection
-      if (stage.triggers_stage_selection) {
+      // Clear task_stages when re-running the research stage (triggers stage selection)
+      if (stage.output_format === "research") {
         const prevAttemptCheck = executions.filter((e) => e.stage_template_id === stage.id);
         if (prevAttemptCheck.length > 0) {
           await repo.setTaskStages(activeProject.id, task.id, []);
@@ -229,7 +222,7 @@ export function useStageExecution() {
           input_prompt: prompt,
           user_input:
             userInput ??
-            (stage.input_source === "previous_stage"
+            (!stage.requires_user_input
               ? (previousOutput ?? null)
               : null),
           raw_output: null,
@@ -403,15 +396,46 @@ export function useStageExecution() {
           }
         };
 
-        // For commit-eligible stages, instruct the agent not to commit —
-        // the app handles committing after the user reviews changes.
+        // Always instruct the agent not to commit — the app handles
+        // committing after the user reviews changes (harmless for read-only stages).
         let systemPrompt = stage.persona_system_prompt ?? undefined;
-        if (isCommitEligibleStage(stage)) {
+        {
           const noCommitRule =
             "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
           systemPrompt = systemPrompt
             ? `${systemPrompt}\n\n${noCommitRule}`
             : noCommitRule;
+        }
+
+        // Build MCP config for stage context server
+        let mcpConfig: string | undefined;
+        try {
+          const mcpServerPath = await invoke<string>("get_mcp_server_path");
+          const devflowDir = await invoke<string>("get_devflow_dir");
+          const dbPath = `${devflowDir}/data/${activeProject.id}.db`;
+          const config = {
+            mcpServers: {
+              "stagehand-context": {
+                command: "node",
+                args: [mcpServerPath],
+                env: {
+                  STAGEHAND_DB_PATH: dbPath,
+                  STAGEHAND_TASK_ID: task.id,
+                },
+              },
+            },
+          };
+          mcpConfig = JSON.stringify(config);
+
+          // Append MCP tool hint to system prompt
+          const mcpHint =
+            "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_description` tools to retrieve data from prior pipeline stages on demand.";
+          systemPrompt = systemPrompt
+            ? `${systemPrompt}\n\n${mcpHint}`
+            : mcpHint;
+        } catch (err) {
+          // Graceful degradation — MCP server unavailable, prompt context still works
+          console.warn("MCP server config failed, continuing without MCP:", err);
         }
 
         await spawnClaude(
@@ -423,6 +447,7 @@ export function useStageExecution() {
             appendSystemPrompt: systemPrompt,
             outputFormat: "stream-json",
             allowedTools: allowedTools,
+            mcpConfig,
             jsonSchema:
               stage.output_schema &&
               !(stage.output_format === "findings" && !!priorAttemptOutput)
@@ -525,8 +550,8 @@ export function useStageExecution() {
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
 
-        // Generate pending commit for commit-eligible stages
-        if (isCommitEligibleStage(stage)) {
+        // Always attempt to generate a pending commit (returns early if no changes)
+        {
           const task = useTaskStore.getState().activeTask;
           const project = useProjectStore.getState().activeProject;
           if (task && task.id === taskId && project) {
@@ -570,46 +595,18 @@ export function useStageExecution() {
       // Use filtered stage templates from store (avoids redundant DB call)
       const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
 
-      // Get the previous stage's result (for append/passthrough)
-      const prevExec = await repo.getPreviousStageExecution(
-        activeProject.id,
-        task.id,
-        stage.sort_order,
-        taskStageTemplates,
-      );
-      const prevResult = prevExec?.stage_result ?? null;
-
       // Extract this stage's own contribution
       const ownOutput = extractStageOutput(stage, latest, decision);
 
-      // Compose stage_result based on result_mode
-      const resultMode = stage.result_mode ?? "replace";
-      let stageResult: string;
-      switch (resultMode) {
-        case "append":
-          stageResult = prevResult
-            ? `${prevResult}\n\n---\n\n${ownOutput}`
-            : ownOutput;
-          break;
-        case "passthrough":
-          stageResult = prevResult ?? ownOutput;
-          break;
-        case "replace":
-        default:
-          stageResult = ownOutput;
-          break;
-      }
+      // Always "replace" — result_mode is no longer configurable
+      const stageResult = ownOutput;
 
       // Extract a concise summary for this stage
       const stageSummary = extractStageSummary(stage, latest, decision);
 
       // PR Preparation: create the PR before marking as approved so failures
       // are surfaced to the user and the stage can be retried.
-      // The completion strategy was already baked into the task's stage
-      // selection at Research-approval time, so if this task has a PR
-      // Preparation stage we always create the PR — regardless of the
-      // current project-level setting (which may have changed since).
-      if (stage.creates_pr && task.branch_name) {
+      if (stage.output_format === "pr_preparation" && task.branch_name) {
         await createPullRequest(task, decision);
       }
 
@@ -828,12 +825,12 @@ export function useStageExecution() {
   return { runStage, approveStage, redoStage, killCurrent };
 }
 
-/** Generate a pending commit for a commit-eligible stage that just finished. */
+/** Generate a pending commit for a stage that just finished. Returns early if no changes. */
 export async function generatePendingCommit(
   task: Task,
   stage: StageTemplate,
   projectPath: string,
-  _projectId: string,
+  projectId: string,
 ): Promise<void> {
   const workDir = getTaskWorkingDir(task, projectPath);
   const store = useProcessStore.getState();
@@ -849,7 +846,7 @@ export async function generatePendingCommit(
 
     const diffStat = await gitDiffStat(workDir).catch(() => "");
     const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const prefix = stage.commit_prefix ?? "feat";
+    const prefix = await repo.getCommitPrefix(projectId);
     const commitMsg = `${prefix}: ${slug}`;
 
     store.setPendingCommit({
@@ -1144,5 +1141,5 @@ export function validateGate(
 /** Determine whether a stage should be auto-started after the previous stage completes. */
 export function shouldAutoStartStage(stage: StageTemplate): boolean {
   if (stage.output_format === "merge") return false;
-  return stage.input_source !== "user" && stage.input_source !== "both";
+  return !stage.requires_user_input;
 }

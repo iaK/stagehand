@@ -19,6 +19,7 @@ pub struct SpawnClaudeArgs {
     pub no_session_persistence: Option<bool>,
     pub allowed_tools: Option<Vec<String>>,
     pub max_turns: Option<u32>,
+    pub mcp_config: Option<String>,
 }
 
 #[tauri::command]
@@ -70,6 +71,10 @@ pub async fn spawn_claude(
 
     if let Some(max_turns) = args.max_turns {
         cmd.arg("--max-turns").arg(max_turns.to_string());
+    }
+
+    if let Some(ref mcp_config) = args.mcp_config {
+        cmd.arg("--mcp-config").arg(mcp_config);
     }
 
     if let Some(ref dir) = args.working_directory {

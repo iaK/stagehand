@@ -205,6 +205,11 @@ async function initProjectSchema(db: Database): Promise<void> {
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN triggers_stage_selection INTEGER NOT NULL DEFAULT 0`).catch(() => {});
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN commit_prefix TEXT`).catch(() => {});
 
+  // Add requires_user_input column
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN requires_user_input INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  // Migrate: set requires_user_input = 1 for stages that had input_source = 'user' or 'both'
+  await db.execute(`UPDATE stage_templates SET requires_user_input = 1 WHERE input_source IN ('user', 'both') AND requires_user_input = 0`).catch(() => {});
+
   // Migrate existing stages to set behavior flags by (name, sort_order)
   await migrateBehaviorFlags(db);
 
@@ -295,6 +300,9 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   await migratePrReviewStage(db);
   await migrateMergeStage(db);
+
+  // Migrate PR Preparation stages: structured → pr_preparation format
+  await migratePrPreparationFormat(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
@@ -1038,4 +1046,11 @@ async function migrateMergeStage(db: Database): Promise<void> {
       ],
     );
   }
+}
+
+async function migratePrPreparationFormat(db: Database): Promise<void> {
+  // Migrate PR Preparation stages from structured → pr_preparation using the creates_pr flag
+  await db.execute(
+    `UPDATE stage_templates SET output_format = 'pr_preparation' WHERE output_format = 'structured' AND creates_pr = 1`,
+  ).catch(() => {});
 }

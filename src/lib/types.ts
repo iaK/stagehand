@@ -25,19 +25,13 @@ export interface StageTemplate {
   persona_model: string | null;
   preparation_prompt: string | null;
   allowed_tools: string | null; // JSON array of tool names
-  result_mode: ResultMode;
-  commits_changes: number; // boolean: stage may produce git changes (shows commit dialog)
-  creates_pr: number; // boolean: on approval, push branch + create PR
-  is_terminal: number; // boolean: terminal stage (excluded from middle-stage toggles)
-  triggers_stage_selection: number; // boolean: on approval, show stage selection panel
-  commit_prefix: string | null; // commit message prefix ("feat", "fix", etc.)
+  requires_user_input: number; // boolean: stage needs user input before running (shows input box)
   created_at: string;
   updated_at: string;
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_review" | "merge" | "auto";
-export type ResultMode = "replace" | "append" | "passthrough";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "auto";
 
 export interface Task {
   id: string;
@@ -218,4 +212,5 @@ export interface SpawnClaudeArgs {
   noSessionPersistence?: boolean;
   allowedTools?: string[];
   maxTurns?: number;
+  mcpConfig?: string;
 }

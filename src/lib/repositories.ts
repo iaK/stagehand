@@ -7,6 +7,7 @@ import type {
   StageExecution,
   PrReviewFix,
   CompletionStrategy,
+  OutputFormat,
 } from "./types";
 
 // === Settings ===
@@ -92,15 +93,14 @@ export async function createProject(name: string, path: string): Promise<Project
   const templates = getDefaultStageTemplates(id);
   for (const t of templates) {
     await projectDb.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
-        t.allowed_tools, t.result_mode, t.commits_changes, t.creates_pr,
-        t.is_terminal, t.triggers_stage_selection, t.commit_prefix,
+        t.allowed_tools, t.requires_user_input,
       ],
     );
   }
@@ -166,13 +166,8 @@ export async function updateStageTemplate(
       | "gate_rules"
       | "sort_order"
       | "allowed_tools"
-      | "result_mode"
       | "persona_system_prompt"
-      | "commits_changes"
-      | "creates_pr"
-      | "is_terminal"
-      | "triggers_stage_selection"
-      | "commit_prefix"
+      | "requires_user_input"
     >
   >,
 ): Promise<void> {
@@ -207,20 +202,30 @@ export async function createStageTemplate(
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
     [
       id, template.project_id, template.name, template.description,
       template.sort_order, template.prompt_template, template.input_source,
       template.output_format, template.output_schema, template.gate_rules,
       template.persona_name, template.persona_system_prompt, template.persona_model,
-      template.preparation_prompt, template.allowed_tools, template.result_mode,
-      template.commits_changes, template.creates_pr, template.is_terminal,
-      template.triggers_stage_selection, template.commit_prefix, now, now,
+      template.preparation_prompt, template.allowed_tools,
+      template.requires_user_input, now, now,
     ],
   );
 
   return { id, ...template, created_at: now, updated_at: now };
+}
+
+/** Output formats that identify non-deletable "special" stages. */
+export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "pr_preparation", "pr_review", "merge"];
+
+export function isSpecialStage(format: OutputFormat): boolean {
+  return (SPECIAL_STAGE_FORMATS as string[]).includes(format);
+}
+
+export async function getCommitPrefix(projectId: string): Promise<string> {
+  return (await getProjectSetting(projectId, "commit_prefix")) ?? "feat";
 }
 
 export async function deleteStageTemplate(
@@ -228,6 +233,15 @@ export async function deleteStageTemplate(
   templateId: string,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
+
+  // Refuse to delete special stages
+  const templateRows = await db.select<{ output_format: string }[]>(
+    "SELECT output_format FROM stage_templates WHERE id = $1",
+    [templateId],
+  );
+  if (templateRows.length > 0 && isSpecialStage(templateRows[0].output_format as OutputFormat)) {
+    throw new Error("Cannot delete special stage");
+  }
 
   // Refuse if active tasks reference this template
   const activeTasks = await db.select<{ cnt: number }[]>(
@@ -297,16 +311,15 @@ export async function duplicateStageTemplate(
   };
 
   await db.execute(
-    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, creates_pr, is_terminal, triggers_stage_selection, commit_prefix, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
     [
       newTemplate.id, newTemplate.project_id, newTemplate.name, newTemplate.description,
       newTemplate.sort_order, newTemplate.prompt_template, newTemplate.input_source,
       newTemplate.output_format, newTemplate.output_schema, newTemplate.gate_rules,
       newTemplate.persona_name, newTemplate.persona_system_prompt, newTemplate.persona_model,
-      newTemplate.preparation_prompt, newTemplate.allowed_tools, newTemplate.result_mode,
-      newTemplate.commits_changes, newTemplate.creates_pr, newTemplate.is_terminal,
-      newTemplate.triggers_stage_selection, newTemplate.commit_prefix, now, now,
+      newTemplate.preparation_prompt, newTemplate.allowed_tools,
+      newTemplate.requires_user_input, now, now,
     ],
   );
 

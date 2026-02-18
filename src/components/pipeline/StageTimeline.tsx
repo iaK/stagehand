@@ -253,7 +253,7 @@ function CollapsibleTimelineEntry({
               <CollapsibleInputBubble
                 text={execution.user_input}
                 label={
-                  stage.input_source === "previous_stage"
+                  !stage.requires_user_input
                     ? `Input from previous stage #${execution.attempt_number}`
                     : `${execution.attempt_number === 1 ? "Your input" : "Your answers"} #${execution.attempt_number}`
                 }

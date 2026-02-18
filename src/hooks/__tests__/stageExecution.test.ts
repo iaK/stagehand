@@ -390,18 +390,18 @@ Updated the login form validation. Added error messages. Improved UX.`;
 // ─── shouldAutoStartStage ───────────────────────────────────────────────────
 
 describe("shouldAutoStartStage", () => {
-  it("returns true for stages with input_source 'previous_stage'", () => {
-    const stage = makeStageTemplate({ input_source: "previous_stage" });
+  it("returns true for stages that do not require user input", () => {
+    const stage = makeStageTemplate({ requires_user_input: 0 });
     expect(shouldAutoStartStage(stage)).toBe(true);
   });
 
-  it("returns false for stages with input_source 'user'", () => {
-    const stage = makeStageTemplate({ input_source: "user" });
+  it("returns false for stages that require user input", () => {
+    const stage = makeStageTemplate({ requires_user_input: 1 });
     expect(shouldAutoStartStage(stage)).toBe(false);
   });
 
-  it("returns false for stages with input_source 'both'", () => {
-    const stage = makeStageTemplate({ input_source: "both" });
+  it("returns false for merge stages even without requires_user_input", () => {
+    const stage = makeStageTemplate({ requires_user_input: 0, output_format: "merge" });
     expect(shouldAutoStartStage(stage)).toBe(false);
   });
 });

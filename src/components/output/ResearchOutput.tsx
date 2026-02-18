@@ -92,7 +92,8 @@ export function ResearchOutput({
   );
 }
 
-// Terminal stages are now identified by the is_terminal flag on StageTemplate
+// Terminal stages are identified by output_format
+const SPECIAL_TERMINAL_FORMATS = ["pr_preparation", "pr_review", "merge"] as const;
 
 function StageSelectionPanel({
   stageTemplates,
@@ -136,7 +137,7 @@ function StageSelectionPanel({
     const terminal: StageTemplate[] = [];
     for (const t of stageTemplates) {
       if (t.sort_order === 0) continue; // Research — always included separately
-      if (t.is_terminal) {
+      if ((SPECIAL_TERMINAL_FORMATS as readonly string[]).includes(t.output_format)) {
         terminal.push(t);
       } else {
         middle.push(t);
@@ -175,10 +176,10 @@ function StageSelectionPanel({
       if (checked[t.id]) selectedIds.push(t.id);
     }
     // Include terminal stages based on strategy
-    // PR flow: include stages that create PRs or have pr_review format
-    // Merge flow: include stages with merge format
+    // PR flow: include pr_preparation and pr_review stages
+    // Merge flow: include merge stages
     for (const t of terminalStages) {
-      const isPrRelated = t.creates_pr || t.output_format === "pr_review";
+      const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
       const isMergeRelated = t.output_format === "merge";
       if (completionStrategy === "pr" && isPrRelated) {
         selectedIds.push(t.id);
@@ -245,7 +246,7 @@ function StageSelectionPanel({
 
         {/* Terminal stages: locked based on project completion strategy */}
         {terminalStages.map((t) => {
-          const isPrRelated = t.creates_pr || t.output_format === "pr_review";
+          const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
           const isMergeRelated = t.output_format === "merge";
           const isActive = (completionStrategy === "pr" && isPrRelated)
             || (completionStrategy === "merge" && isMergeRelated);

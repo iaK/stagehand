@@ -3,6 +3,7 @@ mod events;
 mod commands;
 
 use process_manager::ProcessManager;
+use tauri::Manager;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -14,6 +15,37 @@ fn get_devflow_dir() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let devflow_dir = home.join(".devflow");
     Ok(devflow_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_mcp_server_path(app_handle: tauri::AppHandle) -> Result<String, String> {
+    // In development, resolve from CARGO_MANIFEST_DIR
+    if cfg!(debug_assertions) {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let path = std::path::Path::new(manifest_dir)
+            .join("mcp-server")
+            .join("stagehand-context.mjs");
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    // In production, resolve from Tauri resource dir
+    let resource_path = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Could not get resource dir: {}", e))?
+        .join("mcp-server")
+        .join("stagehand-context.mjs");
+
+    if resource_path.exists() {
+        Ok(resource_path.to_string_lossy().to_string())
+    } else {
+        Err(format!(
+            "MCP server not found at: {}",
+            resource_path.to_string_lossy()
+        ))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -45,6 +77,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_devflow_dir,
+            get_mcp_server_path,
             commands::process::spawn_claude,
             commands::process::kill_process,
             commands::process::list_processes,

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
-import { useStageExecution, isCommitEligibleStage, generatePendingCommit } from "../../hooks/useStageExecution";
+import { useStageExecution, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
@@ -116,16 +116,13 @@ export function StageView({ stage }: StageViewProps) {
   const stageStatus = latestExecution?.status ?? "pending";
   const isCurrentStage = activeTask?.current_stage_id === stage.id;
   const isApproved = stageStatus === "approved";
-  const needsUserInput =
-    stage.input_source === "user" || stage.input_source === "both";
-  const isCommitEligible = isCommitEligibleStage(stage);
+  const needsUserInput = !!stage.requires_user_input;
 
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
   const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
   useEffect(() => {
     if (
-      isCommitEligible &&
       isCurrentStage &&
       stageStatus === "awaiting_user" &&
       !isRunning &&
@@ -138,7 +135,7 @@ export function StageView({ stage }: StageViewProps) {
     ) {
       generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
     }
-  }, [isCommitEligible, isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
+  }, [isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
 
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
@@ -170,11 +167,7 @@ export function StageView({ stage }: StageViewProps) {
     setStageError(null);
     try {
       await approveStage(activeTask, stage, decision);
-      // Skip notification for commit-eligible stages — handleCommit/handleSkipCommit
-      // already send their own notification before calling approveStage directly
-      if (!isCommitEligible) {
-        sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
-      }
+      sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
     } catch (err) {
       console.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -207,10 +200,10 @@ export function StageView({ stage }: StageViewProps) {
     if (!activeTask || !activeProject) return;
     setApproving(true);
     try {
-      // Auto-include PR Review whenever a creates_pr stage is selected
+      // Auto-include PR Review whenever a PR Preparation stage is selected
       let ids = [...selectedStageIds];
       const hasPrCreator = stageTemplates.some(
-        (t) => ids.includes(t.id) && t.creates_pr,
+        (t) => ids.includes(t.id) && t.output_format === "pr_preparation",
       );
       if (hasPrCreator) {
         const prReviewTemplate = stageTemplates.find((t) => t.output_format === "pr_review");
@@ -377,11 +370,7 @@ export function StageView({ stage }: StageViewProps) {
         <div className="mb-6">
           {needsUserInput && (
             <div className="mb-4">
-              <Label>
-                {stage.input_source === "both"
-                  ? "Additional context or feedback"
-                  : "Describe what you need"}
-              </Label>
+              <Label>Describe what you need</Label>
               <MarkdownTextarea
                 value={userInput}
                 onChange={setUserInput}
@@ -490,7 +479,7 @@ export function StageView({ stage }: StageViewProps) {
 
           {/* Current round: user input */}
           {latestExecution?.user_input && (
-            stage.input_source === "previous_stage" ? (
+            !stage.requires_user_input ? (
               <CollapsibleInputBubble
                 text={latestExecution.user_input}
                 label="Input from previous stage"
@@ -532,16 +521,15 @@ export function StageView({ stage }: StageViewProps) {
                 execution={latestExecution}
                 stage={stage}
                 onApprove={handleApprove}
-                onApproveWithStages={stage.triggers_stage_selection ? handleApproveWithStages : undefined}
+                onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
                 isApproved={false}
-                stageTemplates={stage.triggers_stage_selection ? stageTemplates : undefined}
+                stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
                 approving={approving}
-                isCommitEligible={isCommitEligible}
               />
 
-              {/* Inline commit dialog for commit-eligible stages */}
-              {isCommitEligible && isCurrentStage && (
+              {/* Inline commit dialog — shown when the stage produced file changes */}
+              {isCurrentStage && (
                 pendingCommit?.stageId === stage.id ? (
                   <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
                     <div className="flex items-center gap-2 mb-3">
@@ -593,7 +581,7 @@ export function StageView({ stage }: StageViewProps) {
                     className="mt-4"
                   >
                     {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {approving ? "Approving..." : "Continue (no changes to commit)"}
+                    {approving ? "Approving..." : "Approve & Continue"}
                   </Button>
                 ) : (
                   <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
