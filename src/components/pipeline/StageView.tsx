@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
-import { useStageExecution } from "../../hooks/useStageExecution";
+import { useStageExecution, COMMIT_ELIGIBLE_STAGES } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { StageOutput } from "./StageOutput";
@@ -41,7 +41,7 @@ export function StageView({ stage }: StageViewProps) {
     (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
   );
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
-  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoading);
+  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
@@ -121,8 +121,7 @@ export function StageView({ stage }: StageViewProps) {
   const isApproved = stageStatus === "approved";
   const needsUserInput =
     stage.input_source === "user" || stage.input_source === "both";
-  const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
-  const isCommitEligible = commitEligibleStages.includes(stage.name);
+  const isCommitEligible = COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number]);
 
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
@@ -154,7 +153,11 @@ export function StageView({ stage }: StageViewProps) {
     setStageError(null);
     try {
       await approveStage(activeTask, stage, decision);
-      sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
+      // Skip notification for commit-eligible stages — handleCommit/handleSkipCommit
+      // already send their own notification before calling approveStage directly
+      if (!isCommitEligible) {
+        sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
+      }
     } catch (err) {
       console.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
