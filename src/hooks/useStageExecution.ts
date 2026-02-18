@@ -79,11 +79,9 @@ export function useStageExecution() {
 
             await gitWorktreeAdd(activeProject.path, worktreePath, branchName, !exists);
 
-            await updateTask(activeProject.id, task.id, {
-              branch_name: branchName,
-              worktree_path: worktreePath,
-            });
-            // Update local task reference
+            // Update local task reference — defer the DB/store update to
+            // batch with the status: "in_progress" write below so we only
+            // trigger one listTasks reload instead of two.
             task = { ...task, branch_name: branchName, worktree_path: worktreePath };
           }
         } catch (err) {
@@ -214,12 +212,22 @@ export function useStageExecution() {
         };
 
         await repo.createStageExecution(activeProject.id, execution);
-        await updateTask(activeProject.id, task.id, { status: "in_progress" });
+        // Batch worktree fields (if set during this run) with the status
+        // update so we only trigger a single listTasks reload.
+        await updateTask(activeProject.id, task.id, {
+          status: "in_progress",
+          ...(task.branch_name ? { branch_name: task.branch_name } : {}),
+          ...(task.worktree_path ? { worktree_path: task.worktree_path } : {}),
+        });
 
-        // Load the execution into the store immediately so that killCurrent
-        // and the health check can find it even before spawnClaude fires events.
-        if (useTaskStore.getState().activeTask?.id === task.id) {
-          loadExecutions(activeProject.id, task.id).catch(() => {});
+        // Add the new execution to the store immediately so that killCurrent
+        // and the health check can find it even before spawnClaude fires events,
+        // without triggering a full loadExecutions reload (which involves IPC
+        // calls and creates new object references that cascade re-renders).
+        {
+          const currentExecs = useTaskStore.getState().executions;
+          const fullExecution = { ...execution, completed_at: null } as StageExecution;
+          useTaskStore.setState({ executions: [...currentExecs, fullExecution] });
         }
 
         // Build allowed tools
