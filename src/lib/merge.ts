@@ -15,7 +15,6 @@ export async function performMerge(params: {
   projectPath: string;
   branchName: string;
   targetBranch: string;
-  taskWorktreePath: string | null;
 }): Promise<void> {
   const { projectPath, branchName, targetBranch } = params;
 

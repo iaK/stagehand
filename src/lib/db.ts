@@ -191,6 +191,9 @@ async function initProjectSchema(db: Database): Promise<void> {
     ALTER TABLE tasks ADD COLUMN worktree_path TEXT
   `).catch(() => { /* column already exists */ });
 
+  // Vestigial: completion_strategy was moved to a project-level setting and is no
+  // longer read/written by app code. Kept so existing DBs that already ran this
+  // migration don't break. A future migration could drop this column.
   await db.execute(`
     ALTER TABLE tasks ADD COLUMN completion_strategy TEXT NOT NULL DEFAULT 'pr'
   `).catch(() => { /* column already exists */ });
@@ -909,20 +912,23 @@ async function migratePrReviewStage(db: Database): Promise<void> {
 }
 
 async function migrateMergeStage(db: Database): Promise<void> {
-  // Check if Merge stage already exists
+  // Check if any Merge stage already exists (across any project)
   const existing = await db.select<{ id: string }[]>(
-    "SELECT id FROM stage_templates WHERE name = 'Merge' AND sort_order = 8",
+    "SELECT id FROM stage_templates WHERE name = 'Merge'",
   );
   if (existing.length > 0) return;
 
-  // Only add if PR Review exists at sort_order 7 (ensures project has full pipeline)
-  const prReviewRows = await db.select<{ id: string; project_id: string }[]>(
-    "SELECT id, project_id FROM stage_templates WHERE name = 'PR Review' AND sort_order = 7",
+  // Find all projects that have stage templates but no Merge stage.
+  // Place the Merge stage after the highest existing sort_order in each project.
+  const projectRows = await db.select<{ project_id: string; max_order: number }[]>(
+    `SELECT project_id, MAX(sort_order) as max_order
+     FROM stage_templates
+     GROUP BY project_id`,
   );
-  if (prReviewRows.length === 0) return;
+  if (projectRows.length === 0) return;
 
   const now = new Date().toISOString();
-  for (const row of prReviewRows) {
+  for (const row of projectRows) {
     await db.execute(
       `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
@@ -931,7 +937,7 @@ async function migrateMergeStage(db: Database): Promise<void> {
         row.project_id,
         "Merge",
         "Merge the task branch into the target branch and push.",
-        8,
+        row.max_order + 1,
         "",
         "previous_stage",
         "merge",

@@ -19,6 +19,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import type { StageTemplate } from "../../lib/types";
 
+/**
+ * MergeStageView intentionally bypasses the standard useStageExecution hook and
+ * manages its own execution lifecycle (create, approve/fail, task completion,
+ * worktree cleanup). This keeps the merge flow simple and self-contained.
+ * If changes are made to the standard stage execution flow (notifications,
+ * logging, analytics), check whether they should also apply here.
+ */
 interface MergeStageViewProps {
   stage: StageTemplate;
 }
@@ -81,6 +88,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by ID to avoid re-running on object identity changes
   }, [activeProject?.id, activeTask?.id, isApproved]);
 
   const handleMerge = async () => {
@@ -88,14 +96,18 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     setMergeState("merging");
     setError(null);
 
+    // Hoist executionId so the catch block can mark it as failed
+    const prevAttempts = executions.filter((e) => e.stage_template_id === stage.id);
+    const attemptNumber = prevAttempts.length + 1;
+    const executionId = crypto.randomUUID();
+
     try {
       // Create an execution record for this stage
-      const executionId = crypto.randomUUID();
       await repo.createStageExecution(activeProject.id, {
         id: executionId,
         task_id: activeTask.id,
         stage_template_id: stage.id,
-        attempt_number: 1,
+        attempt_number: attemptNumber,
         status: "running",
         input_prompt: "",
         user_input: null,
@@ -121,7 +133,6 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         projectPath: activeProject.path,
         branchName: activeTask.branch_name,
         targetBranch,
-        taskWorktreePath: activeTask.worktree_path,
       });
 
       // Mark execution as approved
@@ -163,9 +174,37 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
       setMergeState("success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Mark execution as failed so it's not left orphaned as 'running'
+      await repo.updateStageExecution(activeProject.id, executionId, {
+        status: "failed",
+        error_message: msg,
+        completed_at: new Date().toISOString(),
+      }).catch(() => {});
+      await loadExecutions(activeProject.id, activeTask.id).catch(() => {});
       setError(msg);
       setMergeState("error");
     }
+  };
+
+  const handleSkip = async () => {
+    if (!activeProject || !activeTask) return;
+
+    await updateTask(activeProject.id, activeTask.id, {
+      status: "completed",
+    });
+
+    sendNotification("Merge skipped", "Task completed without merging");
+
+    if (activeTask.worktree_path) {
+      try {
+        await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
+      } catch {
+        // Non-critical
+      }
+    }
+
+    await loadExecutions(activeProject.id, activeTask.id);
+    setMergeState("success");
   };
 
   if (!activeProject || !activeTask) return null;
@@ -249,14 +288,24 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
           </Alert>
         )}
 
-        <Button
-          onClick={handleMerge}
-          disabled={mergeState === "merging"}
-          size="sm"
-        >
-          {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
-          {mergeState === "merging" ? "Merging..." : "Merge & Push"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleMerge}
+            disabled={mergeState === "merging"}
+            size="sm"
+          >
+            {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
+            {mergeState === "merging" ? "Merging..." : "Merge & Push"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSkip}
+            disabled={mergeState === "merging"}
+          >
+            Skip
+          </Button>
+        </div>
       </div>
     </div>
   );

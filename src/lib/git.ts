@@ -423,11 +423,6 @@ export async function gitDiffNameOnly(workingDir: string, base: string, head?: s
   return result.trim().split("\n").filter((l) => l.length > 0);
 }
 
-export async function gitMergeBase(workingDir: string, ref1: string, ref2: string): Promise<string> {
-  const result = await runGit(workingDir, "merge-base", ref1, ref2);
-  return result.trim();
-}
-
 export async function gitDiffStatBranch(workingDir: string, base: string): Promise<string> {
   return runGit(workingDir, "diff", "--stat", `${base}...HEAD`);
 }

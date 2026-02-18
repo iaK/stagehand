@@ -656,8 +656,8 @@ export function useStageExecution() {
           status: "completed",
         });
 
-        // Clean up worktree on completion (safety net — for merge stages,
-        // performMerge already cleaned up; for PR flow, clean up here)
+        // Clean up worktree on completion. Note: merge stages handle their
+        // own completion and cleanup in MergeStageView and never reach here.
         if (task.worktree_path) {
           const project = useProjectStore.getState().activeProject;
           if (project) {

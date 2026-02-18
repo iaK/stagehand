@@ -18,7 +18,6 @@ import { getTaskWorkingDir } from "../../lib/worktree";
 import { usePrReview } from "../../hooks/usePrReview";
 import { PrReviewOutput } from "../output/PrReviewOutput";
 import { MergeStageView } from "./MergeStageView";
-import * as repo from "../../lib/repositories";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -220,14 +219,8 @@ export function StageView({ stage }: StageViewProps) {
         }
       }
 
-      // Auto-include Merge stage when project uses merge strategy
-      const strategy = await repo.getCompletionStrategy(activeProject.id);
-      if (strategy === "merge") {
-        const mergeTemplate = stageTemplates.find((t) => t.name === "Merge");
-        if (mergeTemplate && !ids.includes(mergeTemplate.id)) {
-          ids.push(mergeTemplate.id);
-        }
-      }
+      // Note: Merge stage inclusion is handled by ResearchOutput's handleApprove
+      // which includes terminal stages based on the project's completion strategy.
 
       // Build stages with sort orders from the templates
       const stages = ids
