@@ -217,6 +217,21 @@ export async function gitWorktreeAdd(
   return runGit(workingDir, "worktree", "add", worktreePath, branchName);
 }
 
+export async function gitWorktreeAddDetached(
+  workingDir: string,
+  worktreePath: string,
+  commitish: string,
+): Promise<string> {
+  return runGit(workingDir, "worktree", "add", "--detach", worktreePath, commitish);
+}
+
+export async function gitPushHeadTo(
+  workingDir: string,
+  remoteBranch: string,
+): Promise<string> {
+  return runGit(workingDir, "push", "origin", `HEAD:${remoteBranch}`);
+}
+
 export async function gitWorktreeRemove(
   workingDir: string,
   worktreePath: string,

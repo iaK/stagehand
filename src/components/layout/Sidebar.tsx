@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useLinearStore } from "../../stores/linearStore";
+import { useGitHubStore } from "../../stores/githubStore";
 import { TaskList } from "../task/TaskList";
 import { TaskCreate } from "../task/TaskCreate";
 import { ProjectCreate } from "../project/ProjectCreate";
@@ -32,6 +33,7 @@ export function Sidebar() {
   const [showSettings, setShowSettings] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const { apiKey: linearApiKey, loadForProject: loadLinearForProject } = useLinearStore();
+  const loadGitHubForProject = useGitHubStore((s) => s.loadForProject);
 
   useEffect(() => {
     loadProjects();
@@ -48,8 +50,11 @@ export function Sidebar() {
       loadLinearForProject(activeProject.id).catch((err) =>
         console.error("Failed to load Linear settings:", err),
       );
+      loadGitHubForProject(activeProject.id, activeProject.path).catch((err) =>
+        console.error("Failed to load GitHub settings:", err),
+      );
     }
-  }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject]);
+  }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject, loadGitHubForProject]);
 
   const confirmArchive = async () => {
     if (!archiveTarget) return;

@@ -45,6 +45,10 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
   error: null,
 
   loadForProject: async (projectId: string, projectPath: string) => {
+    const current = get();
+    // If already loaded for this project, skip re-detection
+    if (current.projectId === projectId && current.defaultBranch && !current.error) return;
+
     set({
       projectId,
       remoteUrl: null,

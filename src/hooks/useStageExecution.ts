@@ -14,12 +14,12 @@ import {
   gitDefaultBranch,
   ghCreatePr,
   gitWorktreeAdd,
+  gitWorktreeAddDetached,
   gitWorktreeRemove,
   gitMerge,
   gitFetch,
-  gitPull,
   gitMergeAbort,
-  gitPushCurrentBranch,
+  gitPushHeadTo,
   gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
@@ -806,13 +806,12 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         // Fetch the latest target branch from remote before merging
         await gitFetch(projectPath, targetBranch);
 
-        // Create a temporary worktree checked out to the target branch
-        await gitWorktreeAdd(projectPath, mergeWorktreePath, targetBranch, false);
+        // Create a detached worktree at origin/<targetBranch>.
+        // Using detached HEAD avoids "branch already checked out" errors
+        // when the target branch is checked out in the main worktree.
+        await gitWorktreeAddDetached(projectPath, mergeWorktreePath, `origin/${targetBranch}`);
 
-        // Pull latest changes into the worktree so we're up-to-date
-        await gitPull(mergeWorktreePath);
-
-        // Merge the task branch into the target branch within the temp worktree
+        // Merge the task branch into the detached HEAD
         try {
           await gitMerge(mergeWorktreePath, task.branch_name);
         } catch (mergeErr) {
@@ -830,9 +829,9 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
           throw mergeErr;
         }
 
-        // Push the merged target branch
+        // Push the merged HEAD to the target branch on remote
         try {
-          await gitPushCurrentBranch(mergeWorktreePath);
+          await gitPushHeadTo(mergeWorktreePath, targetBranch);
         } catch (pushErr) {
           // Push failed — clean up the temp worktree (merge is local only)
           try {
