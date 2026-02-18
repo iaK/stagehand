@@ -41,8 +41,8 @@ export function StageView({ stage }: StageViewProps) {
     (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
   );
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
-  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
+  const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(stage.id);
@@ -96,10 +96,6 @@ export function StageView({ stage }: StageViewProps) {
     if (pendingCommit?.fixId) {
       // PR Review fix — skip commit but keep changes
       await prReview.skipFixCommit(pendingCommit.fixId);
-    } else {
-      useProcessStore.getState().clearPendingCommit();
-      sendNotification("Commit skipped", stage.name, "info", { projectId: activeProject.id, taskId: activeTask.id });
-      await approveStage(activeTask, stage);
     }
   };
 
@@ -168,6 +164,7 @@ export function StageView({ stage }: StageViewProps) {
   const handleRedo = async () => {
     if (!activeTask) return;
     useProcessStore.getState().clearPendingCommit();
+    useProcessStore.getState().setNoChangesToCommit(null);
     setShowFeedback(false);
     setStageError(null);
     try {
@@ -553,39 +550,34 @@ export function StageView({ stage }: StageViewProps) {
                       </Alert>
                     )}
 
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleCommit}
-                        disabled={committing || !commitMessage.trim()}
-                        size="sm"
-                      >
-                        {committing ? "Committing..." : "Commit"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSkipCommit}
-                        disabled={committing}
-                      >
-                        Skip Commit
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={handleCommit}
+                      disabled={committing || !commitMessage.trim()}
+                      size="sm"
+                      variant="success"
+                    >
+                      {committing && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {committing ? "Committing..." : "Commit & Continue"}
+                    </Button>
                   </div>
-                ) : commitMessageLoading ? (
-                  <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating commit message...
-                  </div>
-                ) : (
+                ) : noChangesToCommit ? (
                   <Button
                     variant="success"
-                    onClick={() => handleApprove()}
+                    onClick={() => {
+                      useProcessStore.getState().setNoChangesToCommit(null);
+                      handleApprove();
+                    }}
                     disabled={approving}
                     className="mt-4"
                   >
                     {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {approving ? "Approving..." : "Approve & Continue"}
+                    {approving ? "Approving..." : "Continue (no changes to commit)"}
                   </Button>
+                ) : (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Preparing commit...
+                  </div>
                 )
               )}
 

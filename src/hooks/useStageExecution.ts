@@ -492,11 +492,12 @@ export function useStageExecution() {
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
 
-        // Fire-and-forget: generate commit message in background for commit-eligible stages
+        // Generate pending commit for commit-eligible stages
         if (COMMIT_ELIGIBLE_STAGES.includes(stage.name as typeof COMMIT_ELIGIBLE_STAGES[number])) {
           const task = useTaskStore.getState().activeTask;
-          if (task && task.id === taskId) {
-            generatePendingCommitRef.current(task, stage).catch(() => {});
+          const project = useProjectStore.getState().activeProject;
+          if (task && task.id === taskId && project) {
+            generatePendingCommit(task, stage, project.path, project.id).catch(() => {});
           }
         }
       }
@@ -920,6 +921,41 @@ export function useStageExecution() {
   }, [failStaleExecutions]);
 
   return { runStage, approveStage, redoStage, killCurrent, performDirectMerge, skipMerge };
+}
+
+/** Generate a pending commit for a commit-eligible stage that just finished. */
+async function generatePendingCommit(
+  task: Task,
+  stage: StageTemplate,
+  projectPath: string,
+  _projectId: string,
+): Promise<void> {
+  const workDir = getTaskWorkingDir(task, projectPath);
+  const store = useProcessStore.getState();
+
+  store.setCommitMessageLoading(stage.id);
+  try {
+    const hasChanges = await hasUncommittedChanges(workDir);
+    if (!hasChanges) {
+      // No file changes — nothing to commit, mark as no-changes so UI can show approve button
+      store.setNoChangesToCommit(stage.id);
+      return;
+    }
+
+    const diffStat = await gitDiffStat(workDir).catch(() => "");
+    const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const prefix = stage.name === "Implementation" ? "feat" : "fix";
+    const commitMsg = `${prefix}: ${slug}`;
+
+    store.setPendingCommit({
+      stageId: stage.id,
+      stageName: stage.name,
+      message: commitMsg,
+      diffStat: diffStat || "",
+    });
+  } finally {
+    store.setCommitMessageLoading(null);
+  }
 }
 
 /** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
