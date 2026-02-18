@@ -4,7 +4,6 @@ use tokio::sync::{oneshot, Mutex};
 
 pub struct ProcessEntry {
     pub kill_tx: Option<oneshot::Sender<()>>,
-    #[allow(dead_code)]
     pub stage_execution_id: Option<String>,
     #[allow(dead_code)]
     pub session_id: Option<String>,
@@ -72,5 +71,13 @@ impl ProcessManager {
     pub async fn list_running(&self) -> Vec<String> {
         let procs = self.processes.lock().await;
         procs.keys().cloned().collect()
+    }
+
+    pub async fn list_running_detailed(&self) -> Vec<(String, Option<String>)> {
+        let procs = self.processes.lock().await;
+        procs
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.stage_execution_id.clone()))
+            .collect()
     }
 }

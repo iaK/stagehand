@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { gitLog, type GitCommit } from "../../lib/git";
+import { Input } from "@/components/ui/input";
+import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
+import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import type { StageExecution } from "../../lib/types";
 
@@ -61,10 +63,14 @@ export function TaskOverview() {
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const executions = useTaskStore((s) => s.executions);
   const activeProject = useProjectStore((s) => s.activeProject);
+  const defaultBranch = useGitHubStore((s) => s.defaultBranch);
+  const setDefaultBranch = useGitHubStore((s) => s.setDefaultBranch);
 
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [commitsLoading, setCommitsLoading] = useState(true);
   const [showTokenDetails, setShowTokenDetails] = useState(false);
+  const [branchPickerOpen, setBranchPickerOpen] = useState(false);
+  const [branches, setBranches] = useState<string[]>([]);
 
   const tokenTotals = useMemo(() => {
     const withData = executions.filter((e) => e.total_cost_usd != null);
@@ -106,7 +112,11 @@ export function TaskOverview() {
     setCommitsLoading(true);
 
     const workDir = getTaskWorkingDir(activeTask, activeProject.path);
-    gitLog(workDir).then((result) => {
+    const fetchCommits = defaultBranch
+      ? gitLogBranchDiff(workDir, defaultBranch)
+      : gitLog(workDir);
+
+    fetchCommits.then((result) => {
       if (!cancelled) {
         setCommits(result);
         setCommitsLoading(false);
@@ -114,7 +124,7 @@ export function TaskOverview() {
     });
 
     return () => { cancelled = true; };
-  }, [activeTask?.id, activeProject?.path]);
+  }, [activeTask?.id, activeProject?.path, defaultBranch]);
 
   if (!activeTask) return null;
 
@@ -145,11 +155,30 @@ export function TaskOverview() {
           label="Current Stage"
           value={currentStage?.name ?? "Not started"}
         />
-        <InfoCard
-          label="Branch"
-          value={activeTask.branch_name ?? "No branch"}
-          mono
-        />
+        <div className="col-span-2 rounded-lg border border-border bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Branch</span>
+          <div className="flex items-center gap-2 text-sm font-medium font-mono mt-0.5">
+            <span className="truncate">{activeTask.branch_name ?? "No branch"}</span>
+            <span className="text-muted-foreground shrink-0">&rarr;</span>
+            <BranchPicker
+              value={defaultBranch ?? "main"}
+              branches={branches}
+              open={branchPickerOpen}
+              onOpenChange={(open) => {
+                setBranchPickerOpen(open);
+                if (open && activeProject) {
+                  gitListBranches(activeProject.path).then(setBranches);
+                }
+              }}
+              onSelect={(branch) => {
+                if (branch !== defaultBranch) {
+                  setDefaultBranch(branch, activeProject?.id);
+                }
+                setBranchPickerOpen(false);
+              }}
+            />
+          </div>
+        </div>
         <InfoCard
           label="Pull Request"
           value={activeTask.pr_url ? undefined : "No PR created yet"}
@@ -297,6 +326,97 @@ export function TaskOverview() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function BranchPicker({
+  value,
+  branches,
+  open,
+  onOpenChange,
+  onSelect,
+}: {
+  value: string;
+  branches: string[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (branch: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!search) return branches;
+    const q = search.toLowerCase();
+    return branches.filter((b) => b.toLowerCase().includes(q));
+  }, [branches, search]);
+
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      // Focus the input after a tick so the popover is rendered
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, onOpenChange]);
+
+  return (
+    <div className="relative shrink-0" ref={containerRef}>
+      <button
+        onClick={() => onOpenChange(!open)}
+        className="hover:text-blue-600 transition-colors text-left"
+        title="Click to change target branch"
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-popover shadow-md">
+          <div className="p-1.5">
+            <Input
+              ref={inputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") onOpenChange(false);
+                if (e.key === "Enter" && filtered.length > 0) {
+                  onSelect(filtered[0]);
+                }
+              }}
+              placeholder="Search branches..."
+              className="h-7 text-sm font-mono px-2 py-0"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto p-1">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-2 py-1.5">No branches found</p>
+            ) : (
+              filtered.map((branch) => (
+                <button
+                  key={branch}
+                  onClick={() => onSelect(branch)}
+                  className={`w-full text-left text-sm font-mono px-2 py-1.5 rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors truncate ${
+                    branch === value ? "bg-accent/50 text-accent-foreground" : ""
+                  }`}
+                >
+                  {branch}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

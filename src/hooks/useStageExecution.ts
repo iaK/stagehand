@@ -1,8 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { spawnClaude, killProcess } from "../lib/claude";
+import { useGitHubStore } from "../stores/githubStore";
+import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
   hasUncommittedChanges,
@@ -19,6 +20,7 @@ import {
   gitPull,
   gitMergeAbort,
   gitPushCurrentBranch,
+  gitDeleteBranch,
 } from "../lib/git";
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -77,11 +79,9 @@ export function useStageExecution() {
 
             await gitWorktreeAdd(activeProject.path, worktreePath, branchName, !exists);
 
-            await updateTask(activeProject.id, task.id, {
-              branch_name: branchName,
-              worktree_path: worktreePath,
-            });
-            // Update local task reference
+            // Update local task reference — defer the DB/store update to
+            // batch with the status: "in_progress" write below so we only
+            // trigger one listTasks reload instead of two.
             task = { ...task, branch_name: branchName, worktree_path: worktreePath };
           }
         } catch (err) {
@@ -212,7 +212,23 @@ export function useStageExecution() {
         };
 
         await repo.createStageExecution(activeProject.id, execution);
-        await updateTask(activeProject.id, task.id, { status: "in_progress" });
+        // Batch worktree fields (if set during this run) with the status
+        // update so we only trigger a single listTasks reload.
+        await updateTask(activeProject.id, task.id, {
+          status: "in_progress",
+          ...(task.branch_name ? { branch_name: task.branch_name } : {}),
+          ...(task.worktree_path ? { worktree_path: task.worktree_path } : {}),
+        });
+
+        // Add the new execution to the store immediately so that killCurrent
+        // and the health check can find it even before spawnClaude fires events,
+        // without triggering a full loadExecutions reload (which involves IPC
+        // calls and creates new object references that cascade re-renders).
+        {
+          const currentExecs = useTaskStore.getState().executions;
+          const fullExecution = { ...execution, completed_at: null } as StageExecution;
+          useTaskStore.setState({ executions: [...currentExecs, fullExecution] });
+        }
 
         // Build allowed tools
         let allowedTools: string[] | undefined;
@@ -475,6 +491,9 @@ export function useStageExecution() {
     [activeProject, loadExecutions],
   );
 
+  const runStageRef = useRef(runStage);
+  runStageRef.current = runStage;
+
   const approveStage = useCallback(
     async (task: Task, stage: StageTemplate, decision?: string) => {
       if (!activeProject) return;
@@ -670,7 +689,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       await gitPush(workDir, task.branch_name);
 
       // Determine base branch
-      const baseBranch = await gitDefaultBranch(activeProject.path) ?? undefined;
+      const baseBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(activeProject.path) ?? undefined;
 
       // Create the PR
       const prUrl = await ghCreatePr(workDir, title, body, baseBranch);
@@ -694,12 +713,27 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         await updateTask(projectId, task.id, {
           current_stage_id: nextStage.id,
         });
+
+        // Auto-start next stage if it doesn't require user input
+        if (shouldAutoStartStage(nextStage)) {
+          const freshTask = useTaskStore.getState().activeTask;
+          if (freshTask && freshTask.id === task.id) {
+            // Fire-and-forget: don't await so the approval flow completes
+            // immediately and the UI can update to show the running state.
+            // Return early — runStage's "started" event handler will call
+            // loadExecutions, avoiding a race with the loadExecutions below.
+            runStageRef.current(freshTask, nextStage).catch((err) => {
+              console.error("Auto-start next stage failed:", err);
+            });
+            return;
+          }
+        }
       } else {
         // No more stages — handle completion based on strategy
         if (task.completion_strategy === "direct_merge" && task.branch_name) {
           const project = useProjectStore.getState().activeProject;
           if (project) {
-            const targetBranch = await gitDefaultBranch(project.path) ?? "main";
+            const targetBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(project.path) ?? "main";
             // Set pending merge — the UI will show a confirmation dialog
             useProcessStore.getState().setPendingMerge({
               taskId: task.id,
@@ -718,13 +752,21 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         });
         // Clean up worktree on completion (skip for 'none' strategy — branch is left for manual handling)
         if (task.worktree_path && task.completion_strategy !== "none") {
-          try {
-            const project = useProjectStore.getState().activeProject;
-            if (project) {
+          const project = useProjectStore.getState().activeProject;
+          if (project) {
+            try {
               await gitWorktreeRemove(project.path, task.worktree_path);
+            } catch {
+              // Non-critical — worktree cleanup is best-effort
             }
-          } catch {
-            // Non-critical — worktree cleanup is best-effort
+            // Delete the branch after worktree removal
+            if (task.branch_name) {
+              try {
+                await gitDeleteBranch(project.path, task.branch_name);
+              } catch {
+                // Non-critical — branch cleanup is best-effort
+              }
+            }
           }
         }
       }
@@ -837,6 +879,15 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         }
       }
 
+      // Delete the merged feature branch
+      if (task.branch_name) {
+        try {
+          await gitDeleteBranch(projectPath, task.branch_name);
+        } catch {
+          // Non-critical — branch cleanup is best-effort
+        }
+      }
+
       await loadExecutions(activeProject.id, task.id);
     },
     [activeProject, updateTask, loadExecutions],
@@ -866,36 +917,71 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     [activeProject, updateTask, loadExecutions],
   );
 
+  /** Mark all "running" executions for this stage as failed (queries DB directly). */
+  const failStaleExecutions = useCallback(async (projectId: string, taskId: string, stageId: string) => {
+    const execs = await repo.listStageExecutions(projectId, taskId);
+    for (const exec of execs) {
+      if (exec.stage_template_id === stageId && exec.status === "running") {
+        await repo.updateStageExecution(projectId, exec.id, {
+          status: "failed",
+          error_message: "Stopped by user",
+          completed_at: new Date().toISOString(),
+        });
+      }
+    }
+    await useTaskStore.getState().loadExecutions(projectId, taskId);
+  }, []);
+
   const killCurrent = useCallback(async (taskId: string, stageId: string) => {
     const sk = stageKey(taskId, stageId);
     const state = useProcessStore.getState().stages[sk];
-    if (!state?.isRunning) return;
 
-    // Mark as killed before sending the signal so finalizeExecution knows
+    if (!state?.isRunning) {
+      // No running process in the store — but there may be a stale "running"
+      // execution in the DB (e.g. process crashed without cleanup, app restarted).
+      // Try to find and kill any backend process, then mark as failed.
+      const project = useProjectStore.getState().activeProject;
+      if (!project) return;
+
+      const exec = useTaskStore.getState().executions.find(
+        (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+      );
+      if (!exec) return;
+
+      // Try to find and kill the backend process for this execution
+      try {
+        const detailed = await listProcessesDetailed();
+        const match = detailed.find((p) => p.stageExecutionId === exec.id);
+        if (match) {
+          await killProcess(match.processId);
+        }
+      } catch {
+        // Backend may be unreachable
+      }
+
+      // Mark the DB execution as failed
+      await repo.updateStageExecution(project.id, exec.id, {
+        status: "failed",
+        error_message: "Stopped by user",
+        completed_at: new Date().toISOString(),
+      });
+      useProcessStore.getState().setStopped(sk);
+      await useTaskStore.getState().loadExecutions(project.id, taskId);
+      return;
+    }
+
+    // === processStore has running state ===
     useProcessStore.getState().markKilled(sk);
 
     const processId = state.processId;
     const isPlaceholder = !processId || processId === "spawning" || processId === "fixing";
 
     if (isPlaceholder) {
-      // Process not yet registered with the backend.
-      // Stop the stage immediately so the UI transitions to the failed/retry state.
-      // The "started" event handler will kill the real process when it arrives.
       useProcessStore.getState().setStopped(sk);
-
       const project = useProjectStore.getState().activeProject;
       if (project) {
-        const exec = useTaskStore.getState().executions.find(
-          (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
-        );
-        if (exec) {
-          await repo.updateStageExecution(project.id, exec.id, {
-            status: "failed",
-            error_message: "Stopped by user",
-            completed_at: new Date().toISOString(),
-          });
-          await useTaskStore.getState().loadExecutions(project.id, taskId);
-        }
+        // Query DB directly — the execution may not be in the store yet
+        await failStaleExecutions(project.id, taskId, stageId);
       }
       return;
     }
@@ -905,7 +991,20 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     } catch {
       // Process may have already exited
     }
-  }, []);
+
+    // Fallback: if the process doesn't send a "completed" event within 3s,
+    // force cleanup so the user isn't stuck forever.
+    setTimeout(async () => {
+      const currentState = useProcessStore.getState().stages[sk];
+      if (currentState?.isRunning && currentState?.killed) {
+        useProcessStore.getState().setStopped(sk);
+        const project = useProjectStore.getState().activeProject;
+        if (project) {
+          await failStaleExecutions(project.id, taskId, stageId);
+        }
+      }
+    }, 3000);
+  }, [failStaleExecutions]);
 
   return { runStage, approveStage, advanceFromStage, redoStage, killCurrent, performDirectMerge, skipMerge };
 }
@@ -1172,4 +1271,9 @@ export function validateGate(
     default:
       return true;
   }
+}
+
+/** Determine whether a stage should be auto-started after the previous stage completes. */
+export function shouldAutoStartStage(stage: StageTemplate): boolean {
+  return stage.input_source !== "user" && stage.input_source !== "both";
 }

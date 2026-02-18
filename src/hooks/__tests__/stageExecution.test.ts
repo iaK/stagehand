@@ -6,6 +6,7 @@ import {
   validateGate,
   formatSelectedApproach,
   extractImplementationSummary,
+  shouldAutoStartStage,
 } from "../useStageExecution";
 import { makeStageTemplate, makeStageExecution } from "../../test/fixtures";
 import type { GateRule } from "../../lib/types";
@@ -383,5 +384,24 @@ This is the final paragraph which should be the fallback summary content for the
 Updated the login form validation. Added error messages. Improved UX.`;
     const result = extractImplementationSummary(raw);
     expect(result).toContain("Updated the login form validation.");
+  });
+});
+
+// ─── shouldAutoStartStage ───────────────────────────────────────────────────
+
+describe("shouldAutoStartStage", () => {
+  it("returns true for stages with input_source 'previous_stage'", () => {
+    const stage = makeStageTemplate({ input_source: "previous_stage" });
+    expect(shouldAutoStartStage(stage)).toBe(true);
+  });
+
+  it("returns false for stages with input_source 'user'", () => {
+    const stage = makeStageTemplate({ input_source: "user" });
+    expect(shouldAutoStartStage(stage)).toBe(false);
+  });
+
+  it("returns false for stages with input_source 'both'", () => {
+    const stage = makeStageTemplate({ input_source: "both" });
+    expect(shouldAutoStartStage(stage)).toBe(false);
   });
 });

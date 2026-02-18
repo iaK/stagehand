@@ -329,7 +329,7 @@ export function StageView({ stage }: StageViewProps) {
   }
 
   const showInitialForm =
-    isCurrentStage && (stageStatus === "pending" || !latestExecution);
+    isCurrentStage && !isRunning && (stageStatus === "pending" || !latestExecution);
 
   return (
     <div className="p-6 max-w-4xl">
@@ -500,7 +500,7 @@ export function StageView({ stage }: StageViewProps) {
       )}
 
       {/* RUNNING / AWAITING: live timeline */}
-      {latestExecution && !isApproved && !showInitialForm && (
+      {(latestExecution || isRunning) && !isApproved && !showInitialForm && (
         <div className="relative mb-6">
           {/* Vertical line for the whole timeline */}
           <div className="absolute left-3 top-3 bottom-3 w-px bg-border" />
@@ -511,7 +511,7 @@ export function StageView({ stage }: StageViewProps) {
           )}
 
           {/* Current round: user input */}
-          {latestExecution.user_input && (
+          {latestExecution?.user_input && (
             stage.input_source === "previous_stage" ? (
               <CollapsibleInputBubble
                 text={latestExecution.user_input}
@@ -530,7 +530,7 @@ export function StageView({ stage }: StageViewProps) {
           )}
 
           {/* Current round: RUNNING -- live stream */}
-          {stageStatus === "running" && (
+          {(stageStatus === "running" || isRunning) && (
             <LiveStreamBubble
               streamLines={streamOutput}
               label={`${stage.name} working...`}
@@ -540,7 +540,7 @@ export function StageView({ stage }: StageViewProps) {
           )}
 
           {/* Current round: DONE -- interactive output */}
-          {stageStatus === "awaiting_user" && (
+          {stageStatus === "awaiting_user" && !isRunning && latestExecution && (
             <div className="pl-9">
               {latestExecution.thinking_output && (
                 <div className="mb-3 -ml-9">
@@ -604,7 +604,7 @@ export function StageView({ stage }: StageViewProps) {
           )}
 
           {/* Current round: FAILED */}
-          {stageStatus === "failed" && (
+          {stageStatus === "failed" && !isRunning && latestExecution && (
             <div className="pl-9">
               {latestExecution.error_message && (
                 <Alert variant="destructive">
