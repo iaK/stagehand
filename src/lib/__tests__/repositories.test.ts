@@ -30,6 +30,7 @@ import {
   upsertPrReviewFix,
   updatePrReviewFix,
   getApprovedStageSummaries,
+  getProjectTaskSummary,
 } from "../repositories";
 import { makeStageTemplate, makeStageExecution } from "../../test/fixtures";
 
@@ -490,5 +491,31 @@ describe("getApprovedStageSummaries", () => {
     getProjectMock("p1").select.mockResolvedValueOnce(rows);
     const result = await getApprovedStageSummaries("p1", "t1");
     expect(result).toEqual(rows);
+  });
+});
+
+// ─── Project Task Summary ─────────────────────────────────────────────────
+
+describe("getProjectTaskSummary", () => {
+  it("returns task statuses and execution statuses", async () => {
+    const db = getProjectMock("p1");
+    db.select
+      .mockResolvedValueOnce([{ status: "pending" }, { status: "completed" }])
+      .mockResolvedValueOnce([{ status: "running" }]);
+
+    const result = await getProjectTaskSummary("p1");
+    expect(result.taskStatuses).toEqual(["pending", "completed"]);
+    expect(result.execStatuses).toEqual(["running"]);
+  });
+
+  it("returns empty arrays when no tasks exist", async () => {
+    const db = getProjectMock("p1");
+    db.select
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await getProjectTaskSummary("p1");
+    expect(result.taskStatuses).toEqual([]);
+    expect(result.execStatuses).toEqual([]);
   });
 });

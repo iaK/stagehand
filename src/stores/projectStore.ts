@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Project } from "../lib/types";
 import * as repo from "../lib/repositories";
+import { aggregateProjectDotClass } from "../lib/taskStatus";
 import { scanRepository } from "../lib/repoScanner";
 import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
 
@@ -10,8 +11,10 @@ interface ProjectStore {
   activeProject: Project | null;
   loading: boolean;
   showArchived: boolean;
+  projectStatuses: Record<string, string>;
   loadProjects: () => Promise<void>;
   loadArchivedProjects: () => Promise<void>;
+  loadProjectStatuses: () => Promise<void>;
   setActiveProject: (project: Project | null) => void;
   setShowArchived: (show: boolean) => void;
   addProject: (name: string, path: string) => Promise<Project>;
@@ -26,6 +29,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   activeProject: null,
   loading: false,
   showArchived: false,
+  projectStatuses: {},
 
   loadProjects: async () => {
     set({ loading: true });
@@ -43,6 +47,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loadArchivedProjects: async () => {
     const archivedProjects = await repo.listArchivedProjects();
     set({ archivedProjects });
+  },
+
+  // Note: opens a separate SQLite DB per project (N+1). Acceptable for typical
+  // usage (few projects) but may lag with 20+ projects.
+  loadProjectStatuses: async () => {
+    const projects = get().projects;
+    const results = await Promise.allSettled(
+      projects.map(async (p) => {
+        const summary = await repo.getProjectTaskSummary(p.id);
+        return [p.id, aggregateProjectDotClass(summary.taskStatuses, summary.execStatuses)] as const;
+      }),
+    );
+    const entries = results.map((r, i) =>
+      r.status === "fulfilled" ? r.value : [projects[i].id, "bg-zinc-400"] as const,
+    );
+    set({ projectStatuses: Object.fromEntries(entries) });
   },
 
   setActiveProject: (project) => set({ activeProject: project }),
