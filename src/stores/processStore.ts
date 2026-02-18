@@ -41,6 +41,7 @@ interface ProcessStore {
   pendingCommit: PendingCommit | null;
   pendingMerge: PendingMerge | null;
   committedStages: Record<string, string>; // stageId → short commit hash
+  commitMessageLoading: boolean;
 
   appendOutput: (stageId: string, line: string) => void;
   clearOutput: (stageId: string) => void;
@@ -53,6 +54,7 @@ interface ProcessStore {
   setCommitted: (stageId: string, shortHash: string) => void;
   setPendingMerge: (merge: PendingMerge) => void;
   clearPendingMerge: () => void;
+  setCommitMessageLoading: (loading: boolean) => void;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
@@ -65,6 +67,7 @@ export const useProcessStore = create<ProcessStore>((set) => ({
   pendingCommit: null,
   pendingMerge: null,
   committedStages: {},
+  commitMessageLoading: false,
 
   appendOutput: (stageId, line) =>
     set((state) => {
@@ -151,4 +154,6 @@ export const useProcessStore = create<ProcessStore>((set) => ({
   setPendingMerge: (merge) => set({ pendingMerge: merge }),
 
   clearPendingMerge: () => set({ pendingMerge: null }),
+
+  setCommitMessageLoading: (loading) => set({ commitMessageLoading: loading }),
 }));

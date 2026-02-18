@@ -473,6 +473,15 @@ export function useStageExecution() {
           ...(usageData ?? {}),
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
+
+        // Fire-and-forget: generate commit message in background for commit-eligible stages
+        const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
+        if (commitEligibleStages.includes(stage.name)) {
+          const task = useTaskStore.getState().activeTask;
+          if (task && task.id === taskId) {
+            generatePendingCommitRef.current(task, stage).catch(() => {});
+          }
+        }
       }
 
       // Only update the store if this task is still active — prevents state bleeding into other tasks
@@ -555,16 +564,6 @@ export function useStageExecution() {
         stage_summary: stageSummary,
       });
 
-      // For commit-eligible stages, generate pending commit and wait for user decision
-      // (advanceFromStage will be called after the user commits or skips)
-      const commitEligibleStages = ["Implementation", "Refinement", "Security Review"];
-      if (commitEligibleStages.includes(stage.name)) {
-        await generatePendingCommit(task, stage);
-        await loadExecutions(activeProject.id, task.id);
-        return;
-      }
-
-      // Non-commit stages: advance immediately
       await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
@@ -574,35 +573,34 @@ export function useStageExecution() {
     async (task: Task, stage: StageTemplate) => {
       if (!activeProject) return;
 
-      const workDir = getTaskWorkingDir(task, activeProject.path);
+      useProcessStore.getState().setCommitMessageLoading(true);
 
-      const gitRepo = await isGitRepo(activeProject.path);
-      if (!gitRepo) {
-        // Not a git repo — skip commit, advance directly
-        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
-        return;
-      }
-
-      const hasChanges = await hasUncommittedChanges(workDir);
-      if (!hasChanges) {
-        // No changes to commit — advance directly
-        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-        await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
-        return;
-      }
-
-      const diffStat = await gitDiffStat(workDir).catch(() => "");
-
-      // Generate commit message using Claude (lightweight one-shot)
-      let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
       try {
-        const commitRules = await repo.getProjectSetting(
-          activeProject.id,
-          "github_commit_rules",
-        );
+        const workDir = getTaskWorkingDir(task, activeProject.path);
 
-        const prompt = `Generate a concise git commit message for the following changes.
+        const gitRepo = await isGitRepo(activeProject.path);
+        if (!gitRepo) {
+          // Not a git repo — no commit to show
+          return;
+        }
+
+        const hasChanges = await hasUncommittedChanges(workDir);
+        if (!hasChanges) {
+          // No changes to commit
+          return;
+        }
+
+        const diffStat = await gitDiffStat(workDir).catch(() => "");
+
+        // Generate commit message using Claude (lightweight one-shot)
+        let commitMessage = `${stage.name.toLowerCase()}: ${task.title}`;
+        try {
+          const commitRules = await repo.getProjectSetting(
+            activeProject.id,
+            "github_commit_rules",
+          );
+
+          const prompt = `Generate a concise git commit message for the following changes.
 
 Task: ${task.title}
 Stage: ${stage.name}
@@ -614,46 +612,52 @@ ${commitRules ? `Repository commit conventions:\n${commitRules}\n\n` : ""}
 Return ONLY the commit message text, nothing else. No quotes, no markdown, no explanation.
 Keep it under 72 characters for the first line. Add a blank line and body if needed.`;
 
-        let resultText = "";
-        await new Promise<void>((resolve) => {
-          spawnClaude(
-            {
-              prompt,
-              workingDirectory: workDir,
-              maxTurns: 1,
-              allowedTools: [],
-              outputFormat: "text",
-              noSessionPersistence: true,
-            },
-            (event: ClaudeStreamEvent) => {
-              if (event.type === "stdout_line") {
-                resultText += event.line + "\n";
-              } else if (event.type === "completed" || event.type === "error") {
-                resolve();
-              }
-            },
-          ).catch(() => resolve());
-        });
+          let resultText = "";
+          await new Promise<void>((resolve) => {
+            spawnClaude(
+              {
+                prompt,
+                workingDirectory: workDir,
+                maxTurns: 1,
+                allowedTools: [],
+                outputFormat: "text",
+                noSessionPersistence: true,
+              },
+              (event: ClaudeStreamEvent) => {
+                if (event.type === "stdout_line") {
+                  resultText += event.line + "\n";
+                } else if (event.type === "completed" || event.type === "error") {
+                  resolve();
+                }
+              },
+            ).catch(() => resolve());
+          });
 
-        const cleaned = resultText.trim();
-        if (cleaned.length > 0) {
-          commitMessage = cleaned;
+          const cleaned = resultText.trim();
+          if (cleaned.length > 0) {
+            commitMessage = cleaned;
+          }
+        } catch {
+          // Use fallback message
         }
-      } catch {
-        // Use fallback message
-      }
 
-      // Set pending commit — StageView will show the approval dialog
-      useProcessStore.getState().setPendingCommit({
-        stageId: stage.id,
-        stageName: stage.name,
-        message: commitMessage,
-        diffStat,
-      });
-      sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success", { projectId: activeProject.id, taskId: task.id });
+        // Set pending commit — StageView will show the commit dialog inline
+        useProcessStore.getState().setPendingCommit({
+          stageId: stage.id,
+          stageName: stage.name,
+          message: commitMessage,
+          diffStat,
+        });
+        sendNotification("Ready to commit", `${stage.name} has changes to commit`, "success", { projectId: activeProject.id, taskId: task.id });
+      } finally {
+        useProcessStore.getState().setCommitMessageLoading(false);
+      }
     },
     [activeProject],
   );
+
+  const generatePendingCommitRef = useRef(generatePendingCommit);
+  generatePendingCommitRef.current = generatePendingCommit;
 
   const createPullRequest = useCallback(
     async (task: Task, decision?: string) => {
