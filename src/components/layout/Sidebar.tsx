@@ -17,13 +17,11 @@ import { sendNotification } from "../../lib/notifications";
 import type { Project, Task } from "../../lib/types";
 
 export function Sidebar() {
-  const {
-    projects,
-    activeProject,
-    loadProjects,
-    setActiveProject,
-    archiveProject,
-  } = useProjectStore();
+  const projects = useProjectStore((s) => s.projects);
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const archiveProject = useProjectStore((s) => s.archiveProject);
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
