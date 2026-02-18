@@ -57,12 +57,17 @@ export function useProcessHealthCheck(stageId: string | null) {
           return;
         }
 
-        // If we don't have a processId in the store (e.g., after restart)
-        // but the DB still says running, and backend has no processes,
-        // this case is handled by loadExecutions stale detection.
-        if (!processId && running.length === 0) {
-          await loadExecutions(projectId, taskId);
-          return;
+        // No process tracked in the store and no backend processes —
+        // the execution is stale (e.g. app restart, process crashed without cleanup).
+        // Mark it as failed directly rather than relying solely on loadExecutions
+        // stale detection (which skips cleanup when other processes are running).
+        if (!processId || !stageState?.isRunning) {
+          if (!running.includes(processId ?? "")) {
+            await markStageCrashed(projectId, stageId, taskId, "Process crashed or was interrupted");
+            useProcessStore.getState().setStopped(sk);
+            await loadExecutions(projectId, taskId);
+            return;
+          }
         }
       } catch {
         // Backend unreachable — skip this check

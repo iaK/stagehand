@@ -12,6 +12,7 @@ interface GitHubStore {
 
   loadForProject: (projectId: string, projectPath: string) => Promise<void>;
   refresh: (projectId: string, projectPath: string) => Promise<void>;
+  setDefaultBranch: (branch: string, projectId?: string) => Promise<void>;
 }
 
 async function detectGitRemote(projectId: string, projectPath: string) {
@@ -63,6 +64,14 @@ export const useGitHubStore = create<GitHubStore>((set, get) => ({
         loading: false,
         error: e instanceof Error ? e.message : "Failed to detect git remote",
       });
+    }
+  },
+
+  setDefaultBranch: async (branch: string, explicitProjectId?: string) => {
+    const projectId = explicitProjectId ?? get().projectId;
+    set({ defaultBranch: branch });
+    if (projectId) {
+      await repo.setProjectSetting(projectId, "github_default_branch", branch);
     }
   },
 

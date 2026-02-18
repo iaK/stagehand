@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
+import { useGitHubStore } from "../stores/githubStore";
 import { spawnClaude, killProcess } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
@@ -213,6 +214,12 @@ export function useStageExecution() {
 
         await repo.createStageExecution(activeProject.id, execution);
         await updateTask(activeProject.id, task.id, { status: "in_progress" });
+
+        // Load the execution into the store immediately so that killCurrent
+        // and the health check can find it even before spawnClaude fires events.
+        if (useTaskStore.getState().activeTask?.id === task.id) {
+          loadExecutions(activeProject.id, task.id).catch(() => {});
+        }
 
         // Build allowed tools
         let allowedTools: string[] | undefined;
@@ -670,7 +677,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
       await gitPush(workDir, task.branch_name);
 
       // Determine base branch
-      const baseBranch = await gitDefaultBranch(activeProject.path) ?? undefined;
+      const baseBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(activeProject.path) ?? undefined;
 
       // Create the PR
       const prUrl = await ghCreatePr(workDir, title, body, baseBranch);
@@ -699,7 +706,7 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
         if (task.completion_strategy === "direct_merge" && task.branch_name) {
           const project = useProjectStore.getState().activeProject;
           if (project) {
-            const targetBranch = await gitDefaultBranch(project.path) ?? "main";
+            const targetBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(project.path) ?? "main";
             // Set pending merge — the UI will show a confirmation dialog
             useProcessStore.getState().setPendingMerge({
               taskId: task.id,
@@ -866,10 +873,35 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     [activeProject, updateTask, loadExecutions],
   );
 
+  /** Mark all "running" executions for this stage as failed (queries DB directly). */
+  const failStaleExecutions = useCallback(async (projectId: string, taskId: string, stageId: string) => {
+    const execs = await repo.listStageExecutions(projectId, taskId);
+    for (const exec of execs) {
+      if (exec.stage_template_id === stageId && exec.status === "running") {
+        await repo.updateStageExecution(projectId, exec.id, {
+          status: "failed",
+          error_message: "Stopped by user",
+          completed_at: new Date().toISOString(),
+        });
+      }
+    }
+    await useTaskStore.getState().loadExecutions(projectId, taskId);
+  }, []);
+
   const killCurrent = useCallback(async (taskId: string, stageId: string) => {
     const sk = stageKey(taskId, stageId);
     const state = useProcessStore.getState().stages[sk];
-    if (!state?.isRunning) return;
+
+    if (!state?.isRunning) {
+      // No running process in the store — but there may be a stale "running"
+      // execution in the DB (e.g. process crashed without cleanup, app restarted).
+      // Mark it as failed so the UI can recover.
+      const project = useProjectStore.getState().activeProject;
+      if (project) {
+        await failStaleExecutions(project.id, taskId, stageId);
+      }
+      return;
+    }
 
     // Mark as killed before sending the signal so finalizeExecution knows
     useProcessStore.getState().markKilled(sk);
@@ -885,17 +917,8 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
 
       const project = useProjectStore.getState().activeProject;
       if (project) {
-        const exec = useTaskStore.getState().executions.find(
-          (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
-        );
-        if (exec) {
-          await repo.updateStageExecution(project.id, exec.id, {
-            status: "failed",
-            error_message: "Stopped by user",
-            completed_at: new Date().toISOString(),
-          });
-          await useTaskStore.getState().loadExecutions(project.id, taskId);
-        }
+        // Query DB directly — the execution may not be in the store yet
+        await failStaleExecutions(project.id, taskId, stageId);
       }
       return;
     }
@@ -905,7 +928,20 @@ Keep it under 72 characters for the first line. Add a blank line and body if nee
     } catch {
       // Process may have already exited
     }
-  }, []);
+
+    // Fallback: if the process doesn't send a "completed" event within 3s,
+    // force cleanup so the user isn't stuck forever.
+    setTimeout(async () => {
+      const currentState = useProcessStore.getState().stages[sk];
+      if (currentState?.isRunning && currentState?.killed) {
+        useProcessStore.getState().setStopped(sk);
+        const project = useProjectStore.getState().activeProject;
+        if (project) {
+          await failStaleExecutions(project.id, taskId, stageId);
+        }
+      }
+    }, 3000);
+  }, [failStaleExecutions]);
 
   return { runStage, approveStage, advanceFromStage, redoStage, killCurrent, performDirectMerge, skipMerge };
 }

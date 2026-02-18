@@ -53,6 +53,25 @@ export async function gitCurrentBranch(workingDir: string): Promise<string> {
   return runGit(workingDir, "branch", "--show-current");
 }
 
+export async function gitListBranches(workingDir: string): Promise<string[]> {
+  try {
+    const local = await runGit(workingDir, "branch", "--format=%(refname:short)");
+    const remote = await runGit(workingDir, "branch", "-r", "--format=%(refname:short)");
+    const seen = new Set<string>();
+    const branches: string[] = [];
+    for (const raw of [...local.split("\n"), ...remote.split("\n")]) {
+      const name = raw.trim().replace(/^origin\//, "");
+      if (name && name !== "HEAD" && !seen.has(name)) {
+        seen.add(name);
+        branches.push(name);
+      }
+    }
+    return branches.sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function gitBranchExists(workingDir: string, name: string): Promise<boolean> {
   try {
     const result = await runGit(workingDir, "branch", "--list", name);
@@ -117,17 +136,46 @@ export async function gitLog(workingDir: string, maxCount: number = 50): Promise
       `--max-count=${maxCount}`,
       `--format=%H%n%s%n%aI%n%an%n${delimiter}`,
     );
-    return raw
-      .trim()
-      .split(`${delimiter}\n`)
-      .filter((block) => block.trim())
-      .map((block) => {
-        const [hash, message, date, author] = block.trim().split("\n");
-        return { hash, message, date, author };
-      });
+    return parseGitLogOutput(raw, delimiter);
   } catch {
     return [];
   }
+}
+
+/**
+ * Returns only the commits on the current branch that are not on `baseBranch`.
+ * Uses `git log baseBranch..HEAD`.
+ */
+export async function gitLogBranchDiff(
+  workingDir: string,
+  baseBranch: string,
+  maxCount: number = 200,
+): Promise<GitCommit[]> {
+  try {
+    const delimiter = "---END-COMMIT---";
+    const raw = await runGit(
+      workingDir,
+      "log",
+      `${baseBranch}..HEAD`,
+      `--max-count=${maxCount}`,
+      `--format=%H%n%s%n%aI%n%an%n${delimiter}`,
+    );
+    return parseGitLogOutput(raw, delimiter);
+  } catch {
+    // Fallback to regular log if the base branch doesn't exist locally
+    return gitLog(workingDir, maxCount);
+  }
+}
+
+function parseGitLogOutput(raw: string, delimiter: string): GitCommit[] {
+  return raw
+    .trim()
+    .split(`${delimiter}\n`)
+    .filter((block) => block.trim())
+    .map((block) => {
+      const [hash, message, date, author] = block.trim().split("\n");
+      return { hash, message, date, author };
+    });
 }
 
 export async function gitDefaultBranch(workingDir: string): Promise<string | null> {
