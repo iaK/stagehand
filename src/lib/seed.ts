@@ -353,13 +353,13 @@ Analyze the plan against each of these:
 
 Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
 
-If the plan is solid and you find no issues, return an empty findings array with a summary saying the plan looks good.
+If the plan is solid and you find no issues, return an empty findings array. IMPORTANT: In this case, set the "summary" field to the FULL original plan text verbatim — this is critical because the summary is passed as input to the next stage, so it must contain the complete plan, not just an assessment.
 
 Do NOT modify the plan. Only identify and report concerns.
 
 Respond with a JSON object:
 {
-  "summary": "Brief overall assessment of the plan's quality and readiness",
+  "summary": "The full original plan text verbatim when no issues are found, OR a brief assessment when findings exist",
   "findings": [
     {
       "id": "c1",
