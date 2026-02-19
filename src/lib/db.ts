@@ -542,39 +542,39 @@ async function migrateBehaviorFlags(db: Database): Promise<void> {
 
   const now = new Date().toISOString();
 
-  // Implementation: commits_changes, commit_prefix = "feat"
+  // Implementation (sort_order 3): commits_changes, commit_prefix = "feat"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Implementation'`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Implementation' AND sort_order = 3`,
     [now],
   );
 
-  // Refinement: commits_changes, commit_prefix = "fix"
+  // Refinement (sort_order 4): commits_changes, commit_prefix = "fix"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Refinement'`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Refinement' AND sort_order = 4`,
     [now],
   );
 
-  // Security Review: commits_changes, commit_prefix = "fix"
+  // Security Review (sort_order 5): commits_changes, commit_prefix = "fix"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Security Review'`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Security Review' AND sort_order = 5`,
     [now],
   );
 
-  // PR Preparation: creates_pr
+  // PR Preparation (sort_order 6): creates_pr
   await db.execute(
-    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation'`,
+    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation' AND sort_order = 6`,
     [now],
   );
 
-  // Research: triggers_stage_selection
+  // Research (sort_order 0): triggers_stage_selection
   await db.execute(
-    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research'`,
+    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research' AND sort_order = 0`,
     [now],
   );
 
-  // PR Review: is_terminal
+  // PR Review (sort_order 7): is_terminal
   await db.execute(
-    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'PR Review'`,
+    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'PR Review' AND sort_order = 7`,
     [now],
   );
 

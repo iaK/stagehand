@@ -10,23 +10,15 @@ describe("renderPrompt", () => {
 
   it("substitutes multiple variables", () => {
     const result = renderPrompt(
-      "Task: {{task_description}}\nInput: {{user_input}}\nPrev: {{previous_output}}",
+      "Task: {{task_description}}\nInput: {{user_input}}",
       {
         taskDescription: "Build feature",
         userInput: "some input",
-        previousOutput: "some output",
       },
     );
     expect(result).toBe(
-      "Task: Build feature\nInput: some input\nPrev: some output",
+      "Task: Build feature\nInput: some input",
     );
-  });
-
-  it("uses default for missing previous_output", () => {
-    const result = renderPrompt("Prev: {{previous_output}}", {
-      taskDescription: "task",
-    });
-    expect(result).toBe("Prev: (no previous output)");
   });
 
   it("uses empty string for missing user_input", () => {
@@ -71,17 +63,6 @@ describe("renderPrompt", () => {
     expect(withoutInput).toBe("no");
   });
 
-  it("handles nested variables inside conditional blocks", () => {
-    const result = renderPrompt(
-      "{{#if previous_output}}Context: {{previous_output}}{{/if}}",
-      {
-        taskDescription: "task",
-        previousOutput: "prior research",
-      },
-    );
-    expect(result).toBe("Context: prior research");
-  });
-
   it("trims the result", () => {
     const result = renderPrompt("  hello  ", { taskDescription: "t" });
     expect(result).toBe("hello");
@@ -105,80 +86,15 @@ describe("renderPrompt", () => {
     expect(result).toBe("Redo: previous output here");
   });
 
-  it("handles stage_summaries variable", () => {
+  it("substitutes {{user_decision}}", () => {
     const result = renderPrompt(
-      "{{#if stage_summaries}}## Summaries\n{{stage_summaries}}{{/if}}",
+      "Decision: {{user_decision}}",
       {
         taskDescription: "task",
-        stageSummaries: "### Research\nFound the bug.",
+        userDecision: "Approach A selected",
       },
     );
-    expect(result).toBe("## Summaries\n### Research\nFound the bug.");
-  });
-
-  it("substitutes {{stages.StageName.output}}", () => {
-    const result = renderPrompt(
-      "Research: {{stages.Research.output}}",
-      {
-        taskDescription: "task",
-        stageOutputs: {
-          Research: { output: "Found the bug in auth.", summary: "Auth bug found." },
-        },
-      },
-    );
-    expect(result).toBe("Research: Found the bug in auth.");
-  });
-
-  it("substitutes {{stages.StageName.summary}}", () => {
-    const result = renderPrompt(
-      "Summary: {{stages.Research.summary}}",
-      {
-        taskDescription: "task",
-        stageOutputs: {
-          Research: { output: "Full output", summary: "Short summary" },
-        },
-      },
-    );
-    expect(result).toBe("Summary: Short summary");
-  });
-
-  it("handles {{#if stages.X.output}} conditional", () => {
-    const withData = renderPrompt(
-      "{{#if stages.Research.output}}Has research: {{stages.Research.output}}{{else}}No research{{/if}}",
-      {
-        taskDescription: "task",
-        stageOutputs: {
-          Research: { output: "Found bug", summary: "" },
-        },
-      },
-    );
-    expect(withData).toBe("Has research: Found bug");
-
-    const withoutData = renderPrompt(
-      "{{#if stages.Research.output}}Has research{{else}}No research{{/if}}",
-      { taskDescription: "task" },
-    );
-    expect(withoutData).toBe("No research");
-  });
-
-  it("returns empty for missing stage in {{stages.X.output}}", () => {
-    const result = renderPrompt(
-      "Output: {{stages.Missing.output}}",
-      { taskDescription: "task" },
-    );
-    expect(result).toBe("Output:");
-  });
-
-  it("substitutes {{all_stage_outputs}}", () => {
-    const result = renderPrompt(
-      "All: {{all_stage_outputs}}",
-      {
-        taskDescription: "task",
-        allStageOutputs: "## Research\nBug found\n\n---\n\n## Planning\nStep 1",
-      },
-    );
-    expect(result).toContain("## Research");
-    expect(result).toContain("## Planning");
+    expect(result).toBe("Decision: Approach A selected");
   });
 
   it("substitutes {{available_stages}}", () => {
@@ -191,5 +107,27 @@ describe("renderPrompt", () => {
     );
     expect(result).toContain("Implementation");
     expect(result).toContain("Refinement");
+  });
+
+  it("strips unresolved variable placeholders from old templates", () => {
+    const result = renderPrompt(
+      "Task: {{task_description}}\n\nPlan:\n{{previous_output}}\n\nSummaries:\n{{stage_summaries}}",
+      { taskDescription: "Fix bug" },
+    );
+    expect(result).toBe("Task: Fix bug\n\nPlan:\n\n\nSummaries:");
+  });
+
+  it("handles {{#if user_decision}} conditional", () => {
+    const with_ = renderPrompt(
+      "{{#if user_decision}}Selected: {{user_decision}}{{else}}No selection{{/if}}",
+      { taskDescription: "task", userDecision: "Option B" },
+    );
+    expect(with_).toBe("Selected: Option B");
+
+    const without = renderPrompt(
+      "{{#if user_decision}}Selected{{else}}No selection{{/if}}",
+      { taskDescription: "task" },
+    );
+    expect(without).toBe("No selection");
   });
 });

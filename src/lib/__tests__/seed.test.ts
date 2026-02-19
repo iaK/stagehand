@@ -4,8 +4,8 @@ describe("getDefaultStageTemplates", () => {
   const projectId = "test-project-id";
   const templates = getDefaultStageTemplates(projectId);
 
-  it("returns 11 stage templates", () => {
-    expect(templates).toHaveLength(11);
+  it("returns 10 stage templates", () => {
+    expect(templates).toHaveLength(10);
   });
 
   it("all templates have the correct project_id", () => {
@@ -14,9 +14,9 @@ describe("getDefaultStageTemplates", () => {
     }
   });
 
-  it("sort orders are 0 through 10", () => {
+  it("sort orders are 0 through 9", () => {
     const sortOrders = templates.map((t) => t.sort_order);
-    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("each template has the expected name", () => {
@@ -25,7 +25,6 @@ describe("getDefaultStageTemplates", () => {
       "Research",
       "High-Level Approaches",
       "Planning",
-      "Second Opinion",
       "Implementation",
       "Refinement",
       "Security Review",

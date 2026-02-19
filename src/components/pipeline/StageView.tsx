@@ -58,6 +58,7 @@ export function StageView({ stage }: StageViewProps) {
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
+  const [commitPrepTimedOut, setCommitPrepTimedOut] = useState(false);
 
   // Sync editable commit message when pending commit appears for this stage
   useEffect(() => {
@@ -146,6 +147,23 @@ export function StageView({ stage }: StageViewProps) {
       generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
     }
   }, [isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
+
+  // Timeout fallback: if commit preparation takes too long, let the user approve manually
+  useEffect(() => {
+    if (
+      isCurrentStage &&
+      stageStatus === "awaiting_user" &&
+      !isRunning &&
+      !pendingCommit?.stageId &&
+      !noChangesToCommit &&
+      !committedHash
+    ) {
+      setCommitPrepTimedOut(false);
+      const timer = setTimeout(() => setCommitPrepTimedOut(true), 5000);
+      return () => clearTimeout(timer);
+    }
+    setCommitPrepTimedOut(false);
+  }, [isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, committedHash]);
 
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
@@ -599,10 +617,22 @@ export function StageView({ stage }: StageViewProps) {
                     </Button>
                   ) : null
                 ) : !outputHasOwnActionButton ? (
-                  <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Preparing commit...
-                  </div>
+                  commitPrepTimedOut ? (
+                    <Button
+                      variant="success"
+                      onClick={() => handleApprove()}
+                      disabled={approving}
+                      className="mt-4"
+                    >
+                      {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {approving ? "Approving..." : "Approve & Continue"}
+                    </Button>
+                  ) : (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Preparing commit...
+                    </div>
+                  )
                 ) : null
               )}
 

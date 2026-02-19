@@ -129,10 +129,10 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
           className="mt-1 font-mono text-xs resize-none"
         />
         <p className="text-[10px] text-muted-foreground mt-1">
-          Variables: {"{{task_description}}"}, {"{{previous_output}}"},
-          {"{{user_input}}"}, {"{{user_decision}}"}, {"{{stage_summaries}}"},
-          {"{{stages.StageName.output}}"}, {"{{stages.StageName.summary}}"},
-          {"{{all_stage_outputs}}"}, {"{{available_stages}}"}
+          Variables: {"{{task_description}}"}, {"{{user_input}}"},
+          {"{{user_decision}}"}, {"{{prior_attempt_output}}"},
+          {"{{available_stages}}"}. Prior stage summaries are auto-injected
+          into the system prompt; use MCP tools for full outputs.
         </p>
       </div>
 
@@ -192,7 +192,6 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
   );
 }
 
-/** @deprecated Use SingleTemplateEditor via SettingsModal instead */
 export function StageTemplateEditorContent() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
@@ -215,7 +214,7 @@ export function StageTemplateEditorContent() {
         name: "New Stage",
         description: "",
         sort_order: maxOrder + 1,
-        prompt_template: "Task: {{task_description}}\n\n{{#if previous_output}}\nPrevious output:\n{{previous_output}}\n{{/if}}",
+        prompt_template: "Task: {{task_description}}\n\nReview the completed stages in your system prompt for context. Use the get_stage_output MCP tool to retrieve full details from any prior stage.",
         input_source: "previous_stage",
         output_format: "auto",
         output_schema: null,
