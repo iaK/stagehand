@@ -63,3 +63,32 @@ export function detectInteractionType(
 
   return "text";
 }
+
+/**
+ * Returns true when the given output format renders its own action button
+ * inside the output component (e.g. "Approve & Continue", "Apply Selected").
+ *
+ * `text` format and `findings` Phase 2 (non-JSON text summary) do NOT render
+ * their own button, so StageView must provide the fallback.
+ *
+ * This is the single source of truth — used by both StageView (to decide
+ * whether to show a fallback button) and potentially by StageOutput.
+ */
+export function formatHasOwnActionButton(
+  output: string,
+  formatHint?: OutputFormat,
+): boolean {
+  const effectiveFormat = detectInteractionType(output, formatHint);
+  if (effectiveFormat === "text") return false;
+  if (effectiveFormat === "findings") {
+    // Phase 2 findings (non-JSON) renders as plain text with no button
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed.findings && Array.isArray(parsed.findings)) return true;
+    } catch {
+      /* not JSON — Phase 2, no button */
+    }
+    return false;
+  }
+  return true;
+}

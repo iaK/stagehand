@@ -5,6 +5,7 @@ import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/pro
 import { useStageExecution, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
+import { formatHasOwnActionButton } from "../../lib/outputDetection";
 import { StageOutput } from "./StageOutput";
 import {
   StageTimeline,
@@ -118,6 +119,15 @@ export function StageView({ stage }: StageViewProps) {
   const isApproved = stageStatus === "approved";
   const needsUserInput = !!stage.requires_user_input;
 
+  // Determine whether the output component renders its own action button.
+  // If it does, StageView should NOT render a duplicate "Approve & Continue" button.
+  // Delegates to the shared utility in outputDetection.ts (single source of truth).
+  const outputHasOwnActionButton = useMemo(() => {
+    if (!latestExecution) return false;
+    const output = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
+    return formatHasOwnActionButton(output, stage.output_format);
+  }, [!!latestExecution, latestExecution?.parsed_output, latestExecution?.raw_output, stage.output_format]);
+
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
   const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
@@ -165,6 +175,10 @@ export function StageView({ stage }: StageViewProps) {
     if (!activeProject || !activeTask) return;
     setApproving(true);
     setStageError(null);
+    // Clear noChangesToCommit state if set (may have been set by generatePendingCommit)
+    if (noChangesToCommit) {
+      useProcessStore.getState().setNoChangesToCommit(null);
+    }
     try {
       await approveStage(activeTask, stage, decision);
       sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
@@ -571,24 +585,25 @@ export function StageView({ stage }: StageViewProps) {
                     </Button>
                   </div>
                 ) : noChangesToCommit ? (
-                  <Button
-                    variant="success"
-                    onClick={() => {
-                      useProcessStore.getState().setNoChangesToCommit(null);
-                      handleApprove();
-                    }}
-                    disabled={approving}
-                    className="mt-4"
-                  >
-                    {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {approving ? "Approving..." : "Approve & Continue"}
-                  </Button>
-                ) : (
+                  // Only show fallback approve button when the output component
+                  // doesn't render its own action button (e.g. text format, findings Phase 2)
+                  !outputHasOwnActionButton ? (
+                    <Button
+                      variant="success"
+                      onClick={() => handleApprove()}
+                      disabled={approving}
+                      className="mt-4"
+                    >
+                      {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {approving ? "Approving..." : "Approve & Continue"}
+                    </Button>
+                  ) : null
+                ) : !outputHasOwnActionButton ? (
                   <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Preparing commit...
                   </div>
-                )
+                ) : null
               )}
 
               {stageError && (
