@@ -314,10 +314,105 @@ Respond with a JSON object matching this structure:
     {
       id: crypto.randomUUID(),
       project_id: projectId,
+      name: "Second Opinion",
+      description:
+        "Critique the implementation plan — identify risks, gaps, and improvements for the developer to select, then revise the plan.",
+      sort_order: 3,
+      prompt_template: `{{#if prior_attempt_output}}You are revising an implementation plan based on the developer's selected concerns.
+
+Task: {{task_description}}
+
+Original plan:
+{{previous_output}}
+
+## Selected Concerns to Address
+
+The developer selected these concerns to address:
+
+{{prior_attempt_output}}
+
+Revise the plan to address ONLY these specific concerns. Do not make other changes. For each concern, explain what you changed and why.
+
+Output the revised plan as clear markdown.
+{{else}}You are an independent reviewer performing a critical analysis of an implementation plan. Your job is to find problems BEFORE implementation begins.
+
+Task: {{task_description}}
+
+Implementation plan to review:
+{{previous_output}}
+
+## Review Dimensions
+
+Analyze the plan against each of these:
+
+1. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
+2. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
+3. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
+4. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
+5. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
+
+Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
+
+If the plan is solid and you find no issues, return an empty findings array with a summary saying the plan looks good.
+
+Do NOT modify the plan. Only identify and report concerns.
+
+Respond with a JSON object:
+{
+  "summary": "Brief overall assessment of the plan's quality and readiness",
+  "findings": [
+    {
+      "id": "c1",
+      "title": "Short title of the concern",
+      "description": "Detailed description of the issue and what should change in the plan",
+      "severity": "critical|warning|info",
+      "category": "completeness|correctness|risk|simplicity|ordering",
+      "selected": true
+    }
+  ]
+}{{/if}}`,
+      input_source: "previous_stage",
+      output_format: "findings",
+      output_schema: JSON.stringify({
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                title: { type: "string" },
+                description: { type: "string" },
+                severity: {
+                  type: "string",
+                  enum: ["critical", "warning", "info"],
+                },
+                category: { type: "string" },
+                selected: { type: "boolean" },
+              },
+              required: ["id", "title", "description", "severity", "selected"],
+            },
+          },
+        },
+        required: ["summary", "findings"],
+      }),
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      requires_user_input: 0,
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
       name: "Implementation",
       description:
         "Execute the implementation plan — write code, create files, run commands.",
-      sort_order: 3,
+      sort_order: 4,
       prompt_template: `Implement the following plan. Write all necessary code, create files, and make changes as specified.
 
 Task: {{task_description}}
@@ -343,7 +438,7 @@ Follow the plan carefully. Write clean, well-structured code. Run tests if appli
       name: "Refinement",
       description:
         "Self-review the implementation: identify issues for the developer to select, then apply chosen fixes.",
-      sort_order: 4,
+      sort_order: 5,
       prompt_template: `{{#if prior_attempt_output}}You are applying selected refinements to an implementation.
 
 Task that was implemented:
@@ -439,7 +534,7 @@ Respond with a JSON object:
       name: "Security Review",
       description:
         "Analyze for security vulnerabilities, then apply selected fixes.",
-      sort_order: 5,
+      sort_order: 6,
       prompt_template: `{{#if prior_attempt_output}}You are applying selected security fixes to an implementation.
 
 Task: {{task_description}}
@@ -532,7 +627,7 @@ Respond with a JSON object:
       name: "Documentation",
       description:
         "Write or update documentation based on the changes made in this task.",
-      sort_order: 6,
+      sort_order: 7,
       prompt_template: `You are a senior technical writer documenting changes made during a development task.
 
 Task: {{task_description}}
@@ -583,7 +678,7 @@ Keep the documentation concise and developer-focused. Do not include implementat
       name: "PR Preparation",
       description:
         "Generate a pull request title, description, and test plan.",
-      sort_order: 7,
+      sort_order: 8,
       prompt_template: `Prepare a pull request for the following completed task.
 
 Task: {{task_description}}
@@ -646,7 +741,7 @@ Respond with a JSON object:
       name: "PR Review",
       description:
         "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
-      sort_order: 8,
+      sort_order: 9,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "pr_review",
@@ -665,7 +760,7 @@ Respond with a JSON object:
       name: "Merge",
       description:
         "Merge the task branch into the target branch and push.",
-      sort_order: 9,
+      sort_order: 10,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "merge",
