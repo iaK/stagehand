@@ -5,7 +5,7 @@ import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/pro
 import { useStageExecution, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
-import { detectInteractionType } from "../../lib/outputDetection";
+import { formatHasOwnActionButton } from "../../lib/outputDetection";
 import { StageOutput } from "./StageOutput";
 import {
   StageTimeline,
@@ -121,22 +121,12 @@ export function StageView({ stage }: StageViewProps) {
 
   // Determine whether the output component renders its own action button.
   // If it does, StageView should NOT render a duplicate "Approve & Continue" button.
-  // Only `text` format and `findings` Phase 2 (non-JSON text summary) lack their own button.
+  // Delegates to the shared utility in outputDetection.ts (single source of truth).
   const outputHasOwnActionButton = useMemo(() => {
     if (!latestExecution) return false;
     const output = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
-    const effectiveFormat = detectInteractionType(output, stage.output_format);
-    if (effectiveFormat === "text") return false;
-    if (effectiveFormat === "findings") {
-      // Phase 2 findings (non-JSON) renders as plain text with no button
-      try {
-        const parsed = JSON.parse(output);
-        if (parsed.findings && Array.isArray(parsed.findings)) return true;
-      } catch { /* not JSON — Phase 2, no button */ }
-      return false;
-    }
-    return true;
-  }, [latestExecution?.parsed_output, latestExecution?.raw_output, stage.output_format]);
+    return formatHasOwnActionButton(output, stage.output_format);
+  }, [!!latestExecution, latestExecution?.parsed_output, latestExecution?.raw_output, stage.output_format]);
 
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
