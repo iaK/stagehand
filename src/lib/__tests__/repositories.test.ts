@@ -62,6 +62,11 @@ function getProjectMock(projectId: string) {
 vi.mock("../db", () => ({
   getAppDb: vi.fn(async () => appDbMock),
   getProjectDb: vi.fn(async (projectId: string) => getProjectMock(projectId)),
+  closeProjectDb: vi.fn(async () => {}),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async () => {}),
 }));
 
 beforeEach(() => {

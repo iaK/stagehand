@@ -1,13 +1,13 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 
-let devflowDir: string | null = null;
+let stagehandDir: string | null = null;
 
-async function getDevflowDir(): Promise<string> {
-  if (!devflowDir) {
-    devflowDir = await invoke<string>("get_devflow_dir");
+async function getStagehandDir(): Promise<string> {
+  if (!stagehandDir) {
+    stagehandDir = await invoke<string>("get_stagehand_dir");
   }
-  return devflowDir;
+  return stagehandDir;
 }
 
 const connections: Record<string, Database> = {};
@@ -17,7 +17,7 @@ export async function getAppDb(): Promise<Database> {
   if (connections["app"]) return connections["app"];
   if (!connectionPromises["app"]) {
     connectionPromises["app"] = (async () => {
-      const dir = await getDevflowDir();
+      const dir = await getStagehandDir();
       const db = await Database.load(`sqlite:${dir}/app.db`);
       await initAppSchema(db);
       connections["app"] = db;
@@ -32,7 +32,7 @@ export async function getProjectDb(projectId: string): Promise<Database> {
   if (connections[key]) return connections[key];
   if (!connectionPromises[key]) {
     connectionPromises[key] = (async () => {
-      const dir = await getDevflowDir();
+      const dir = await getStagehandDir();
       const db = await Database.load(
         `sqlite:${dir}/data/${projectId}.db`,
       );
@@ -42,6 +42,16 @@ export async function getProjectDb(projectId: string): Promise<Database> {
     })();
   }
   return connectionPromises[key];
+}
+
+export async function closeProjectDb(projectId: string): Promise<void> {
+  const key = `project:${projectId}`;
+  const db = connections[key];
+  if (db) {
+    await db.close();
+    delete connections[key];
+  }
+  delete connectionPromises[key];
 }
 
 async function initAppSchema(db: Database): Promise<void> {

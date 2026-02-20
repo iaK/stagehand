@@ -1,4 +1,5 @@
-import { getAppDb, getProjectDb } from "./db";
+import { getAppDb, getProjectDb, closeProjectDb } from "./db";
+import { invoke } from "@tauri-apps/api/core";
 import { getDefaultStageTemplates } from "./seed";
 import type {
   Project,
@@ -108,7 +109,34 @@ export async function createProject(name: string, path: string): Promise<Project
   return { id, name, path, archived: 0, created_at: now, updated_at: now };
 }
 
-export async function deleteProject(id: string): Promise<void> {
+export async function deleteProject(id: string, projectPath?: string): Promise<void> {
+  // Clean up worktrees and branches for all tasks
+  if (projectPath) {
+    try {
+      const projectDb = await getProjectDb(id);
+      const tasks = await projectDb.select<{ worktree_path: string | null; branch_name: string | null }[]>(
+        "SELECT worktree_path, branch_name FROM tasks WHERE project_id = $1",
+        [id],
+      );
+      const { gitWorktreeRemove, gitDeleteBranch } = await import("./git");
+      for (const task of tasks) {
+        if (task.worktree_path) {
+          try { await gitWorktreeRemove(projectPath, task.worktree_path); } catch { /* best-effort */ }
+        }
+        if (task.branch_name) {
+          try { await gitDeleteBranch(projectPath, task.branch_name); } catch { /* best-effort */ }
+        }
+      }
+    } catch {
+      // Project DB may not exist — continue with deletion
+    }
+  }
+
+  // Close the project DB connection and delete the file
+  await closeProjectDb(id);
+  try { await invoke("delete_project_db", { projectId: id }); } catch { /* DB file may not exist */ }
+
+  // Delete from projects table
   const db = await getAppDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
 }

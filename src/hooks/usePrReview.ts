@@ -340,10 +340,6 @@ ${fix.body}`;
                   setStopped(sk);
                   resolve();
                   break;
-                case "error":
-                  setStopped(sk);
-                  resolve();
-                  break;
               }
             },
           ).catch(() => resolve());
@@ -382,7 +378,7 @@ Keep it under 72 characters for the first line.`,
                 (event: ClaudeStreamEvent) => {
                   if (event.type === "stdout_line") {
                     msgText += event.line + "\n";
-                  } else if (event.type === "completed" || event.type === "error") {
+                  } else if (event.type === "completed") {
                     resolve();
                   }
                 },

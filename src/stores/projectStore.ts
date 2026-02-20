@@ -100,7 +100,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   removeProject: async (id) => {
-    await repo.deleteProject(id);
+    const project = get().projects.find((p) => p.id === id);
+    await repo.deleteProject(id, project?.path);
     const projects = await repo.listProjects();
     const current = get().activeProject;
     set({

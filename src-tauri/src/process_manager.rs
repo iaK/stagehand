@@ -5,8 +5,6 @@ use tokio::sync::{oneshot, Mutex};
 pub struct ProcessEntry {
     pub kill_tx: Option<oneshot::Sender<()>>,
     pub stage_execution_id: Option<String>,
-    #[allow(dead_code)]
-    pub session_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -26,7 +24,6 @@ impl ProcessManager {
         process_id: String,
         kill_tx: oneshot::Sender<()>,
         stage_execution_id: Option<String>,
-        session_id: Option<String>,
     ) {
         let mut procs = self.processes.lock().await;
         procs.insert(
@@ -34,7 +31,6 @@ impl ProcessManager {
             ProcessEntry {
                 kill_tx: Some(kill_tx),
                 stage_execution_id,
-                session_id,
             },
         );
     }

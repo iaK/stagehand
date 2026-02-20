@@ -20,7 +20,9 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const [activeSection, setActiveSection] = useState<Section>("archived");
+  const [activeSection, setActiveSection] = useState<Section>(
+    activeProject ? "pipeline" : "archived",
+  );
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
