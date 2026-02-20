@@ -47,14 +47,14 @@ export function PipelineStepper({
               onClick={() => onStageClick(stage)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
                 status === "completed"
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20"
                   : status === "running"
-                    ? "bg-blue-50 text-blue-700 border border-blue-200 animate-pulse"
+                    ? "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20 animate-pulse"
                     : status === "awaiting"
-                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                      ? "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20"
                       : status === "current"
-                        ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                        : "bg-zinc-50 text-zinc-400 border border-zinc-200"
+                        ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
+                        : "bg-zinc-50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700"
               }`}
             >
               <span
@@ -67,7 +67,7 @@ export function PipelineStepper({
                         ? "bg-amber-500 text-white"
                         : status === "current"
                           ? "bg-zinc-500 text-white"
-                          : "bg-zinc-200 text-zinc-500"
+                          : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400"
                 }`}
               >
                 {status === "completed" ? (
@@ -83,7 +83,7 @@ export function PipelineStepper({
             {i < stages.length - 1 && (
               <div
                 className={`w-6 h-px mx-1 ${
-                  status === "completed" ? "bg-emerald-300" : "bg-zinc-200"
+                  status === "completed" ? "bg-emerald-300 dark:bg-emerald-600" : "bg-zinc-200 dark:bg-zinc-700"
                 }`}
               />
             )}

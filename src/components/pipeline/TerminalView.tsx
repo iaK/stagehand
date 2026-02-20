@@ -28,12 +28,12 @@ export function TerminalView() {
   return (
     <Collapsible open={!collapsed} onOpenChange={(open) => setCollapsed(!open)}>
       <div
-        className={`border-t border-border bg-zinc-50 flex flex-col transition-all ${
+        className={`border-t border-border bg-zinc-50 dark:bg-zinc-900 flex flex-col transition-all ${
           collapsed ? "h-8" : "h-48"
         }`}
       >
         {/* Header */}
-        <CollapsibleTrigger className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-100 transition-colors flex-shrink-0">
+        <CollapsibleTrigger className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex-shrink-0">
           <div
             className={`w-2 h-2 rounded-full ${
               anyRunning ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
@@ -61,12 +61,12 @@ export function TerminalView() {
                   key={i}
                   className={`whitespace-pre-wrap break-all ${
                     line.startsWith("[stderr]")
-                      ? "text-amber-600"
+                      ? "text-amber-600 dark:text-amber-400"
                       : line.startsWith("[Error]") || line.startsWith("[Failed")
-                        ? "text-red-600"
+                        ? "text-red-600 dark:text-red-400"
                         : line.startsWith("[Process")
                           ? "text-muted-foreground"
-                          : "text-zinc-700"
+                          : "text-zinc-700 dark:text-zinc-300"
                   }`}
                 >
                   {line}

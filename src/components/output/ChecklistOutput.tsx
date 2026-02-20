@@ -20,9 +20,9 @@ const severityVariant: Record<string, "critical" | "warning" | "info"> = {
 };
 
 const severityCardColors = {
-  critical: "border-red-200 bg-red-50",
-  warning: "border-amber-200 bg-amber-50",
-  info: "border-blue-200 bg-blue-50",
+  critical: "border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10",
+  warning: "border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10",
+  info: "border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/10",
 };
 
 export function ChecklistOutput({
@@ -38,8 +38,8 @@ export function ChecklistOutput({
   } catch {
     return (
       <div className="text-sm text-muted-foreground">
-        <p className="text-amber-600 mb-2">Could not parse checklist output.</p>
-        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
+        <p className="text-amber-600 dark:text-amber-400 mb-2">Could not parse checklist output.</p>
+        <pre className="bg-zinc-50 dark:bg-zinc-900 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>
@@ -66,8 +66,22 @@ export function ChecklistOutput({
 
   const allChecked = items.every((item) => item.checked);
 
+  const toggleAll = () => {
+    setItems((prev) => prev.map((item) => ({ ...item, checked: !allChecked })));
+  };
+
   return (
     <div>
+      {!isApproved && (
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium text-foreground">
+            {items.length} item{items.length !== 1 ? "s" : ""}
+          </h3>
+          <Button variant="ghost" size="sm" onClick={toggleAll}>
+            {allChecked ? "Uncheck All" : "Check All"}
+          </Button>
+        </div>
+      )}
       <div className="space-y-3">
         {items.map((item) => {
           const colors = severityCardColors[item.severity] ?? severityCardColors.info;
@@ -90,14 +104,14 @@ export function ChecklistOutput({
                       {item.severity}
                     </Badge>
                   </div>
-                  <p className="text-sm text-zinc-700">{item.text}</p>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{item.text}</p>
                   {!isApproved && (
                     <Input
                       type="text"
                       value={item.notes}
                       onChange={(e) => updateNotes(item.id, e.target.value)}
                       placeholder="Notes..."
-                      className="mt-2 h-7 text-xs bg-transparent border-0 border-b border-zinc-300 rounded-none shadow-none focus-visible:ring-0 focus-visible:border-zinc-500 px-0"
+                      className="mt-2 h-7 text-xs bg-transparent border-0 border-b border-zinc-300 dark:border-zinc-600 rounded-none shadow-none focus-visible:ring-0 focus-visible:border-zinc-500 dark:focus-visible:border-zinc-400 px-0"
                     />
                   )}
                   {isApproved && item.notes && (

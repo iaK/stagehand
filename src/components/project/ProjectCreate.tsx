@@ -16,6 +16,7 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pathError, setPathError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const addProject = useProjectStore((s) => s.addProject);
 
@@ -37,7 +38,12 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !path.trim()) return;
+    if (!path.trim().startsWith("/")) {
+      setPathError("Path must be absolute (start with /)");
+      return;
+    }
     setError(null);
+    setPathError(null);
     setCreating(true);
     try {
       await addProject(name.trim(), path.trim());
@@ -74,7 +80,7 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
                 <Input
                   type="text"
                   value={path}
-                  onChange={(e) => setPath(e.target.value)}
+                  onChange={(e) => { setPath(e.target.value); setPathError(null); }}
                   placeholder="/path/to/project"
                   className="flex-1"
                 />
@@ -82,6 +88,7 @@ export function ProjectCreate({ onClose }: ProjectCreateProps) {
                   Browse
                 </Button>
               </div>
+              {pathError && <p className="text-xs text-destructive mt-1">{pathError}</p>}
             </div>
           </div>
           {error && (

@@ -27,10 +27,10 @@ export function OptionsOutput({
   } catch {
     return (
       <div className="text-sm text-muted-foreground">
-        <p className="text-amber-600 mb-2">
+        <p className="text-amber-600 dark:text-amber-400 mb-2">
           Could not parse options output. Raw output:
         </p>
-        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
+        <pre className="bg-zinc-50 dark:bg-zinc-900 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>
@@ -54,10 +54,10 @@ export function OptionsOutput({
             disabled={isApproved}
             className={`text-left p-5 rounded-lg border transition-all ${
               selectedId === option.id
-                ? "border-blue-500 bg-blue-50"
+                ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10"
                 : isApproved
-                  ? "border-border bg-zinc-50"
-                  : "border-border bg-white hover:border-zinc-400"
+                  ? "border-border bg-zinc-50 dark:bg-zinc-900"
+                  : "border-border bg-white dark:bg-zinc-900 hover:border-zinc-400 dark:hover:border-zinc-500"
             }`}
           >
             <h4 className="text-base font-medium text-foreground mb-2">
@@ -68,7 +68,7 @@ export function OptionsOutput({
             </div>
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-sm text-emerald-600 font-medium mb-2">
+                <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium mb-2">
                   Pros
                 </p>
                 <ul className="text-sm text-muted-foreground space-y-1.5">
@@ -78,7 +78,7 @@ export function OptionsOutput({
                 </ul>
               </div>
               <div>
-                <p className="text-sm text-red-600 font-medium mb-2">Cons</p>
+                <p className="text-sm text-red-600 dark:text-red-400 font-medium mb-2">Cons</p>
                 <ul className="text-sm text-muted-foreground space-y-1.5">
                   {option.cons.map((con, i) => (
                     <li key={i} className="[&>p]:inline">- <Markdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <>{children}</> }}>{con}</Markdown></li>
