@@ -79,6 +79,10 @@ export function StageView({ stage }: StageViewProps) {
       await approveStage(activeTask, stage);
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
+      // Re-check git status — if user committed externally, switch to continue button
+      if (activeTask && activeProject) {
+        generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
+      }
     } finally {
       setCommitting(false);
     }
@@ -119,16 +123,16 @@ export function StageView({ stage }: StageViewProps) {
       isCurrentStage &&
       stageStatus === "awaiting_user" &&
       !isRunning &&
-      !hasPendingCommitForThisStage &&
-      !noChangesToCommit &&
-      !commitMessageLoading &&
       !committedHash &&
+      !commitMessageLoading &&
       activeTask &&
       activeProject
     ) {
+      // Always re-check git status when this stage is rendered as current + awaiting_user
+      // This handles: app restart, navigation back to stage, external commits
       generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
     }
-  }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
+  }, [isCurrentStage, stageStatus, isRunning, committedHash, activeTask?.id, activeProject?.id]);
 
   // Timeout fallback: if commit preparation takes too long, let the user approve manually
   useEffect(() => {

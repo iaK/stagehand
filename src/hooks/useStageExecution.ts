@@ -849,6 +849,14 @@ export async function generatePendingCommit(
   const workDir = getTaskWorkingDir(task, projectPath);
   const store = useProcessStore.getState();
 
+  // Clear stale state before re-checking
+  if (store.pendingCommit?.stageId === stage.id) {
+    store.clearPendingCommit();
+  }
+  if (store.noChangesStageId === stage.id) {
+    store.setNoChangesToCommit(null);
+  }
+
   store.setCommitMessageLoading(stage.id);
   try {
     const hasChanges = await hasUncommittedChanges(workDir);
