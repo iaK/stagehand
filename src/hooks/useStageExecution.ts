@@ -13,6 +13,7 @@ import {
   gitBranchExists,
   gitPush,
   gitDefaultBranch,
+  gitCheckoutBranch,
   ghCreatePr,
   gitWorktreeAdd,
   gitWorktreeRemove,
@@ -51,6 +52,11 @@ export function useStageExecution() {
   const runStage = useCallback(
     async (task: Task, stage: StageTemplate, userInput?: string) => {
       if (!activeProject) return;
+
+      if (task.ejected) {
+        logger.info("Cannot run stage while task is ejected to main repo");
+        return;
+      }
 
       // Create worktree on first stage execution if task has no worktree yet
       if (stage.sort_order === 0 && !task.worktree_path) {
@@ -692,6 +698,23 @@ export function useStageExecution() {
               } catch {
                 // Non-critical — branch cleanup is best-effort
               }
+            }
+          }
+        } else if (task.ejected && task.branch_name) {
+          // Defensive: handle ejected case (shouldn't normally reach here
+          // since stages are blocked while ejected)
+          const project = useProjectStore.getState().activeProject;
+          if (project) {
+            try {
+              const defaultBranch = await gitDefaultBranch(project.path);
+              await gitCheckoutBranch(project.path, defaultBranch ?? "main");
+            } catch {
+              // Non-critical
+            }
+            try {
+              await gitDeleteBranch(project.path, task.branch_name);
+            } catch {
+              // Non-critical
             }
           }
         }

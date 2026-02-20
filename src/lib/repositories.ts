@@ -369,6 +369,7 @@ export async function createTask(
     branch_name: branchName ?? null,
     worktree_path: worktreePath ?? null,
     pr_url: null,
+    ejected: 0,
     archived: 0,
     created_at: now,
     updated_at: now,
@@ -378,7 +379,7 @@ export async function createTask(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];
