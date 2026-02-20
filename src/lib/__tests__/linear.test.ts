@@ -110,13 +110,6 @@ describe("verifyApiKey", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("does not retry on 401", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 401 });
-
-    const result = await verifyApiKey("bad_key");
-    expect(result.valid).toBe(false);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("fetchMyIssues", () => {

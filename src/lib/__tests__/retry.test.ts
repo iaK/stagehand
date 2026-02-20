@@ -120,4 +120,12 @@ describe("withRetry", () => {
 
     setTimeoutSpy.mockRestore();
   });
+
+  it("throws if maxAttempts is less than 1", async () => {
+    const fn = vi.fn();
+    await expect(
+      withRetry(fn, { shouldRetry: () => true, maxAttempts: 0, ...TINY }),
+    ).rejects.toThrow("maxAttempts must be >= 1");
+    expect(fn).not.toHaveBeenCalled();
+  });
 });

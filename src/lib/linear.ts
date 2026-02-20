@@ -4,6 +4,12 @@ import { withRetry } from "./retry";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 
+export class HttpError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
 async function gql<T>(apiKey: string, query: string, variables?: Record<string, unknown>): Promise<T> {
   return withRetry(
     async () => {
@@ -18,9 +24,7 @@ async function gql<T>(apiKey: string, query: string, variables?: Record<string, 
 
       if (!res.ok) {
         if (res.status === 401) throw new Error("Invalid API key");
-        const err = new Error(`Linear API error: ${res.status}`);
-        (err as any).status = res.status;
-        throw err;
+        throw new HttpError(`Linear API error: ${res.status}`, res.status);
       }
 
       const json = await res.json();
@@ -32,9 +36,9 @@ async function gql<T>(apiKey: string, query: string, variables?: Record<string, 
     {
       shouldRetry: (error) => {
         if (error instanceof TypeError) return true; // network error
-        if (error instanceof Error && "status" in error) {
-          const status = (error as any).status as number;
-          return status === 429 || status >= 500;
+        if (error instanceof HttpError) {
+          if (error.status === 401) return false;
+          return error.status === 429 || error.status >= 500;
         }
         return false;
       },

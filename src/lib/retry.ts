@@ -10,17 +10,14 @@ export async function withRetry<T>(
   },
 ): Promise<T> {
   const maxAttempts = options.maxAttempts ?? RETRY_MAX_ATTEMPTS;
+  if (maxAttempts < 1) throw new Error("maxAttempts must be >= 1");
   const baseDelayMs = options.baseDelayMs ?? RETRY_BASE_DELAY_MS;
   const maxDelayMs = options.maxDelayMs ?? RETRY_MAX_DELAY_MS;
-
-  let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      lastError = error;
-
       if (attempt + 1 >= maxAttempts || !options.shouldRetry(error)) {
         throw error;
       }
@@ -32,5 +29,6 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError;
+  // Unreachable: the loop always returns or throws. This satisfies TypeScript.
+  throw new Error("withRetry: unexpected state");
 }
