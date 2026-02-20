@@ -112,13 +112,6 @@ export function useStageExecution() {
           taskStageTemplates,
         );
 
-        // Use the previous stage's composed result as input context
-        const previousOutput =
-          prevExec?.stage_result ??
-          prevExec?.parsed_output ??
-          prevExec?.raw_output ??
-          undefined;
-
         // Count previous attempts and gather prior context for re-runs
         const prevAttempts = executions
           .filter((e) => e.stage_template_id === stage.id)
@@ -159,35 +152,11 @@ export function useStageExecution() {
           }
         }
 
-        // Fetch approved stage outputs for template variables
+        // Fetch approved stage outputs for system prompt injection
         const approvedOutputs = await repo.getApprovedStageOutputs(
           activeProject.id,
           task.id,
         );
-
-        // Build {{stage_summaries}} text
-        const stageSummariesText = approvedOutputs.length > 0
-          ? approvedOutputs
-              .filter((s) => s.stage_summary)
-              .map((s) => `### ${s.stage_name}\n${s.stage_summary}`)
-              .join("\n\n")
-          : undefined;
-
-        // Build {{stages.StageName.output}} / {{stages.StageName.summary}} map
-        const stageOutputsMap: Record<string, { output: string; summary: string }> = {};
-        for (const s of approvedOutputs) {
-          stageOutputsMap[s.stage_name] = {
-            output: s.stage_result ?? "",
-            summary: s.stage_summary ?? "",
-          };
-        }
-
-        // Build {{all_stage_outputs}} — concatenated summaries with headers
-        const allStageOutputsText = approvedOutputs.length > 0
-          ? approvedOutputs
-              .map((s) => `## ${s.stage_name}\n${s.stage_summary || s.stage_result}`)
-              .join("\n\n---\n\n")
-          : undefined;
 
         // Build {{available_stages}} — list of non-first stages for Research prompt
         const availableStagesText = taskStageTemplates
@@ -198,13 +167,9 @@ export function useStageExecution() {
         // Render prompt
         const prompt = renderPrompt(stage.prompt_template, {
           taskDescription: task.title,
-          previousOutput,
           userInput: effectiveUserInput,
           userDecision: prevExec?.user_decision ?? undefined,
           priorAttemptOutput,
-          stageSummaries: stageSummariesText,
-          stageOutputs: stageOutputsMap,
-          allStageOutputs: allStageOutputsText,
           availableStages: availableStagesText || undefined,
         });
 
@@ -220,11 +185,7 @@ export function useStageExecution() {
           attempt_number: attemptNumber,
           status: "running",
           input_prompt: prompt,
-          user_input:
-            userInput ??
-            (!stage.requires_user_input
-              ? (previousOutput ?? null)
-              : null),
+          user_input: userInput ?? null,
           raw_output: null,
           parsed_output: null,
           user_decision: null,
@@ -405,6 +366,18 @@ export function useStageExecution() {
           systemPrompt = systemPrompt
             ? `${systemPrompt}\n\n${noCommitRule}`
             : noCommitRule;
+        }
+
+        // Auto-inject completed stage summaries into system prompt
+        if (approvedOutputs.length > 0) {
+          const stageLines = approvedOutputs
+            .map((s) => `### ${s.stage_name}\n${s.stage_summary || "(no summary)"}`)
+            .join("\n\n");
+          const stageContext =
+            `## Completed Pipeline Stages\nThe following stages have been completed for this task. Use the \`get_stage_output\` MCP tool to retrieve the full output of any stage if you need more detail.\n\n${stageLines}`;
+          systemPrompt = systemPrompt
+            ? `${systemPrompt}\n\n${stageContext}`
+            : stageContext;
         }
 
         // Build MCP config for stage context server
@@ -846,7 +819,7 @@ export async function generatePendingCommit(
 
     const diffStat = await gitDiffStat(workDir).catch(() => "");
     const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const prefix = await repo.getCommitPrefix(projectId);
+    const prefix = await repo.getCommitPrefix(projectId).catch(() => "feat");
     const commitMsg = `${prefix}: ${slug}`;
 
     store.setPendingCommit({
@@ -855,6 +828,11 @@ export async function generatePendingCommit(
       message: commitMsg,
       diffStat: diffStat || "",
     });
+  } catch (err) {
+    // If commit preparation fails, fall back to no-changes mode
+    // so the user can still approve the stage instead of being stuck
+    console.error("Failed to generate pending commit:", err);
+    store.setNoChangesToCommit(stage.id);
   } finally {
     store.setCommitMessageLoading(null);
   }

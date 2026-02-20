@@ -192,13 +192,19 @@ export async function gitDefaultBranch(workingDir: string): Promise<string | nul
     // origin/HEAD not set — fall through to check common branch names
   }
 
-  // Try common default branch names
+  // Try common default branch names via remote refs first, then local refs
   for (const candidate of ["main", "master"]) {
     try {
       await runGit(workingDir, "rev-parse", "--verify", `refs/remotes/origin/${candidate}`);
       return candidate;
     } catch {
-      // Branch doesn't exist — try next
+      // Remote branch doesn't exist — try local
+    }
+    try {
+      await runGit(workingDir, "rev-parse", "--verify", `refs/heads/${candidate}`);
+      return candidate;
+    } catch {
+      // Local branch doesn't exist either — try next
     }
   }
 
@@ -270,6 +276,27 @@ export async function gitMergeAbort(workingDir: string): Promise<string> {
 
 export async function gitPushCurrentBranch(workingDir: string): Promise<string> {
   return runGit(workingDir, "push");
+}
+
+/** Check whether an `origin` remote is configured. */
+export async function gitHasRemote(workingDir: string): Promise<boolean> {
+  return (await gitRemoteUrl(workingDir)) !== null;
+}
+
+/** Resolve a ref to its SHA. */
+export async function gitRevParse(workingDir: string, ref: string): Promise<string> {
+  const sha = await runGit(workingDir, "rev-parse", ref);
+  return sha.trim();
+}
+
+/** Return true if `branch` has been fully merged into `into`. */
+export async function gitIsMerged(workingDir: string, branch: string, into: string): Promise<boolean> {
+  try {
+    await runGit(workingDir, "merge-base", "--is-ancestor", branch, into);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function runGh(workingDir: string, ...args: string[]): Promise<string> {

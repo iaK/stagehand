@@ -8,6 +8,8 @@ import {
   gitDiffNameOnly,
   gitDiffStatBranch,
   gitFetch,
+  gitHasRemote,
+  gitIsMerged,
   gitWorktreeRemove,
   gitDeleteBranch,
 } from "../../lib/git";
@@ -41,6 +43,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
   const [mergeState, setMergeState] = useState<MergeState>("loading");
   const [targetBranch, setTargetBranch] = useState<string>("main");
+  const [hasRemote, setHasRemote] = useState<boolean>(true);
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -67,16 +70,22 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     (async () => {
       try {
         const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+        const remote = await gitHasRemote(activeProject.path);
+        if (!cancelled) setHasRemote(remote);
+
         const defaultBr = useGitHubStore.getState().defaultBranch
           ?? await gitDefaultBranch(activeProject.path)
           ?? "main";
         setTargetBranch(defaultBr);
 
         // Fetch remote so diff is accurate
-        await gitFetch(activeProject.path, defaultBr).catch(() => {});
+        if (remote) {
+          await gitFetch(activeProject.path, defaultBr).catch(() => {});
+        }
 
-        const files = await gitDiffNameOnly(workDir, `origin/${defaultBr}`).catch(() => [] as string[]);
-        const stat = await gitDiffStatBranch(workDir, `origin/${defaultBr}`).catch(() => "");
+        const diffBase = remote ? `origin/${defaultBr}` : defaultBr;
+        const files = await gitDiffNameOnly(workDir, diffBase).catch(() => [] as string[]);
+        const stat = await gitDiffStatBranch(workDir, diffBase).catch(() => "");
 
         if (!cancelled) {
           setChangedFiles(files);
@@ -154,7 +163,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         status: "completed",
       });
 
-      // Clean up worktree and branch
+      // Clean up worktree first (must happen before branch deletion)
       if (activeTask.worktree_path) {
         try {
           await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
@@ -162,11 +171,15 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
           // Non-critical
         }
       }
+      // Only delete the branch after verifying it was fully merged
       if (activeTask.branch_name) {
-        try {
-          await gitDeleteBranch(activeProject.path, activeTask.branch_name);
-        } catch {
-          // Non-critical
+        const merged = await gitIsMerged(activeProject.path, activeTask.branch_name, targetBranch);
+        if (merged) {
+          try {
+            await gitDeleteBranch(activeProject.path, activeTask.branch_name);
+          } catch {
+            // Non-critical
+          }
         }
       }
 
@@ -295,7 +308,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
             size="sm"
           >
             {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
-            {mergeState === "merging" ? "Merging..." : "Merge & Push"}
+            {mergeState === "merging" ? "Merging..." : hasRemote ? "Merge & Push" : "Merge"}
           </Button>
           <Button
             variant="ghost"
