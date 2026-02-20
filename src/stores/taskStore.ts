@@ -41,6 +41,7 @@ interface TaskStore {
   deleteStageTemplate: (projectId: string, templateId: string) => Promise<void>;
   reorderStageTemplates: (projectId: string, orderedIds: string[]) => Promise<void>;
   duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
+  createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; description: string }[]) => Promise<Task[]>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -215,6 +216,30 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const created = await repo.duplicateStageTemplate(projectId, templateId);
     const stageTemplates = await repo.listStageTemplates(projectId);
     set({ stageTemplates });
+    return created;
+  },
+
+  createSubtasks: async (projectId, parentTaskId, subtasks) => {
+    const templates = get().stageTemplates;
+    const firstStage = templates.length > 0 ? templates[0] : null;
+    if (!firstStage) throw new Error("No stage templates available");
+
+    const created: Task[] = [];
+    for (const sub of subtasks) {
+      const task = await repo.createTask(
+        projectId,
+        sub.title,
+        firstStage.id,
+        sub.description,
+        undefined,
+        undefined,
+        parentTaskId,
+      );
+      created.push(task);
+    }
+
+    // Refresh the task list so new subtasks appear in sidebar
+    await get().loadTasks(projectId);
     return created;
   },
 }));

@@ -7,6 +7,7 @@ import { ChecklistOutput } from "../output/ChecklistOutput";
 import { StructuredOutput } from "../output/StructuredOutput";
 import { ResearchOutput, QuestionCards } from "../output/ResearchOutput";
 import { FindingsOutput } from "../output/FindingsOutput";
+import { TaskSplittingOutput } from "../output/TaskSplittingOutput";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -16,6 +17,7 @@ interface StageOutputProps {
   onApprove: (decision?: string) => void;
   onApproveWithStages?: (selectedStageIds: string[]) => void;
   onSubmitAnswers?: (answers: string) => void;
+  onSplitTask?: (tasks: { title: string; description: string }[]) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
   approving?: boolean;
@@ -27,6 +29,7 @@ export function StageOutput({
   onApprove,
   onApproveWithStages,
   onSubmitAnswers,
+  onSplitTask,
   isApproved,
   stageTemplates,
   approving,
@@ -182,6 +185,16 @@ export function StageOutput({
         />
       );
     }
+
+    case "task_splitting":
+      return (
+        <TaskSplittingOutput
+          output={output}
+          onSplit={onSplitTask ?? (() => {})}
+          isApproved={isApproved}
+          approving={approving}
+        />
+      );
 
     case "pr_review":
       return isApproved ? (

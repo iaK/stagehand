@@ -4,6 +4,7 @@ export const statusColors: Record<string, string> = {
   in_progress: "bg-blue-500",
   completed: "bg-emerald-500",
   failed: "bg-red-500",
+  split: "bg-violet-500",
 };
 
 export const pipelineColors: Record<string, string> = {
@@ -17,12 +18,13 @@ export const pipelineColors: Record<string, string> = {
 // Priority ranking: higher index = more urgent
 const urgencyOrder: string[] = [
   "completed",     // 0 - all done (green)
-  "approved",      // 1 - all done (green)
-  "pending",       // 2 - waiting (gray)
-  "in_progress",   // 3 - active (blue)
-  "running",       // 4 - active (blue, pulsing)
-  "failed",        // 5 - error (red)
-  "awaiting_user", // 6 - needs human action (amber) — most urgent
+  "split",         // 1 - terminal, task decomposed (violet)
+  "approved",      // 2 - stage done (green)
+  "pending",       // 3 - waiting (gray)
+  "in_progress",   // 4 - active (blue)
+  "running",       // 5 - active (blue, pulsing)
+  "failed",        // 6 - error (red)
+  "awaiting_user", // 7 - needs human action (amber) — most urgent
 ];
 
 export function statusUrgency(status: string): number {

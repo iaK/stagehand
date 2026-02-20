@@ -9,7 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import type { StageExecution } from "../../lib/types";
+import * as repo from "../../lib/repositories";
+import { statusColors } from "../../lib/taskStatus";
+import type { Task, StageExecution } from "../../lib/types";
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -57,6 +59,7 @@ const statusConfig: Record<string, { label: string; variant: "success" | "info" 
   in_progress: { label: "In Progress", variant: "info" },
   pending: { label: "Pending", variant: "secondary" },
   failed: { label: "Failed", variant: "critical" },
+  split: { label: "Split", variant: "info" },
 };
 
 export function TaskOverview() {
@@ -72,6 +75,24 @@ export function TaskOverview() {
   const [showTokenDetails, setShowTokenDetails] = useState(false);
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
+  const [childTasks, setChildTasks] = useState<Task[]>([]);
+  const [parentTask, setParentTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    if (activeTask?.status !== "split" || !activeProject) {
+      setChildTasks([]);
+      return;
+    }
+    repo.getChildTasks(activeProject.id, activeTask.id).then(setChildTasks);
+  }, [activeTask?.id, activeTask?.status, activeProject?.id]);
+
+  useEffect(() => {
+    if (!activeTask?.parent_task_id || !activeProject) {
+      setParentTask(null);
+      return;
+    }
+    repo.getTask(activeProject.id, activeTask.parent_task_id).then(setParentTask).catch(() => setParentTask(null));
+  }, [activeTask?.id, activeTask?.parent_task_id, activeProject?.id]);
 
   const tokenTotals = useMemo(() => {
     const withData = executions.filter((e) => e.total_cost_usd != null);
@@ -139,6 +160,14 @@ export function TaskOverview() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1 min-w-0">
+          {parentTask && (
+            <button
+              onClick={() => useTaskStore.getState().setActiveTask(parentTask)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              <span>&larr;</span> Parent: {parentTask.title}
+            </button>
+          )}
           <h1 className="text-xl font-semibold truncate">{activeTask.title}</h1>
           {activeTask.description && (
             <p className="text-sm text-muted-foreground">{activeTask.description}</p>
@@ -206,6 +235,32 @@ export function TaskOverview() {
           <span className="text-xs text-muted-foreground">Finished</span>
           <p className="text-sm font-medium">{formatDate(activeTask.updated_at)}</p>
         </div>
+      )}
+
+      {activeTask.status === "split" && childTasks.length > 0 && (
+        <>
+          <Separator />
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Subtasks ({childTasks.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {childTasks.map((child) => (
+                <button
+                  key={child.id}
+                  onClick={() => useTaskStore.getState().setActiveTask(child)}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent transition-colors"
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${statusColors[child.status] ?? "bg-zinc-400"}`} />
+                  <span className="text-sm truncate">{child.title}</span>
+                  <Badge variant="secondary" className="ml-auto text-[10px]">
+                    {child.status}
+                  </Badge>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Token Usage */}

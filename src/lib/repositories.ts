@@ -348,15 +348,16 @@ export async function createTask(
   description: string = "",
   branchName?: string,
   worktreePath?: string,
+  parentTaskId?: string,
 ): Promise<Task> {
   const db = await getProjectDb(projectId);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, now, now],
+    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
   );
 
   return {
@@ -369,11 +370,35 @@ export async function createTask(
     branch_name: branchName ?? null,
     worktree_path: worktreePath ?? null,
     pr_url: null,
+    parent_task_id: parentTaskId ?? null,
     ejected: 0,
     archived: 0,
     created_at: now,
     updated_at: now,
   };
+}
+
+export async function getTask(
+  projectId: string,
+  taskId: string,
+): Promise<Task | null> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<Task[]>(
+    "SELECT * FROM tasks WHERE id = $1",
+    [taskId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getChildTasks(
+  projectId: string,
+  parentTaskId: string,
+): Promise<Task[]> {
+  const db = await getProjectDb(projectId);
+  return db.select<Task[]>(
+    "SELECT * FROM tasks WHERE parent_task_id = $1 AND archived = 0 ORDER BY created_at ASC",
+    [parentTaskId],
+  );
 }
 
 export async function updateTask(

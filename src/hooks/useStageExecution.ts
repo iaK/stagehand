@@ -653,6 +653,15 @@ export function useStageExecution() {
 
   const advanceFromStageInner = useCallback(
     async (projectId: string, task: Task, stage: StageTemplate, taskStageTemplates: StageTemplate[]) => {
+      // Split tasks are terminal — don't advance to the next stage
+      const freshTaskStatus = useTaskStore.getState().activeTask;
+      if (freshTaskStatus?.id === task.id && freshTaskStatus.status === "split") {
+        if (useTaskStore.getState().activeTask?.id === task.id) {
+          await loadExecutions(projectId, task.id);
+        }
+        return;
+      }
+
       const nextStage = taskStageTemplates
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
