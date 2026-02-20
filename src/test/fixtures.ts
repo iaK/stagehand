@@ -28,6 +28,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
     branch_name: null,
     worktree_path: null,
     pr_url: null,
+    ejected: 0,
     archived: 0,
     created_at: "2025-01-01T00:00:00.000Z",
     updated_at: "2025-01-01T00:00:00.000Z",

@@ -247,6 +247,35 @@ export function StageView({ stage }: StageViewProps) {
 
   if (!activeProject || !activeTask) return null;
 
+  // Ejected: full-screen overlay blocking all stage interaction
+  if (activeTask.ejected) {
+    return (
+      <div className="flex-1 flex items-center justify-center h-full bg-background/80 backdrop-blur-sm">
+        <div className="text-center space-y-4 max-w-md">
+          <svg
+            className="w-12 h-12 mx-auto text-muted-foreground/50"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 10l7-7m0 0l7 7m-7-7v18"
+            />
+          </svg>
+          <h2 className="text-lg font-semibold">Task Ejected</h2>
+          <p className="text-sm text-muted-foreground">
+            This task's branch is currently checked out in your main project
+            directory. Edit and test your code there, then click{" "}
+            <strong>Inject</strong> in the header to resume the pipeline.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Merge: custom rendering
   if (stage.output_format === "merge") {
     return <MergeStageView stage={stage} />;

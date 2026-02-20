@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { sendNotification } from "../../lib/notifications";
-import { gitWorktreeRemove, gitDeleteBranch } from "../../lib/git";
+import { gitWorktreeRemove, gitDeleteBranch, gitDefaultBranch, gitCheckoutBranch } from "../../lib/git";
 import { statusColors, pipelineColors } from "../../lib/taskStatus";
 import type { Task } from "../../lib/types";
 
@@ -63,8 +63,16 @@ export function TaskList({ onEdit }: TaskListProps) {
     if (activeTask?.id === archiveTarget.id) {
       setActiveTask(null);
     }
-    // Remove worktree if it exists
-    if (archiveTarget.worktree_path) {
+    if (archiveTarget.ejected) {
+      // Branch is checked out in main repo — switch to default branch first
+      try {
+        const defaultBranch = await gitDefaultBranch(activeProject.path);
+        await gitCheckoutBranch(activeProject.path, defaultBranch ?? "main");
+      } catch {
+        // Non-critical — best effort
+      }
+    } else if (archiveTarget.worktree_path) {
+      // Remove worktree if it exists
       try {
         await gitWorktreeRemove(activeProject.path, archiveTarget.worktree_path);
       } catch {
@@ -165,6 +173,11 @@ const TaskListItem = memo(function TaskListItem({
             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`}
           />
           <span className="truncate">{task.title}</span>
+          {task.ejected === 1 && (
+            <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
+              ejected
+            </span>
+          )}
         </div>
       </button>
       <Tooltip>

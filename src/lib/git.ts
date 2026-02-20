@@ -18,7 +18,7 @@ export async function gitDiff(workingDir: string): Promise<string> {
 }
 
 export async function gitDiffStat(workingDir: string): Promise<string> {
-  return runGit(workingDir, "diff", "--stat");
+  return runGit(workingDir, "diff", "HEAD", "--stat");
 }
 
 export async function gitAdd(workingDir: string): Promise<string> {
@@ -470,6 +470,39 @@ export async function gitDiffNameOnly(workingDir: string, base: string, head?: s
 
 export async function gitDiffStatBranch(workingDir: string, base: string): Promise<string> {
   return runGit(workingDir, "diff", "--stat", `${base}...HEAD`);
+}
+
+/**
+ * Eject a task's branch from its worktree to the main repo checkout.
+ * Removes the worktree, then checks out the branch in the main repo.
+ */
+export async function ejectTaskToMainRepo(
+  projectPath: string,
+  worktreePath: string,
+  branchName: string,
+): Promise<void> {
+  await gitWorktreeRemove(projectPath, worktreePath);
+  await gitCheckoutBranch(projectPath, branchName);
+}
+
+/**
+ * Inject a task's branch back from the main repo into a worktree.
+ * Switches main repo to the default branch, then re-creates the worktree.
+ */
+export async function injectTaskFromMainRepo(
+  projectPath: string,
+  worktreePath: string,
+  branchName: string,
+): Promise<void> {
+  const defaultBranch = await gitDefaultBranch(projectPath);
+  await gitCheckoutBranch(projectPath, defaultBranch ?? "main");
+  // Clean up any stale worktree entry before re-creating
+  try {
+    await gitWorktreeRemove(projectPath, worktreePath);
+  } catch {
+    // Worktree may not exist — that's fine
+  }
+  await gitWorktreeAdd(projectPath, worktreePath, branchName, false);
 }
 
 export async function readFileContents(path: string): Promise<string | null> {
