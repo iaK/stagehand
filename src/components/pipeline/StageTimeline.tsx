@@ -1,9 +1,12 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StageExecution, StageTemplate } from "../../lib/types";
 import { TextOutput } from "../output/TextOutput";
+import { useProcessStore } from "../../stores/processStore";
+
+const EMPTY_LINES: string[] = [];
 
 // -- Collapsible input bubble (for "Input from previous stage") --
 
@@ -95,16 +98,16 @@ export function AiBubble({
 }
 
 export function LiveStreamBubble({
-  streamLines,
+  stageKey: sk,
   label,
   onStop,
-  isStopping = false,
 }: {
-  streamLines: string[];
+  stageKey: string;
   label: string;
   onStop: () => void;
-  isStopping?: boolean;
 }) {
+  const streamOutput = useProcessStore((s) => s.stages[sk]?.streamOutput ?? EMPTY_LINES);
+  const isStopping = useProcessStore((s) => s.stages[sk]?.killed ?? false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,9 +115,9 @@ export function LiveStreamBubble({
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [streamLines.length]);
+  }, [streamOutput.length]);
 
-  const text = streamLines.join("");
+  const text = streamOutput.join("");
 
   return (
     <div className="flex gap-3 items-start">
@@ -235,7 +238,7 @@ export function StageTimeline({ executions, stage }: StageTimelineProps) {
   );
 }
 
-function CollapsibleTimelineEntry({
+const CollapsibleTimelineEntry = memo(function CollapsibleTimelineEntry({
   execution,
   stage,
   forceExpanded,
@@ -308,7 +311,7 @@ function CollapsibleTimelineEntry({
       </Collapsible>
     </div>
   );
-}
+});
 
 function TimelineOutput({
   output,

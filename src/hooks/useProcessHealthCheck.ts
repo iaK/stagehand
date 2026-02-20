@@ -14,33 +14,35 @@ import { PROCESS_HEALTH_POLL_MS, PROCESS_INACTIVITY_TIMEOUT_MS } from "../lib/co
 export function useProcessHealthCheck(stageId: string | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const activeTask = useTaskStore((s) => s.activeTask);
-  const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const sk = stageId && activeTask ? stageKey(activeTask.id, stageId) : null;
+  const stageIsRunning = useProcessStore((s) => sk ? (s.stages[sk]?.isRunning ?? false) : false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!stageId || !activeProject || !activeTask) return;
 
-    // Find a "running" execution for this stage
-    const hasRunning = executions.some(
-      (e) => e.stage_template_id === stageId && e.status === "running",
-    );
-
-    if (!hasRunning) {
-      // No running execution — clear any existing interval
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
-
-    // Start polling
     const projectId = activeProject.id;
     const taskId = activeTask.id;
     const sk = stageKey(taskId, stageId);
 
+    // Check both process store running state and execution status
+    if (!stageIsRunning) {
+      const executions = useTaskStore.getState().executions;
+      const hasRunning = executions.some(
+        (e) => e.stage_template_id === stageId && e.status === "running",
+      );
+      if (!hasRunning) return;
+    }
+
     const check = async () => {
+      // Read fresh executions at check time (non-reactive)
+      const currentExecs = useTaskStore.getState().executions;
+      const stillRunning = currentExecs.some(
+        (e) => e.stage_template_id === stageId && e.status === "running",
+      );
+      if (!stillRunning) return;
+
       const stageState = useProcessStore.getState().stages[sk];
       const processId = stageState?.processId;
 
@@ -108,7 +110,7 @@ export function useProcessHealthCheck(stageId: string | null) {
         intervalRef.current = null;
       }
     };
-  }, [stageId, activeProject, activeTask, executions, loadExecutions]);
+  }, [stageId, activeProject?.id, activeTask?.id, loadExecutions, stageIsRunning]);
 }
 
 async function markStageCrashed(

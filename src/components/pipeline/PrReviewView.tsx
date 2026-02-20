@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
+import { useProcessStore, stageKey } from "../../stores/processStore";
 import { useStageExecution } from "../../hooks/useStageExecution";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { usePrReview } from "../../hooks/usePrReview";
@@ -17,9 +17,7 @@ interface PrReviewViewProps {
 
 export function PrReviewView({ stage, task }: PrReviewViewProps) {
   const sk = stageKey(task.id, stage.id);
-  const { isRunning, streamOutput, killed: isStopping } = useProcessStore(
-    (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
-  );
+  const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const { killCurrent } = useStageExecution();
   useProcessHealthCheck(stage.id);
@@ -82,10 +80,9 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
           {isRunning && prReview.fixingId && (
             <div className="mb-4">
               <LiveStreamBubble
-                streamLines={streamOutput}
+                stageKey={sk}
                 label="Fixing review comment..."
                 onStop={() => killCurrent(task.id, stage.id)}
-                isStopping={isStopping}
               />
             </div>
           )}
@@ -100,7 +97,7 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
             loading={prReview.loading}
             isCompleted={false}
             error={prReview.error}
-            streamOutput={streamOutput}
+            stageKey={sk}
           />
 
           {/* Commit dialog for individual fixes */}
