@@ -1,28 +1,45 @@
 import type { LinearIssue } from "./types";
 import { LINEAR_PAGE_SIZE } from "./constants";
+import { withRetry } from "./retry";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 
 async function gql<T>(apiKey: string, query: string, variables?: Record<string, unknown>): Promise<T> {
-  const res = await fetch(LINEAR_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: apiKey,
+  return withRetry(
+    async () => {
+      const res = await fetch(LINEAR_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: apiKey,
+        },
+        body: JSON.stringify(variables ? { query, variables } : { query }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Invalid API key");
+        const err = new Error(`Linear API error: ${res.status}`);
+        (err as any).status = res.status;
+        throw err;
+      }
+
+      const json = await res.json();
+      if (json.errors?.length) {
+        throw new Error(json.errors[0].message);
+      }
+      return json.data as T;
     },
-    body: JSON.stringify(variables ? { query, variables } : { query }),
-  });
-
-  if (!res.ok) {
-    if (res.status === 401) throw new Error("Invalid API key");
-    throw new Error(`Linear API error: ${res.status}`);
-  }
-
-  const json = await res.json();
-  if (json.errors?.length) {
-    throw new Error(json.errors[0].message);
-  }
-  return json.data as T;
+    {
+      shouldRetry: (error) => {
+        if (error instanceof TypeError) return true; // network error
+        if (error instanceof Error && "status" in error) {
+          const status = (error as any).status as number;
+          return status === 429 || status >= 500;
+        }
+        return false;
+      },
+    },
+  );
 }
 
 interface ViewerResponse {
