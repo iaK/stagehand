@@ -250,18 +250,20 @@ export function StageView({ stage }: StageViewProps) {
     setApproving(true);
     setStageError(null);
     try {
-      // 1. Create child tasks in the database
-      await useTaskStore.getState().createSubtasks(
-        activeProject.id,
-        activeTask.id,
-        subtasks,
-      );
-      // 2. Update parent task status to "split" (terminal)
-      await useTaskStore.getState().updateTask(
-        activeProject.id,
-        activeTask.id,
-        { status: "split" },
-      );
+      if (subtasks.length > 0) {
+        // 1. Create child tasks in the database
+        await useTaskStore.getState().createSubtasks(
+          activeProject.id,
+          activeTask.id,
+          subtasks,
+        );
+        // 2. Update parent task status to "split" (terminal)
+        await useTaskStore.getState().updateTask(
+          activeProject.id,
+          activeTask.id,
+          { status: "split" },
+        );
+      }
       // 3. Approve the split stage (marks execution as approved)
       await approveStage(activeTask, stage);
     } catch (err) {

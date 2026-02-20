@@ -12,11 +12,9 @@ import {
   PLANNING_SCHEMA,
   DOCUMENTATION_PROMPT,
   PR_PREP_PROMPT,
-} from "./prompts";
-import {
   TASK_SPLITTING_PROMPT,
   TASK_SPLITTING_SCHEMA,
-} from "../prompts/stagePrompts";
+} from "./prompts";
 
 // === Migration Registry ===
 

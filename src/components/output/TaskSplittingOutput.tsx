@@ -3,12 +3,13 @@ import { TextOutput } from "./TextOutput";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import type { ProposedSubtask } from "../../lib/types";
 
 interface TaskSplittingOutputProps {
   output: string;
   onSplit: (tasks: { title: string; description: string }[]) => void;
+  onApprove?: () => void;
   isApproved: boolean;
   approving?: boolean;
 }
@@ -16,6 +17,7 @@ interface TaskSplittingOutputProps {
 export function TaskSplittingOutput({
   output,
   onSplit,
+  onApprove,
   isApproved,
   approving,
 }: TaskSplittingOutputProps) {
@@ -43,12 +45,32 @@ export function TaskSplittingOutput({
     return (
       <div>
         <TextOutput content={reasoning} />
-        {!isApproved && (
-          <Alert className="mt-6 border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/10 text-violet-800 dark:text-violet-300">
-            <AlertDescription className="text-violet-800 dark:text-violet-300">
-              <p className="text-sm font-medium">
-                No subtasks proposed.
-              </p>
+        {!isApproved ? (
+          <div className="mt-6">
+            <Alert className="border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/10 text-violet-800 dark:text-violet-300">
+              <AlertDescription className="text-violet-800 dark:text-violet-300">
+                <p className="text-sm font-medium">
+                  No subtasks proposed.
+                </p>
+              </AlertDescription>
+            </Alert>
+            {onApprove && (
+              <Button
+                variant="success"
+                onClick={onApprove}
+                disabled={approving}
+                className="mt-4"
+              >
+                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {approving ? "Approving..." : "Approve & Continue"}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <AlertDescription className="text-emerald-800 dark:text-emerald-300">
+              No subtasks needed — approved.
             </AlertDescription>
           </Alert>
         )}

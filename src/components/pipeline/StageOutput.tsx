@@ -191,6 +191,7 @@ export function StageOutput({
         <TaskSplittingOutput
           output={output}
           onSplit={onSplitTask ?? (() => {})}
+          onApprove={() => onApprove()}
           isApproved={isApproved}
           approving={approving}
         />
