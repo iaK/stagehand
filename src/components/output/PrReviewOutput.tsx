@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Loader2 } from "lucide-react";
 import type { PrReviewFix } from "../../lib/types";
 
@@ -48,6 +49,7 @@ export function PrReviewOutput({
   streamOutput,
 }: PrReviewOutputProps) {
   const [markingDone, setMarkingDone] = useState(false);
+  const [confirmDone, setConfirmDone] = useState(false);
 
   const fixedCount = fixes.filter((f) => f.fix_status === "fixed").length;
   const skippedCount = fixes.filter((f) => f.fix_status === "skipped").length;
@@ -115,7 +117,8 @@ export function PrReviewOutput({
               size="sm"
               onClick={() => {
                 if (pendingCount > 0) {
-                  if (!window.confirm(`There are still ${pendingCount} pending comment(s). Mark as done anyway?`)) return;
+                  setConfirmDone(true);
+                  return;
                 }
                 setMarkingDone(true);
                 onMarkDone();
@@ -160,6 +163,27 @@ export function PrReviewOutput({
           </AlertDescription>
         </Alert>
       )}
+
+      <AlertDialog open={confirmDone} onOpenChange={(open) => !open && setConfirmDone(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark as Done</AlertDialogTitle>
+            <AlertDialogDescription>
+              There {pendingCount === 1 ? "is" : "are"} still {pendingCount} pending comment{pendingCount !== 1 ? "s" : ""}. Mark as done anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setConfirmDone(false);
+              setMarkingDone(true);
+              onMarkDone();
+            }}>
+              Mark as Done
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -196,8 +196,7 @@ export type ClaudeStreamEvent =
   | { type: "started"; process_id: string; session_id: string | null }
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
-  | { type: "completed"; process_id: string; exit_code: number | null }
-  | { type: "error"; process_id: string; message: string };
+  | { type: "completed"; process_id: string; exit_code: number | null };
 
 // === Spawn Args ===
 

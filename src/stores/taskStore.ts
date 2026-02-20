@@ -31,10 +31,6 @@ interface TaskStore {
     taskId: string,
     updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
   ) => Promise<void>;
-  refreshExecution: (
-    projectId: string,
-    executionId: string,
-  ) => Promise<void>;
   refreshTaskExecStatuses: (projectId: string) => Promise<void>;
   createStageTemplate: (projectId: string, template: Omit<StageTemplate, "id" | "created_at" | "updated_at">) => Promise<StageTemplate>;
   deleteStageTemplate: (projectId: string, templateId: string) => Promise<void>;
@@ -149,7 +145,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   addTask: async (projectId, title, description, branchName) => {
     const templates = get().stageTemplates;
-    const firstStage = templates.length > 0 ? templates[0].id : "";
+    const firstStage = templates.length > 0
+      ? templates.reduce((a, b) => a.sort_order < b.sort_order ? a : b).id
+      : "";
     const task = await repo.createTask(
       projectId,
       title,
@@ -173,17 +171,6 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           ? tasks.find((t) => t.id === taskId) ?? null
           : active,
     });
-  },
-
-  refreshExecution: async (projectId, _executionId) => {
-    const task = get().activeTask;
-    if (task) {
-      const [executions, taskExecStatuses] = await Promise.all([
-        repo.listStageExecutions(projectId, task.id),
-        repo.getLatestExecutionStatusPerTask(projectId),
-      ]);
-      set({ executions, taskExecStatuses });
-    }
   },
 
   refreshTaskExecStatuses: async (projectId) => {

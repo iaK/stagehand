@@ -110,7 +110,10 @@ export function LiveStreamBubble({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      if (isNearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }, [streamLines.length]);
 

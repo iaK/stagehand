@@ -3,7 +3,7 @@ import { getMockDatabase } from "../../test/mocks/database";
 import { mockInvoke } from "../../test/mocks/tauri";
 
 beforeEach(() => {
-  mockInvoke("get_devflow_dir", () => "/mock/devflow");
+  mockInvoke("get_stagehand_dir", () => "/mock/stagehand");
 });
 
 describe("getAppDb", () => {
@@ -11,7 +11,7 @@ describe("getAppDb", () => {
     const db = await getAppDb();
     expect(db).toBeDefined();
     // Schema initialization should have created tables
-    const mockDb = getMockDatabase("sqlite:/mock/devflow/app.db");
+    const mockDb = getMockDatabase("sqlite:/mock/stagehand/app.db");
     const executeCalls = mockDb.execute.mock.calls.map((c: unknown[]) => c[0] as string);
     // Should have CREATE TABLE for projects and settings
     expect(executeCalls.some((sql: string) => sql.includes("CREATE TABLE IF NOT EXISTS projects"))).toBe(true);
@@ -29,7 +29,7 @@ describe("getProjectDb", () => {
   it("creates project database and initializes schema", async () => {
     const db = await getProjectDb("proj-1");
     expect(db).toBeDefined();
-    const mockDb = getMockDatabase("sqlite:/mock/devflow/data/proj-1.db");
+    const mockDb = getMockDatabase("sqlite:/mock/stagehand/data/proj-1.db");
     const executeCalls = mockDb.execute.mock.calls.map((c: unknown[]) => c[0] as string);
     // Should have CREATE TABLE for core tables
     expect(executeCalls.some((sql: string) => sql.includes("CREATE TABLE IF NOT EXISTS stage_templates"))).toBe(true);
@@ -53,7 +53,7 @@ describe("getProjectDb", () => {
 
   it("runs ALTER TABLE migrations", async () => {
     await getProjectDb("proj-5");
-    const mockDb = getMockDatabase("sqlite:/mock/devflow/data/proj-5.db");
+    const mockDb = getMockDatabase("sqlite:/mock/stagehand/data/proj-5.db");
     const executeCalls = mockDb.execute.mock.calls.map((c: unknown[]) => c[0] as string);
     // Should attempt ALTER TABLE migrations (they catch errors if column exists)
     expect(executeCalls.some((sql: string) => sql.includes("ALTER TABLE") && sql.includes("thinking_output"))).toBe(true);
