@@ -22,9 +22,9 @@ const severityVariant: Record<string, "critical" | "warning" | "info"> = {
 };
 
 const severityCardColors = {
-  critical: { border: "border-red-200", bg: "bg-red-50", bgDeselected: "bg-zinc-50 opacity-60" },
-  warning: { border: "border-amber-200", bg: "bg-amber-50", bgDeselected: "bg-zinc-50 opacity-60" },
-  info: { border: "border-blue-200", bg: "bg-blue-50", bgDeselected: "bg-zinc-50 opacity-60" },
+  critical: { border: "border-red-200 dark:border-red-500/20", bg: "bg-red-50 dark:bg-red-500/10", bgDeselected: "bg-zinc-50 dark:bg-zinc-900 opacity-60" },
+  warning: { border: "border-amber-200 dark:border-amber-500/20", bg: "bg-amber-50 dark:bg-amber-500/10", bgDeselected: "bg-zinc-50 dark:bg-zinc-900 opacity-60" },
+  info: { border: "border-blue-200 dark:border-blue-500/20", bg: "bg-blue-50 dark:bg-blue-500/10", bgDeselected: "bg-zinc-50 dark:bg-zinc-900 opacity-60" },
 };
 
 export function FindingsOutput({
@@ -65,8 +65,8 @@ export function FindingsOutput({
       <div>
         <TextOutput content={summary} />
         {!isApproved && (
-          <Alert className="mt-6 border-emerald-200 bg-emerald-50 text-emerald-800">
-            <AlertDescription className="text-emerald-800">
+          <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+            <AlertDescription className="text-emerald-800 dark:text-emerald-300">
               <p className="text-sm font-medium mb-3">
                 No findings — everything looks good.
               </p>

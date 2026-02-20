@@ -154,7 +154,7 @@ export function Sidebar() {
                   variant="link"
                   size="xs"
                   onClick={() => setShowLinearImport(true)}
-                  className="text-violet-600"
+                  className="text-violet-600 dark:text-violet-400"
                 >
                   Import
                 </Button>
@@ -163,7 +163,7 @@ export function Sidebar() {
                 variant="link"
                 size="xs"
                 onClick={() => setShowTaskCreate(true)}
-                className="text-blue-600"
+                className="text-blue-600 dark:text-blue-400"
               >
                 + New
               </Button>

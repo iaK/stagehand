@@ -19,6 +19,8 @@ import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Loader2 } from "lucide-react";
 import type { StageTemplate } from "../../lib/types";
 
@@ -48,6 +50,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false);
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
@@ -226,11 +229,11 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   if (mergeState === "completed" || mergeState === "success") {
     return (
       <div className="p-6 max-w-4xl">
-        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
-          <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <Alert className="border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+          <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
-          <AlertDescription className="text-emerald-800">
+          <AlertDescription className="text-emerald-800 dark:text-emerald-300">
             Branch merged successfully. Task complete.
           </AlertDescription>
         </Alert>
@@ -265,7 +268,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     <div className="p-6 max-w-4xl">
       <div className="p-4 bg-muted/50 border border-border rounded-lg">
         <div className="flex items-center gap-2 mb-3">
-          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
           <span className="text-sm font-medium text-foreground">
@@ -274,7 +277,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         </div>
 
         <p className="text-sm text-muted-foreground mb-3">
-          Merge <code className="font-mono text-foreground bg-zinc-100 px-1 rounded">{activeTask.branch_name}</code> into <code className="font-mono text-foreground bg-zinc-100 px-1 rounded">{targetBranch}</code>
+          Merge <code className="font-mono text-foreground bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{activeTask.branch_name}</code> into <code className="font-mono text-foreground bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{targetBranch}</code>
         </p>
 
         {changedFiles.length > 0 && (
@@ -282,7 +285,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
             <p className="text-xs font-medium text-muted-foreground mb-1">
               {changedFiles.length} file{changedFiles.length !== 1 ? "s" : ""} changed
             </p>
-            <div className="max-h-32 overflow-y-auto text-xs font-mono text-muted-foreground bg-zinc-50 border border-border rounded p-2">
+            <div className="max-h-32 overflow-y-auto text-xs font-mono text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2">
               {changedFiles.map((f) => (
                 <div key={f}>{f}</div>
               ))}
@@ -291,15 +294,50 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         )}
 
         {diffStat && (
-          <pre className="text-xs text-muted-foreground bg-zinc-50 border border-border rounded p-2 mb-3 overflow-x-auto">
+          <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
             {diffStat}
           </pre>
         )}
 
         {error && (
-          <Alert variant="destructive" className="mb-3">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div className="mb-3 space-y-2">
+            <Alert variant="destructive">
+              <AlertDescription>
+                {/conflict|CONFLICT|merge conflict/i.test(error) ? (
+                  <div className="space-y-2">
+                    <p className="font-medium">Merge conflicts detected</p>
+                    <p className="text-sm">
+                      Resolve conflicts locally in your branch, commit the resolution, then retry.
+                    </p>
+                  </div>
+                ) : (
+                  <p>{error}</p>
+                )}
+              </AlertDescription>
+            </Alert>
+            {/conflict|CONFLICT|merge conflict/i.test(error) && (
+              <Collapsible>
+                <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Show raw error
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre className="mt-1 text-xs text-muted-foreground bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                    {error}
+                  </pre>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setError(null); setMergeState("preview"); }}
+            >
+              Retry
+            </Button>
+          </div>
         )}
 
         <div className="flex gap-2">
@@ -314,13 +352,30 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleSkip}
+            onClick={() => setShowSkipConfirm(true)}
             disabled={mergeState === "merging"}
           >
             Skip
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={showSkipConfirm} onOpenChange={setShowSkipConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Skip Merge</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the task as completed without merging the branch. The worktree will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => { setShowSkipConfirm(false); handleSkip(); }}>
+              Skip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

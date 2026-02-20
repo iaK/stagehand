@@ -102,8 +102,8 @@ export function PipelineView() {
             onClick={() => setActiveView("overview")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               activeView === "overview"
-                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                : "text-zinc-400 hover:text-zinc-600"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
+                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
             }`}
           >
             Overview
@@ -112,8 +112,8 @@ export function PipelineView() {
             onClick={() => setActiveView("pipeline")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               activeView === "pipeline"
-                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                : "text-zinc-400 hover:text-zinc-600"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
+                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
             }`}
           >
             Pipeline

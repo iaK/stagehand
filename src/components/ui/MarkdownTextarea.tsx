@@ -78,7 +78,7 @@ export function MarkdownTextarea({
       role={readOnly ? undefined : "button"}
       style={{ minHeight }}
       className={`w-full bg-background border border-input rounded-md px-4 py-3 text-sm ${
-        readOnly ? "" : "cursor-pointer hover:border-zinc-400"
+        readOnly ? "" : "cursor-pointer hover:border-zinc-400 dark:hover:border-zinc-500"
       } focus:outline-none focus:border-ring ${className ?? ""}`}
     >
       {value ? (

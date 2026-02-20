@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -22,6 +23,7 @@ export function TaskList({ onEdit }: TaskListProps) {
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const activeProject = useProjectStore((s) => s.activeProject);
   const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
+  const [query, setQuery] = useState("");
 
   const getTaskDotClass = (task: Task) => {
     // Completed tasks always show green
@@ -44,6 +46,8 @@ export function TaskList({ onEdit }: TaskListProps) {
     }
     return statusColors[task.status] ?? "bg-zinc-400";
   };
+
+  const filtered = tasks.filter(t => !query || t.title.toLowerCase().includes(query.toLowerCase()));
 
   if (tasks.length === 0) {
     return (
@@ -84,8 +88,19 @@ export function TaskList({ onEdit }: TaskListProps) {
 
   return (
     <>
+    <div className="px-1 pb-2">
+      <Input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search tasks..."
+        className="h-7 text-xs"
+      />
+    </div>
     <div className="space-y-1">
-      {tasks.map((task) => {
+      {filtered.length === 0 && query ? (
+        <p className="text-sm text-muted-foreground italic px-1 py-2">No matching tasks</p>
+      ) : filtered.map((task) => {
         const isActive = activeTask?.id === task.id;
         return (
           <div
