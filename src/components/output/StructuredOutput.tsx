@@ -28,10 +28,10 @@ export function StructuredOutput({
   } catch {
     return (
       <div className="text-sm text-muted-foreground">
-        <p className="text-amber-600 mb-2">
+        <p className="text-amber-600 dark:text-amber-400 mb-2">
           Could not parse structured output.
         </p>
-        <pre className="bg-zinc-50 border border-border p-3 rounded text-xs whitespace-pre-wrap">
+        <pre className="bg-zinc-50 dark:bg-zinc-900 border border-border p-3 rounded text-xs whitespace-pre-wrap">
           {output}
         </pre>
       </div>

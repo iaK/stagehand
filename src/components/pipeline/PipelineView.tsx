@@ -5,6 +5,7 @@ import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { TaskOverview } from "../task/TaskOverview";
+import { logger } from "../../lib/logger";
 import type { StageTemplate } from "../../lib/types";
 
 export function PipelineView() {
@@ -37,10 +38,10 @@ export function PipelineView() {
   useEffect(() => {
     if (projectId && activeTaskId) {
       loadExecutions(projectId, activeTaskId).catch((err) =>
-        console.error("Failed to load executions:", err),
+        logger.error("Failed to load executions:", err),
       );
       loadTaskStages(projectId, activeTaskId).catch((err) =>
-        console.error("Failed to load task stages:", err),
+        logger.error("Failed to load task stages:", err),
       );
     }
   }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);
@@ -64,7 +65,7 @@ export function PipelineView() {
     setActiveView("pipeline");
   }, [activeTaskId]);
 
-  // Sync viewed stage to process store so LiveStreamBubble can show the right output
+  // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
     useProcessStore.getState().setViewingStageId(sk);
@@ -101,8 +102,8 @@ export function PipelineView() {
             onClick={() => setActiveView("overview")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               activeView === "overview"
-                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                : "text-zinc-400 hover:text-zinc-600"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
+                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
             }`}
           >
             Overview
@@ -111,8 +112,8 @@ export function PipelineView() {
             onClick={() => setActiveView("pipeline")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
               activeView === "pipeline"
-                ? "bg-zinc-100 text-zinc-800 border border-zinc-300"
-                : "text-zinc-400 hover:text-zinc-600"
+                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
+                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
             }`}
           >
             Pipeline

@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { sendNotification } from "../../lib/notifications";
+import { logger } from "../../lib/logger";
 import type { Project, Task } from "../../lib/types";
 
 export function Sidebar() {
@@ -39,31 +40,34 @@ export function Sidebar() {
 
   useEffect(() => {
     loadProjects().catch((err) =>
-      console.error("Failed to load projects:", err),
+      logger.error("Failed to load projects:", err),
     );
   }, [loadProjects]);
 
   useEffect(() => {
     if (activeProject) {
       loadTasks(activeProject.id)
-        .catch((err) => console.error("Failed to load tasks:", err));
+        .catch((err) => logger.error("Failed to load tasks:", err));
       loadStageTemplates(activeProject.id).catch((err) =>
-        console.error("Failed to load stage templates:", err),
+        logger.error("Failed to load stage templates:", err),
       );
       loadLinearForProject(activeProject.id).catch((err) =>
-        console.error("Failed to load Linear settings:", err),
+        logger.error("Failed to load Linear settings:", err),
       );
       loadGitHubForProject(activeProject.id, activeProject.path).catch((err) =>
-        console.error("Failed to load GitHub settings:", err),
+        logger.error("Failed to load GitHub settings:", err),
       );
     }
   }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject, loadGitHubForProject]);
 
-  // Refresh project status dots whenever tasks or execution statuses change
+  // Refresh project status dots whenever tasks or execution statuses change (debounced)
   useEffect(() => {
-    loadProjectStatuses().catch((err) =>
-      console.error("Failed to load project statuses:", err),
-    );
+    const timer = setTimeout(() => {
+      loadProjectStatuses().catch((err) =>
+        logger.error("Failed to load project statuses:", err),
+      );
+    }, 500);
+    return () => clearTimeout(timer);
   }, [tasks, taskExecStatuses, loadProjectStatuses]);
 
   const confirmArchive = async () => {
@@ -153,7 +157,7 @@ export function Sidebar() {
                   variant="link"
                   size="xs"
                   onClick={() => setShowLinearImport(true)}
-                  className="text-violet-600"
+                  className="text-violet-600 dark:text-violet-400"
                 >
                   Import
                 </Button>
@@ -162,7 +166,7 @@ export function Sidebar() {
                 variant="link"
                 size="xs"
                 onClick={() => setShowTaskCreate(true)}
-                className="text-blue-600"
+                className="text-blue-600 dark:text-blue-400"
               >
                 + New
               </Button>

@@ -1,5 +1,5 @@
-import { getAppDb, getProjectDb, closeProjectDb } from "./db";
-import { invoke } from "@tauri-apps/api/core";
+import { getAppDb, getProjectDb } from "./db";
+import { withTransaction } from "./db/transaction";
 import { getDefaultStageTemplates } from "./seed";
 import type {
   Project,
@@ -109,34 +109,7 @@ export async function createProject(name: string, path: string): Promise<Project
   return { id, name, path, archived: 0, created_at: now, updated_at: now };
 }
 
-export async function deleteProject(id: string, projectPath?: string): Promise<void> {
-  // Clean up worktrees and branches for all tasks
-  if (projectPath) {
-    try {
-      const projectDb = await getProjectDb(id);
-      const tasks = await projectDb.select<{ worktree_path: string | null; branch_name: string | null }[]>(
-        "SELECT worktree_path, branch_name FROM tasks WHERE project_id = $1",
-        [id],
-      );
-      const { gitWorktreeRemove, gitDeleteBranch } = await import("./git");
-      for (const task of tasks) {
-        if (task.worktree_path) {
-          try { await gitWorktreeRemove(projectPath, task.worktree_path); } catch { /* best-effort */ }
-        }
-        if (task.branch_name) {
-          try { await gitDeleteBranch(projectPath, task.branch_name); } catch { /* best-effort */ }
-        }
-      }
-    } catch {
-      // Project DB may not exist — continue with deletion
-    }
-  }
-
-  // Close the project DB connection and delete the file
-  await closeProjectDb(id);
-  try { await invoke("delete_project_db", { projectId: id }); } catch { /* DB file may not exist */ }
-
-  // Delete from projects table
+export async function deleteProject(id: string): Promise<void> {
   const db = await getAppDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
 }
@@ -300,12 +273,14 @@ export async function reorderStageTemplates(
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const now = new Date().toISOString();
-  for (let i = 0; i < orderedIds.length; i++) {
-    await db.execute(
-      "UPDATE stage_templates SET sort_order = $1, updated_at = $2 WHERE id = $3",
-      [i, now, orderedIds[i]],
-    );
-  }
+  await withTransaction(db, async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.execute(
+        "UPDATE stage_templates SET sort_order = $1, updated_at = $2 WHERE id = $3",
+        [i, now, orderedIds[i]],
+      );
+    }
+  });
 }
 
 export async function duplicateStageTemplate(
@@ -323,12 +298,6 @@ export async function duplicateStageTemplate(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Place after the source template
-  await db.execute(
-    "UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1 WHERE project_id = $2 AND sort_order > $3",
-    [now, projectId, source.sort_order],
-  );
-
   const newTemplate: StageTemplate = {
     ...source,
     id,
@@ -338,18 +307,26 @@ export async function duplicateStageTemplate(
     updated_at: now,
   };
 
-  await db.execute(
-    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-    [
-      newTemplate.id, newTemplate.project_id, newTemplate.name, newTemplate.description,
-      newTemplate.sort_order, newTemplate.prompt_template, newTemplate.input_source,
-      newTemplate.output_format, newTemplate.output_schema, newTemplate.gate_rules,
-      newTemplate.persona_name, newTemplate.persona_system_prompt, newTemplate.persona_model,
-      newTemplate.preparation_prompt, newTemplate.allowed_tools,
-      newTemplate.requires_user_input, now, now,
-    ],
-  );
+  await withTransaction(db, async () => {
+    // Place after the source template
+    await db.execute(
+      "UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1 WHERE project_id = $2 AND sort_order > $3",
+      [now, projectId, source.sort_order],
+    );
+
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        newTemplate.id, newTemplate.project_id, newTemplate.name, newTemplate.description,
+        newTemplate.sort_order, newTemplate.prompt_template, newTemplate.input_source,
+        newTemplate.output_format, newTemplate.output_schema, newTemplate.gate_rules,
+        newTemplate.persona_name, newTemplate.persona_system_prompt, newTemplate.persona_model,
+        newTemplate.preparation_prompt, newTemplate.allowed_tools,
+        newTemplate.requires_user_input, now, now,
+      ],
+    );
+  });
 
   return newTemplate;
 }
@@ -605,13 +582,15 @@ export async function setTaskStages(
   stages: { stageTemplateId: string; sortOrder: number }[],
 ): Promise<void> {
   const db = await getProjectDb(projectId);
-  await db.execute("DELETE FROM task_stages WHERE task_id = $1", [taskId]);
-  for (const s of stages) {
-    await db.execute(
-      "INSERT INTO task_stages (id, task_id, stage_template_id, sort_order) VALUES ($1, $2, $3, $4)",
-      [crypto.randomUUID(), taskId, s.stageTemplateId, s.sortOrder],
-    );
-  }
+  await withTransaction(db, async () => {
+    await db.execute("DELETE FROM task_stages WHERE task_id = $1", [taskId]);
+    for (const s of stages) {
+      await db.execute(
+        "INSERT INTO task_stages (id, task_id, stage_template_id, sort_order) VALUES ($1, $2, $3, $4)",
+        [crypto.randomUUID(), taskId, s.stageTemplateId, s.sortOrder],
+      );
+    }
+  });
 }
 
 export async function getFilteredStageTemplates(

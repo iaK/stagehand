@@ -22,14 +22,13 @@ import {
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
+import { PR_REVIEW_POLL_MS } from "../lib/constants";
 import type {
   Task,
   StageTemplate,
   PrReviewFix,
   ClaudeStreamEvent,
 } from "../lib/types";
-
-const POLL_INTERVAL_MS = 60_000;
 
 export function usePrReview(stage: StageTemplate, task: Task | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -47,6 +46,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const isFetchingRef = useRef(false);
   const fetchReviewsRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const preFixFilesRef = useRef<Set<string>>(new Set());
 
@@ -100,6 +100,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
   }, [activeProject, task, stage.id, executionId, loadExecutions]);
 
   const fetchReviews = useCallback(async () => {
+    if (isFetchingRef.current) return;
     if (!activeProject || !task?.pr_url) return;
 
     const parsed = parsePrUrl(task.pr_url);
@@ -108,6 +109,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       return;
     }
 
+    isFetchingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -241,6 +243,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
         setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
+      isFetchingRef.current = false;
       if (mountedRef.current) {
         setLoading(false);
       }
@@ -340,6 +343,10 @@ ${fix.body}`;
                   setStopped(sk);
                   resolve();
                   break;
+                case "error":
+                  setStopped(sk);
+                  resolve();
+                  break;
               }
             },
           ).catch(() => resolve());
@@ -378,7 +385,7 @@ Keep it under 72 characters for the first line.`,
                 (event: ClaudeStreamEvent) => {
                   if (event.type === "stdout_line") {
                     msgText += event.line + "\n";
-                  } else if (event.type === "completed") {
+                  } else if (event.type === "completed" || event.type === "error") {
                     resolve();
                   }
                 },
@@ -392,6 +399,7 @@ Keep it under 72 characters for the first line.`,
 
           useProcessStore.getState().setPendingCommit({
             stageId: stage.id,
+            taskId: task!.id,
             stageName: stage.name,
             message: commitMessage,
             diffStat,
@@ -582,7 +590,7 @@ Keep it under 72 characters for the first line.`,
     pollingRef.current = setInterval(() => {
       if (fixingId) return; // Don't poll while fixing
       fetchReviewsRef.current();
-    }, POLL_INTERVAL_MS);
+    }, PR_REVIEW_POLL_MS);
 
     return () => {
       if (pollingRef.current) {

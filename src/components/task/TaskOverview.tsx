@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir } from "../../lib/worktree";
@@ -303,7 +304,11 @@ export function TaskOverview() {
         </CardHeader>
         <CardContent>
           {commitsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading commits...</p>
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/6" />
+            </div>
           ) : commits.length === 0 ? (
             <p className="text-sm text-muted-foreground">No commits yet</p>
           ) : (

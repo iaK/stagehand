@@ -1,9 +1,12 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StageExecution, StageTemplate } from "../../lib/types";
 import { TextOutput } from "../output/TextOutput";
+import { useProcessStore } from "../../stores/processStore";
+
+const EMPTY_LINES: string[] = [];
 
 // -- Collapsible input bubble (for "Input from previous stage") --
 
@@ -18,7 +21,7 @@ export function CollapsibleInputBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5">
         <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
         </svg>
@@ -35,7 +38,7 @@ export function CollapsibleInputBubble({
           {label}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-1 p-3 bg-zinc-50 border border-border rounded-lg text-sm text-zinc-700">
+          <div className="mt-1 p-3 bg-zinc-50 dark:bg-zinc-900 border border-border rounded-lg text-sm text-zinc-700 dark:text-zinc-300">
             <TextOutput content={text} />
           </div>
         </CollapsibleContent>
@@ -55,15 +58,15 @@ export function UserBubble({
 }) {
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5">
         <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
         </svg>
       </div>
       <div className="flex-1 min-w-0 pb-4">
         <p className="text-xs text-muted-foreground mb-1">{label}</p>
-        <div className="p-3 bg-zinc-50 border border-border rounded-lg">
-          <p className="text-sm text-zinc-700 whitespace-pre-wrap">{text}</p>
+        <div className="p-3 bg-zinc-50 dark:bg-zinc-900 border border-border rounded-lg">
+          <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{text}</p>
         </div>
       </div>
     </div>
@@ -79,8 +82,8 @@ export function AiBubble({
 }) {
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <svg className="w-3 h-3 text-zinc-600" fill="currentColor" viewBox="0 0 20 20">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg className="w-3 h-3 text-zinc-600 dark:text-zinc-400" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
         </svg>
       </div>
@@ -95,38 +98,35 @@ export function AiBubble({
 }
 
 export function LiveStreamBubble({
-  streamLines,
+  stageKey: sk,
   label,
   onStop,
-  isStopping = false,
 }: {
-  streamLines: string[];
+  stageKey: string;
   label: string;
   onStop: () => void;
-  isStopping?: boolean;
 }) {
+  const streamOutput = useProcessStore((s) => s.stages[sk]?.streamOutput ?? EMPTY_LINES);
+  const isStopping = useProcessStore((s) => s.stages[sk]?.killed ?? false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      if (isNearBottom) {
-        el.scrollTop = el.scrollHeight;
-      }
+      el.scrollTop = el.scrollHeight;
     }
-  }, [streamLines.length]);
+  }, [streamOutput.length]);
 
-  const text = streamLines.join("");
+  const text = streamOutput.join("");
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
         <div className={`w-2.5 h-2.5 rounded-full ${isStopping ? "bg-amber-500" : "bg-blue-500"} animate-pulse`} />
       </div>
       <div className="flex-1 min-w-0 pb-4">
         <div className="flex items-center gap-2 mb-1">
-          <p className={`text-xs ${isStopping ? "text-amber-600" : "text-blue-600"}`}>
+          <p className={`text-xs ${isStopping ? "text-amber-600 dark:text-amber-400" : "text-blue-600 dark:text-blue-400"}`}>
             {isStopping ? "Stopping..." : label}
           </p>
           {!isStopping && (
@@ -140,10 +140,10 @@ export function LiveStreamBubble({
             </Button>
           )}
         </div>
-        <div className="border border-border rounded-lg overflow-hidden bg-zinc-50">
+        <div className="border border-border rounded-lg overflow-hidden bg-zinc-50 dark:bg-zinc-900">
           <div
             ref={scrollRef}
-            className="p-3 max-h-80 overflow-y-auto text-sm text-zinc-600 font-mono whitespace-pre-wrap"
+            className="p-3 max-h-80 overflow-y-auto text-sm text-zinc-600 dark:text-zinc-400 font-mono whitespace-pre-wrap"
           >
             {text || "Starting..."}
           </div>
@@ -166,7 +166,7 @@ export function ThinkingBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-muted-foreground" fill="currentColor" viewBox="0 0 20 20">
           <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" />
         </svg>
@@ -183,7 +183,7 @@ export function ThinkingBubble({
           {label}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border border-border rounded-lg overflow-hidden bg-zinc-50">
+          <div className="border border-border rounded-lg overflow-hidden bg-zinc-50 dark:bg-zinc-900">
             <ScrollArea className="max-h-60">
               <div className="p-3 text-xs text-muted-foreground font-mono whitespace-pre-wrap">
                 {text}
@@ -204,39 +204,70 @@ interface StageTimelineProps {
 }
 
 export function StageTimeline({ executions, stage }: StageTimelineProps) {
+  const [forceState, setForceState] = useState<boolean | null>(null);
+
   if (executions.length === 0) return null;
 
   return (
     <div className="relative">
+      {executions.length > 1 && (
+        <div className="flex justify-end mb-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setForceState(prev => prev === true ? false : true)}
+            className="text-xs text-muted-foreground"
+          >
+            {forceState === true ? "Collapse All" : "Expand All"}
+          </Button>
+        </div>
+      )}
       <div className="absolute left-3 top-3 bottom-3 w-px bg-border" />
       <div className="space-y-1">
         {executions.map((exec) => (
-          <CollapsibleTimelineEntry key={exec.id} execution={exec} stage={stage} />
+          <CollapsibleTimelineEntry
+            key={exec.id}
+            execution={exec}
+            stage={stage}
+            forceExpanded={forceState}
+            onManualToggle={() => setForceState(null)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function CollapsibleTimelineEntry({
+const CollapsibleTimelineEntry = memo(function CollapsibleTimelineEntry({
   execution,
   stage,
+  forceExpanded,
+  onManualToggle,
 }: {
   execution: StageExecution;
   stage: StageTemplate;
+  forceExpanded?: boolean | null;
+  onManualToggle?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const expanded = forceExpanded ?? localExpanded;
+
+  const handleToggle = (open: boolean) => {
+    setLocalExpanded(open);
+    if (onManualToggle) onManualToggle();
+  };
+
   const output = execution.parsed_output ?? execution.raw_output ?? "";
   const hasOutput = output && execution.status !== "running" && execution.status !== "pending";
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <svg className="w-3 h-3 text-zinc-600" fill="currentColor" viewBox="0 0 20 20">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg className="w-3 h-3 text-zinc-600 dark:text-zinc-400" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
         </svg>
       </div>
-      <Collapsible open={expanded} onOpenChange={setExpanded} className="flex-1 min-w-0 pb-4 pt-0.5">
+      <Collapsible open={expanded} onOpenChange={handleToggle} className="flex-1 min-w-0 pb-4 pt-0.5">
         <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           <svg
             className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -247,7 +278,7 @@ function CollapsibleTimelineEntry({
           </svg>
           {stage.name} round #{execution.attempt_number}
           {execution.status === "approved" && (
-            <span className="text-emerald-600 ml-1">&#10003;</span>
+            <span className="text-emerald-600 dark:text-emerald-400 ml-1">&#10003;</span>
           )}
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -280,7 +311,7 @@ function CollapsibleTimelineEntry({
       </Collapsible>
     </div>
   );
-}
+});
 
 function TimelineOutput({
   output,
@@ -308,7 +339,7 @@ function TimelineOutput({
               <div className="mt-3 pt-3 border-t border-border space-y-2">
                 <p className="text-xs text-muted-foreground">Questions asked ({questions.length})</p>
                 {questions.map((q) => (
-                  <div key={q.id} className="text-xs text-zinc-600">
+                  <div key={q.id} className="text-xs text-zinc-600 dark:text-zinc-400">
                     <span className="text-foreground">Q: </span>{q.question}
                   </div>
                 ))}
@@ -339,7 +370,7 @@ function TimelineOutput({
         );
       }
     } catch {
-      // Not JSON — Phase 2 text output, fall through
+      // Not JSON -- Phase 2 text output, fall through
     }
   }
 

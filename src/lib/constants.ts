@@ -1,0 +1,10 @@
+export const LINEAR_PAGE_SIZE = 50;
+export const STREAM_OUTPUT_MAX_LINES = 10_000;
+export const PROCESS_HEALTH_POLL_MS = 5_000;
+export const PROCESS_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+export const PR_REVIEW_POLL_MS = 60_000;
+export const GIT_LOG_DEFAULT_MAX = 50;
+export const GIT_COMMITS_DEFAULT_MAX = 200;
+export const RETRY_MAX_ATTEMPTS = 3;
+export const RETRY_BASE_DELAY_MS = 1_000;
+export const RETRY_MAX_DELAY_MS = 10_000;

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { sendNotification } from "../../lib/notifications";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { LinearIssue } from "../../lib/types";
 
 interface LinearImportProps {
@@ -18,9 +19,9 @@ interface LinearImportProps {
 
 const priorityLabels: Record<number, { label: string; color: string }> = {
   0: { label: "None", color: "text-muted-foreground" },
-  1: { label: "Urgent", color: "text-red-600" },
-  2: { label: "High", color: "text-orange-600" },
-  3: { label: "Medium", color: "text-yellow-600" },
+  1: { label: "Urgent", color: "text-red-600 dark:text-red-400" },
+  2: { label: "High", color: "text-orange-600 dark:text-orange-400" },
+  3: { label: "Medium", color: "text-yellow-600 dark:text-yellow-400" },
   4: { label: "Low", color: "text-muted-foreground" },
 };
 
@@ -97,8 +98,13 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           {loading && (
-            <div className="text-sm text-muted-foreground text-center py-8">
-              Loading issues...
+            <div className="space-y-3 py-4 px-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="space-y-1.5">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-4 w-full" />
+                </div>
+              ))}
             </div>
           )}
           {error && (

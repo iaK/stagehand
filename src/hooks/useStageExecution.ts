@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
@@ -21,7 +21,14 @@ import {
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
-import { detectInteractionType } from "../lib/outputDetection";
+import { logger } from "../lib/logger";
+import {
+  extractJson,
+  extractStageOutput,
+  extractStageSummary,
+  validateGate,
+  shouldAutoStartStage,
+} from "../lib/stageUtils";
 import type {
   Task,
   StageTemplate,
@@ -339,6 +346,21 @@ export function useStageExecution() {
                 !!priorAttemptOutput,
               );
               break;
+            case "error":
+              setStopped(sk);
+              appendOutput(sk, `[Error] ${event.message}`);
+              repo.updateStageExecution(activeProject!.id, executionId!, {
+                status: "failed",
+                error_message: event.message,
+                completed_at: new Date().toISOString(),
+              }).then(() => {
+                if (useTaskStore.getState().activeTask?.id === taskId) {
+                  loadExecutions(activeProject!.id, taskId);
+                } else {
+                  useTaskStore.getState().refreshTaskExecStatuses(activeProject!.id);
+                }
+              });
+              break;
           }
         };
 
@@ -369,8 +391,8 @@ export function useStageExecution() {
         let mcpConfig: string | undefined;
         try {
           const mcpServerPath = await invoke<string>("get_mcp_server_path");
-          const stagehandDir = await invoke<string>("get_stagehand_dir");
-          const dbPath = `${stagehandDir}/data/${activeProject.id}.db`;
+          const devflowDir = await invoke<string>("get_devflow_dir");
+          const dbPath = `${devflowDir}/data/${activeProject.id}.db`;
           const config = {
             mcpServers: {
               "stagehand-context": {
@@ -393,7 +415,7 @@ export function useStageExecution() {
             : mcpHint;
         } catch (err) {
           // Graceful degradation — MCP server unavailable, prompt context still works
-          console.warn("MCP server config failed, continuing without MCP:", err);
+          logger.warn("MCP server config failed, continuing without MCP:", err);
         }
 
         await spawnClaude(
@@ -426,14 +448,14 @@ export function useStageExecution() {
               error_message: errorMsg,
               completed_at: new Date().toISOString(),
             });
-          } catch {
-            // Execution may not have been created yet — ignore
+          } catch (err) {
+            logger.error("Failed to record stage failure status", err);
           }
         }
         if (useTaskStore.getState().activeTask?.id === task.id) {
-          await loadExecutions(activeProject.id, task.id).catch(() => {});
+          await loadExecutions(activeProject.id, task.id).catch((err) => logger.error("Failed to reload executions after stage failure", err));
         } else {
-          await useTaskStore.getState().refreshTaskExecStatuses(activeProject.id).catch(() => {});
+          await useTaskStore.getState().refreshTaskExecStatuses(activeProject.id).catch((err) => logger.error("Failed to refresh task statuses", err));
         }
       }
     },
@@ -531,6 +553,8 @@ export function useStageExecution() {
 
   const runStageRef = useRef(runStage);
   runStageRef.current = runStage;
+
+  const killTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const approveStage = useCallback(
     async (task: Task, stage: StageTemplate, decision?: string) => {
@@ -641,7 +665,7 @@ export function useStageExecution() {
             // Return early — runStage's "started" event handler will call
             // loadExecutions, avoiding a race with the loadExecutions below.
             runStageRef.current(freshTask, nextStage).catch((err) => {
-              console.error("Auto-start next stage failed:", err);
+              logger.error("Auto-start next stage failed:", err);
             });
             return;
           }
@@ -729,8 +753,8 @@ export function useStageExecution() {
         if (match) {
           await killProcess(match.processId);
         }
-      } catch {
-        // Backend may be unreachable
+      } catch (err) {
+        logger.error("Failed during kill flow", err);
       }
 
       // Mark the DB execution as failed
@@ -768,7 +792,7 @@ export function useStageExecution() {
 
     // Fallback: if the process doesn't send a "completed" event within 3s,
     // force cleanup so the user isn't stuck forever.
-    setTimeout(async () => {
+    killTimeoutRef.current = setTimeout(async () => {
       const currentState = useProcessStore.getState().stages[sk];
       if (currentState?.isRunning && currentState?.killed) {
         useProcessStore.getState().setStopped(sk);
@@ -779,6 +803,15 @@ export function useStageExecution() {
       }
     }, 3000);
   }, [failStaleExecutions]);
+
+  // Cleanup kill timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (killTimeoutRef.current) {
+        clearTimeout(killTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return { runStage, approveStage, redoStage, killCurrent };
 }
@@ -809,6 +842,7 @@ export async function generatePendingCommit(
 
     store.setPendingCommit({
       stageId: stage.id,
+      taskId: task.id,
       stageName: stage.name,
       message: commitMsg,
       diffStat: diffStat || "",
@@ -816,293 +850,21 @@ export async function generatePendingCommit(
   } catch (err) {
     // If commit preparation fails, fall back to no-changes mode
     // so the user can still approve the stage instead of being stuck
-    console.error("Failed to generate pending commit:", err);
+    logger.error("Failed to generate pending commit:", err);
     store.setNoChangesToCommit(stage.id);
   } finally {
     store.setCommitMessageLoading(null);
   }
 }
 
-/** Try to find and validate a JSON object in a string. Searches raw stdout lines too. */
-export function extractJson(text: string): string | null {
-  if (!text) return null;
-
-  // First try: parse the whole thing
-  try {
-    JSON.parse(text);
-    return text;
-  } catch {
-    // continue
-  }
-
-  // Second try: find JSON in stream-json result lines
-  // With --json-schema, output is in structured_output; otherwise in result
-  for (const line of text.split("\n")) {
-    try {
-      const event = JSON.parse(line);
-      if (event.type === "result") {
-        const output = event.structured_output ?? event.result;
-        if (output != null && output !== "") {
-          const str =
-            typeof output === "string" ? output : JSON.stringify(output);
-          const parsed = JSON.parse(str);
-          if (typeof parsed === "object" && parsed !== null) {
-            return str;
-          }
-        }
-      }
-    } catch {
-      // continue
-    }
-  }
-
-  // Third try: find a JSON object in the text
-  // Use greedy match first (handles nested objects), fall back to lazy (handles multiple separate objects)
-  const greedyMatch = text.match(/\{[\s\S]*\}/);
-  if (greedyMatch) {
-    try {
-      JSON.parse(greedyMatch[0]);
-      return greedyMatch[0];
-    } catch {
-      // Greedy match failed (likely grabbed across multiple separate JSON objects) — try lazy
-      const lazyMatch = text.match(/\{[\s\S]*?\}/);
-      if (lazyMatch) {
-        try {
-          JSON.parse(lazyMatch[0]);
-          return lazyMatch[0];
-        } catch {
-          // continue
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-/** Extract a clean, human-readable output from a stage for its stage_result. */
-export function extractStageOutput(
-  stage: StageTemplate,
-  execution: StageExecution,
-  decision?: string,
-): string {
-  const raw = execution.parsed_output ?? execution.raw_output ?? "";
-
-  // Resolve effective format for "auto" stages
-  const format = stage.output_format === "auto"
-    ? detectInteractionType(raw, "auto")
-    : stage.output_format;
-
-  switch (format) {
-    case "research": {
-      // Extract the markdown research text from the JSON envelope
-      try {
-        const data = JSON.parse(raw);
-        if (data.research) return data.research;
-      } catch {
-        // fall through
-      }
-      return raw;
-    }
-    case "plan": {
-      // Extract the plan text from the JSON envelope
-      try {
-        const data = JSON.parse(raw);
-        if (data.plan) return data.plan;
-      } catch {
-        // fall through
-      }
-      return raw;
-    }
-    case "options": {
-      // The stage's value is the user's selection, not the full options list
-      if (decision) return formatSelectedApproach(decision);
-      return raw;
-    }
-    case "findings": {
-      // Phase 1 (skip all): extract summary from JSON
-      // Phase 2 (applied fixes): raw text output
-      try {
-        const data = JSON.parse(raw);
-        if (data.summary) return data.summary;
-      } catch {
-        // Parse failed — this is phase 2 text output
-      }
-      return raw;
-    }
-    case "pr_review":
-      return raw || "PR Review completed";
-    case "merge":
-      return raw || "Branch merged successfully";
-    default:
-      return raw;
-  }
-}
-
-export function formatSelectedApproach(decision: string): string {
-  try {
-    const selected = JSON.parse(decision);
-    if (!Array.isArray(selected) || selected.length === 0) return decision;
-    const approach = selected[0];
-    let text = `## Selected Approach: ${approach.title}\n\n${approach.description}`;
-    if (approach.pros?.length) {
-      text += `\n\n**Pros:**\n${approach.pros.map((p: string) => `- ${p}`).join("\n")}`;
-    }
-    if (approach.cons?.length) {
-      text += `\n\n**Cons:**\n${approach.cons.map((c: string) => `- ${c}`).join("\n")}`;
-    }
-    return text;
-  } catch {
-    return decision;
-  }
-}
-
-/** Extract a concise summary from a stage's output for use in PR preparation. */
-export function extractStageSummary(
-  stage: StageTemplate,
-  execution: StageExecution,
-  decision?: string,
-): string | null {
-  const raw = execution.parsed_output ?? execution.raw_output ?? "";
-  if (!raw.trim()) return null;
-
-  // Resolve effective format for "auto" stages
-  const format = stage.output_format === "auto"
-    ? detectInteractionType(raw, "auto")
-    : stage.output_format;
-
-  switch (format) {
-    case "research": {
-      try {
-        const data = JSON.parse(raw);
-        if (data.research) return truncateToSentences(data.research, 3);
-      } catch { /* fall through */ }
-      return truncateToSentences(raw, 3);
-    }
-    case "plan": {
-      try {
-        const data = JSON.parse(raw);
-        if (data.plan) return truncateToSentences(data.plan, 3);
-      } catch { /* fall through */ }
-      return truncateToSentences(raw, 3);
-    }
-    case "options": {
-      if (decision) {
-        try {
-          const selected = JSON.parse(decision);
-          if (Array.isArray(selected) && selected.length > 0) {
-            const approach = selected[0];
-            return `Selected: ${approach.title} — ${truncateToSentences(approach.description, 2)}`;
-          }
-        } catch { /* fall through */ }
-      }
-      return truncateToSentences(raw, 3);
-    }
-    case "findings": {
-      try {
-        const data = JSON.parse(raw);
-        if (data.summary) return data.summary;
-      } catch {
-        // Phase 2 text output — summarize
-      }
-      return truncateToSentences(raw, 3);
-    }
-    case "pr_review":
-      return raw ? truncateToSentences(raw, 3) : null;
-    case "merge":
-      return raw ? truncateToSentences(raw, 3) : null;
-    case "text": {
-      return extractImplementationSummary(raw);
-    }
-    default:
-      return truncateToSentences(raw, 3);
-  }
-}
-
-/** Extract first N sentences from text. */
-export function truncateToSentences(text: string, n: number): string {
-  // Strip markdown headers for cleaner extraction
-  const cleaned = text.replace(/^#+\s+.*$/gm, "").trim();
-  // Match sentences ending with . ! or ?
-  const sentences = cleaned.match(/[^.!?]*[.!?]+/g);
-  if (!sentences || sentences.length === 0) {
-    // No clear sentences — take first ~300 chars
-    return cleaned.slice(0, 300).trim();
-  }
-  return sentences.slice(0, n).join("").trim();
-}
-
-/** Extract summary from implementation (text format) output. */
-export function extractImplementationSummary(raw: string): string | null {
-  if (!raw.trim()) return null;
-
-  // Look for explicit summary sections near end of output
-  const summaryMatch = raw.match(
-    /(?:^|\n)#+\s*(?:Summary|Changes Made|What (?:was|I) (?:changed|did))[^\n]*\n([\s\S]{10,500}?)(?:\n#|\n---|\n\*\*|$)/i,
-  );
-  if (summaryMatch) {
-    return truncateToSentences(summaryMatch[1].trim(), 3);
-  }
-
-  // Fall back to last paragraph (implementation output often ends with a summary)
-  const paragraphs = raw.split(/\n\n+/).filter((p) => p.trim().length > 20);
-  if (paragraphs.length > 0) {
-    const last = paragraphs[paragraphs.length - 1].trim();
-    return truncateToSentences(last, 3);
-  }
-
-  return truncateToSentences(raw, 3);
-}
-
-export function validateGate(
-  rule: GateRule,
-  decision: string | undefined,
-  _execution: StageExecution,
-): boolean {
-  switch (rule.type) {
-    case "require_approval":
-      return true;
-    case "require_selection": {
-      if (!decision) return false;
-      try {
-        const selected = JSON.parse(decision);
-        if (!Array.isArray(selected)) return false;
-        return (
-          selected.length >= rule.min && selected.length <= rule.max
-        );
-      } catch {
-        return true; // Treat non-array as single selection
-      }
-    }
-    case "require_all_checked": {
-      if (!decision) return false;
-      try {
-        const items = JSON.parse(decision);
-        return (
-          Array.isArray(items) && items.every((item: { checked: boolean }) => item.checked)
-        );
-      } catch {
-        return false;
-      }
-    }
-    case "require_fields": {
-      if (!decision) return false;
-      try {
-        const fields = JSON.parse(decision);
-        return rule.fields.every(
-          (f) => fields[f] && String(fields[f]).trim().length > 0,
-        );
-      } catch {
-        return false;
-      }
-    }
-    default:
-      return true;
-  }
-}
-
-/** Determine whether a stage should be auto-started after the previous stage completes. */
-export function shouldAutoStartStage(stage: StageTemplate): boolean {
-  if (stage.output_format === "merge") return false;
-  return !stage.requires_user_input;
-}
+// Re-export pure utilities for consumers that import from this file
+export {
+  extractJson,
+  extractStageOutput,
+  formatSelectedApproach,
+  extractStageSummary,
+  truncateToSentences,
+  extractImplementationSummary,
+  validateGate,
+  shouldAutoStartStage,
+} from "../lib/stageUtils";

@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { GIT_LOG_DEFAULT_MAX, GIT_COMMITS_DEFAULT_MAX } from "./constants";
+import { withRetry } from "./retry";
 
 export async function runGit(workingDir: string, ...args: string[]): Promise<string> {
   return invoke<string>("run_git_command", {
@@ -131,7 +133,7 @@ export interface GitCommit {
   author: string;
 }
 
-export async function gitLog(workingDir: string, maxCount: number = 50): Promise<GitCommit[]> {
+export async function gitLog(workingDir: string, maxCount: number = GIT_LOG_DEFAULT_MAX): Promise<GitCommit[]> {
   try {
     const delimiter = "---END-COMMIT---";
     const raw = await runGit(
@@ -153,7 +155,7 @@ export async function gitLog(workingDir: string, maxCount: number = 50): Promise
 export async function gitLogBranchDiff(
   workingDir: string,
   baseBranch: string,
-  maxCount: number = 200,
+  maxCount: number = GIT_COMMITS_DEFAULT_MAX,
 ): Promise<GitCommit[]> {
   try {
     const delimiter = "---END-COMMIT---";
@@ -306,6 +308,22 @@ export async function runGh(workingDir: string, ...args: string[]): Promise<stri
   });
 }
 
+async function runGhWithRetry(workingDir: string, ...args: string[]): Promise<string> {
+  return withRetry(
+    () => runGh(workingDir, ...args),
+    {
+      shouldRetry: (error) => {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (/rate limit/i.test(msg)) return true;
+        if (/HTTP [5]\d{2}/i.test(msg)) return true;
+        if (/Failed to run gh/i.test(msg)) return true;
+        if (/connect/i.test(msg) && /refused|timeout|reset/i.test(msg)) return true;
+        return false;
+      },
+    },
+  );
+}
+
 export async function ghCreatePr(
   workingDir: string,
   title: string,
@@ -370,7 +388,7 @@ export async function ghFetchPrReviews(
   repo: string,
   prNumber: number,
 ): Promise<GhReview[]> {
-  const raw = await runGh(
+  const raw = await runGhWithRetry(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -385,7 +403,7 @@ export async function ghFetchPrComments(
   repo: string,
   prNumber: number,
 ): Promise<GhReviewComment[]> {
-  const raw = await runGh(
+  const raw = await runGhWithRetry(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}/comments`,
@@ -400,7 +418,7 @@ export async function ghFetchPrIssueComments(
   repo: string,
   prNumber: number,
 ): Promise<GhIssueComment[]> {
-  const raw = await runGh(
+  const raw = await runGhWithRetry(
     workingDir,
     "api",
     `repos/${owner}/${repo}/issues/${prNumber}/comments`,
@@ -420,7 +438,7 @@ export async function ghFetchPrState(
   repo: string,
   prNumber: number,
 ): Promise<GhPrState> {
-  const raw = await runGh(
+  const raw = await runGhWithRetry(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}`,

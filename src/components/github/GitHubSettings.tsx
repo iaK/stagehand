@@ -3,6 +3,7 @@ import { useGitHubStore } from "../../stores/githubStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function GitHubSettingsContent({ projectId }: { projectId: string }) {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -23,7 +24,10 @@ export function GitHubSettingsContent({ projectId }: { projectId: string }) {
 
   if (loading) {
     return (
-      <div className="text-sm text-muted-foreground">Detecting git remote...</div>
+      <div className="space-y-3">
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
     );
   }
 

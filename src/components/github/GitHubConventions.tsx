@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { sendNotification } from "../../lib/notifications";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { CompletionStrategy } from "../../lib/types";
 
 interface GitHubConventionsProps {
@@ -115,7 +116,12 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
       </div>
 
       {loading ? (
-        <div className="text-sm text-muted-foreground text-center py-8">Loading...</div>
+        <div className="space-y-4 py-4">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-4 w-1/4" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+        </div>
       ) : (
         <div className="flex-1 overflow-y-auto min-h-0 space-y-6">
           <div>
@@ -129,7 +135,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
               className="space-y-1.5"
             >
               <label className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                completionStrategy === "pr" ? "border-blue-500 bg-blue-50" : "border-border hover:border-zinc-400"
+                completionStrategy === "pr" ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10" : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
               }`}>
                 <RadioGroupItem value="pr" className="mt-0.5" />
                 <div>
@@ -140,7 +146,7 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
                 </div>
               </label>
               <label className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                completionStrategy === "merge" ? "border-blue-500 bg-blue-50" : "border-border hover:border-zinc-400"
+                completionStrategy === "merge" ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10" : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
               }`}>
                 <RadioGroupItem value="merge" className="mt-0.5" />
                 <div>

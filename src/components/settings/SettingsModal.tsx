@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTheme } from "next-themes";
 import { useProjectStore } from "../../stores/projectStore";
 import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
 import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
@@ -8,7 +9,7 @@ import { GitHubConventionsContent } from "../github/GitHubConventions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section = "archived" | "pipeline" | "linear" | "github" | "conventions";
+type Section = "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions";
 
 type NavItem =
   | { header: string }
@@ -20,13 +21,12 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const [activeSection, setActiveSection] = useState<Section>(
-    activeProject ? "pipeline" : "archived",
-  );
+  const [activeSection, setActiveSection] = useState<Section>("archived");
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
     { section: "archived", label: "Archived Projects" },
+    { section: "appearance", label: "Appearance" },
     { section: "pipeline", label: "Pipeline", projectRequired: true },
     { header: "INTEGRATIONS" },
     { section: "linear", label: "Linear", projectRequired: true },
@@ -134,6 +134,8 @@ function SectionContent({
   switch (section) {
     case "archived":
       return <ArchivedProjectsSettings />;
+    case "appearance":
+      return <AppearanceSettings />;
     case "linear":
       return <LinearSettingsContent projectId={projectId!} />;
     case "github":
@@ -143,4 +145,48 @@ function SectionContent({
     default:
       return null;
   }
+}
+
+function AppearanceSettings() {
+  const { theme, setTheme } = useTheme();
+
+  const options = [
+    { value: "system", label: "System", description: "Follow your OS setting" },
+    { value: "light", label: "Light", description: "Always use light mode" },
+    { value: "dark", label: "Dark", description: "Always use dark mode" },
+  ] as const;
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-foreground">Appearance</h2>
+      <p className="text-sm text-muted-foreground mt-1 mb-4">
+        Choose how Stagehand looks.
+      </p>
+      <div className="space-y-2">
+        {options.map((opt) => (
+          <label
+            key={opt.value}
+            className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
+              theme === opt.value
+                ? "border-primary bg-accent"
+                : "border-border hover:border-primary/50"
+            }`}
+          >
+            <input
+              type="radio"
+              name="theme"
+              value={opt.value}
+              checked={theme === opt.value}
+              onChange={() => setTheme(opt.value)}
+              className="mt-0.5"
+            />
+            <div>
+              <span className="text-sm font-medium text-foreground">{opt.label}</span>
+              <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }

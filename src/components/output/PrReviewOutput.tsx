@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { TextOutput } from "./TextOutput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Loader2 } from "lucide-react";
 import type { PrReviewFix } from "../../lib/types";
+import { useProcessStore } from "../../stores/processStore";
+
+const EMPTY_LINES: string[] = [];
 
 interface PrReviewOutputProps {
   fixes: PrReviewFix[];
@@ -18,7 +20,7 @@ interface PrReviewOutputProps {
   loading: boolean;
   isCompleted: boolean;
   error: string | null;
-  streamOutput?: string[];
+  stageKey: string;
 }
 
 const stateColors: Record<string, { badge: "critical" | "warning" | "info" | "secondary"; label: string }> = {
@@ -46,10 +48,9 @@ export function PrReviewOutput({
   loading,
   isCompleted,
   error,
-  streamOutput,
+  stageKey: sk,
 }: PrReviewOutputProps) {
   const [markingDone, setMarkingDone] = useState(false);
-  const [confirmDone, setConfirmDone] = useState(false);
 
   const fixedCount = fixes.filter((f) => f.fix_status === "fixed").length;
   const skippedCount = fixes.filter((f) => f.fix_status === "skipped").length;
@@ -98,9 +99,9 @@ export function PrReviewOutput({
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
           {fixes.length} comment{fixes.length !== 1 ? "s" : ""}
-          {fixedCount > 0 && <span className="text-emerald-600 ml-2">{fixedCount} fixed</span>}
-          {skippedCount > 0 && <span className="text-zinc-500 ml-2">{skippedCount} skipped</span>}
-          {pendingCount > 0 && <span className="text-blue-600 ml-2">{pendingCount} pending</span>}
+          {fixedCount > 0 && <span className="text-emerald-600 dark:text-emerald-400 ml-2">{fixedCount} fixed</span>}
+          {skippedCount > 0 && <span className="text-zinc-500 dark:text-zinc-400 ml-2">{skippedCount} skipped</span>}
+          {pendingCount > 0 && <span className="text-blue-600 dark:text-blue-400 ml-2">{pendingCount} pending</span>}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -117,8 +118,7 @@ export function PrReviewOutput({
               size="sm"
               onClick={() => {
                 if (pendingCount > 0) {
-                  setConfirmDone(true);
-                  return;
+                  if (!window.confirm(`There are still ${pendingCount} pending comment(s). Mark as done anyway?`)) return;
                 }
                 setMarkingDone(true);
                 onMarkDone();
@@ -148,79 +148,62 @@ export function PrReviewOutput({
             onFix={onFix}
             onSkip={onSkip}
             isCompleted={isCompleted}
-            streamOutput={fixingId === fix.id ? streamOutput : undefined}
+            stageKey={sk}
           />
         ))}
       </div>
 
       {isCompleted && (
-        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
-          <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <Alert className="border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+          <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
-          <AlertDescription className="text-emerald-800">
+          <AlertDescription className="text-emerald-800 dark:text-emerald-300">
             PR Review completed. Task marked as done.
           </AlertDescription>
         </Alert>
       )}
-
-      <AlertDialog open={confirmDone} onOpenChange={(open) => !open && setConfirmDone(false)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Mark as Done</AlertDialogTitle>
-            <AlertDialogDescription>
-              There {pendingCount === 1 ? "is" : "are"} still {pendingCount} pending comment{pendingCount !== 1 ? "s" : ""}. Mark as done anyway?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setConfirmDone(false);
-              setMarkingDone(true);
-              onMarkDone();
-            }}>
-              Mark as Done
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
-function ReviewCard({
+const ReviewCard = memo(function ReviewCard({
   fix,
   fixingId,
   onFix,
   onSkip,
   isCompleted,
-  streamOutput,
+  stageKey: sk,
 }: {
   fix: PrReviewFix;
   fixingId: string | null;
   onFix: (fixId: string, context?: string) => void;
   onSkip: (fixId: string) => void;
   isCompleted: boolean;
-  streamOutput?: string[];
+  stageKey: string;
 }) {
   const [context, setContext] = useState("");
   const isResolved = fix.state === "APPROVED" || fix.state === "DISMISSED" || fix.fix_status === "fixed" || fix.fix_status === "skipped";
   const isFixing = fix.id === fixingId;
+  // Only subscribe when this card is the active fix
+  const streamOutput = useProcessStore(
+    (s) => isFixing ? (s.stages[sk]?.streamOutput ?? EMPTY_LINES) : EMPTY_LINES,
+  );
 
   const stateInfo = stateColors[fix.state] ?? { badge: "secondary" as const, label: fix.state };
   const fixInfo = fixStatusColors[fix.fix_status] ?? fixStatusColors.pending;
 
   const cardBorderColor = isResolved
-    ? "border-zinc-200"
+    ? "border-zinc-200 dark:border-zinc-700"
     : fix.state === "CHANGES_REQUESTED"
-      ? "border-red-200"
-      : "border-blue-200";
+      ? "border-red-200 dark:border-red-500/20"
+      : "border-blue-200 dark:border-blue-500/20";
 
   const cardBgColor = isResolved
-    ? "bg-zinc-50"
+    ? "bg-zinc-50 dark:bg-zinc-900"
     : fix.state === "CHANGES_REQUESTED"
-      ? "bg-red-50/50"
-      : "bg-blue-50/50";
+      ? "bg-red-50/50 dark:bg-red-500/5"
+      : "bg-blue-50/50 dark:bg-blue-500/5";
 
   return (
     <div
@@ -237,7 +220,7 @@ function ReviewCard({
             className="w-8 h-8 rounded-full flex-shrink-0"
           />
         ) : (
-          <div className="w-8 h-8 rounded-full bg-zinc-300 flex-shrink-0 flex items-center justify-center text-xs font-medium text-zinc-600">
+          <div className="w-8 h-8 rounded-full bg-zinc-300 dark:bg-zinc-600 flex-shrink-0 flex items-center justify-center text-xs font-medium text-zinc-600 dark:text-zinc-400">
             {fix.author.charAt(0).toUpperCase()}
           </div>
         )}
@@ -315,7 +298,7 @@ function ReviewCard({
           )}
 
           {isFixing && (
-            <div className="flex items-center gap-2 mt-3 text-amber-600">
+            <div className="flex items-center gap-2 mt-3 text-amber-600 dark:text-amber-400">
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -327,4 +310,4 @@ function ReviewCard({
       </div>
     </div>
   );
-}
+});

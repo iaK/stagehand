@@ -3,6 +3,7 @@ import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
 import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
+import { logger } from "../lib/logger";
 
 interface TaskStore {
   tasks: Task[];
@@ -29,7 +30,11 @@ interface TaskStore {
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "description" | "archived" | "branch_name" | "worktree_path" | "pr_url">>,
+  ) => Promise<void>;
+  refreshExecution: (
+    projectId: string,
+    executionId: string,
   ) => Promise<void>;
   refreshTaskExecStatuses: (projectId: string) => Promise<void>;
   createStageTemplate: (projectId: string, template: Omit<StageTemplate, "id" | "created_at" | "updated_at">) => Promise<StageTemplate>;
@@ -76,8 +81,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (hasRunning) {
       try {
         detailedProcesses = await listProcessesDetailed();
-      } catch {
-        // If we can't reach the backend, don't assume anything about running state
+      } catch (err) {
+        logger.error("Failed to clean up stale executions", err);
       }
     }
 
@@ -106,7 +111,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
               exec.error_message = "Process crashed or was interrupted";
               useProcessStore.getState().setStopped(sk);
             } catch (err) {
-              console.error("Failed to clean up stale execution:", exec.id, err);
+              logger.error("Failed to clean up stale execution:", exec.id, err);
             }
           }
         }
@@ -145,9 +150,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   addTask: async (projectId, title, description, branchName) => {
     const templates = get().stageTemplates;
-    const firstStage = templates.length > 0
-      ? templates.reduce((a, b) => a.sort_order < b.sort_order ? a : b).id
-      : "";
+    const firstStage = templates.length > 0 ? templates[0].id : "";
     const task = await repo.createTask(
       projectId,
       title,
@@ -171,6 +174,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           ? tasks.find((t) => t.id === taskId) ?? null
           : active,
     });
+  },
+
+  refreshExecution: async (projectId, _executionId) => {
+    const task = get().activeTask;
+    if (task) {
+      const [executions, taskExecStatuses] = await Promise.all([
+        repo.listStageExecutions(projectId, task.id),
+        repo.getLatestExecutionStatusPerTask(projectId),
+      ]);
+      set({ executions, taskExecStatuses });
+    }
   },
 
   refreshTaskExecStatuses: async (projectId) => {

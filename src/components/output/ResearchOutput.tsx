@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import * as repo from "../../lib/repositories";
+import { logger } from "../../lib/logger";
 import { useProjectStore } from "../../stores/projectStore";
 import type { ResearchQuestion, StageTemplate, StageSuggestion, CompletionStrategy } from "../../lib/types";
 
@@ -76,8 +77,8 @@ export function ResearchOutput({
       )}
 
       {!hasQuestions && !isApproved && !hasStageSelection && (
-        <Alert className="mt-6 border-emerald-200 bg-emerald-50 text-emerald-800">
-          <AlertDescription className="text-emerald-800">
+        <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+          <AlertDescription className="text-emerald-800 dark:text-emerald-300">
             <p className="text-sm font-medium mb-3">
               Research complete — no further questions.
             </p>
@@ -204,7 +205,7 @@ function StageSelectionPanel({
       <div className="space-y-1.5">
         {/* Research: always included */}
         {researchStage && (
-          <label className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-zinc-50 opacity-60 cursor-not-allowed">
+          <label className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-zinc-50 dark:bg-zinc-900 opacity-60 cursor-not-allowed">
             <Checkbox checked disabled className="mt-0.5" />
             <div className="flex-1 min-w-0">
               <span className="text-sm font-medium text-foreground">{researchStage.name}</span>
@@ -223,8 +224,8 @@ function StageSelectionPanel({
               key={t.id}
               className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
                 checked[t.id]
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-border hover:border-zinc-400"
+                  ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10"
+                  : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
               }`}
             >
               <Checkbox
@@ -253,7 +254,7 @@ function StageSelectionPanel({
           if (!isActive) return null;
 
           return (
-            <label key={t.id} className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-zinc-50 opacity-60 cursor-not-allowed">
+            <label key={t.id} className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-zinc-50 dark:bg-zinc-900 opacity-60 cursor-not-allowed">
               <Checkbox checked disabled className="mt-0.5" />
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground">{t.name}</span>
@@ -318,7 +319,7 @@ export function QuestionCards({
     try {
       await onSubmit(lines.join("\n\n"));
     } catch (err) {
-      console.error("Failed to submit answers:", err);
+      logger.error("Failed to submit answers:", err);
       setError(err instanceof Error ? err.message : String(err));
       setSubmitting(false);
     }
@@ -340,7 +341,7 @@ export function QuestionCards({
         return (
           <div
             key={q.id}
-            className="p-4 bg-zinc-50 border border-border rounded-lg"
+            className="p-4 bg-zinc-50 dark:bg-zinc-900 border border-border rounded-lg"
           >
             <p className="text-sm text-foreground mb-3">{q.question}</p>
 
@@ -361,8 +362,8 @@ export function QuestionCards({
                     key={option}
                     className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
                       selections[q.id] === option
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-border hover:border-zinc-400"
+                        ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10"
+                        : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
                     }`}
                   >
                     <RadioGroupItem value={option} />
@@ -374,8 +375,8 @@ export function QuestionCards({
                 <label
                   className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
                     selections[q.id] === null
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-border hover:border-zinc-400"
+                      ? "border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10"
+                      : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
                   }`}
                 >
                   <RadioGroupItem value={OTHER_VALUE} className="mt-0.5" />

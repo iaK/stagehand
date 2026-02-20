@@ -46,6 +46,8 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
   const [editingTemplate, setEditingTemplate] = useState<StageTemplate | null>(
     null,
   );
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   useEffect(() => {
     const template = stageTemplates.find((t) => t.id === templateId);
     if (template) {
@@ -156,35 +158,63 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
         <Label>Allowed Tools (JSON array)</Label>
         <Input
           value={editingTemplate.allowed_tools ?? ""}
-          onChange={(e) =>
+          onChange={(e) => {
             setEditingTemplate({
               ...editingTemplate,
               allowed_tools: e.target.value || null,
-            })
-          }
+            });
+            setToolsError(null);
+          }}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (!val) { setToolsError(null); return; }
+            try {
+              const parsed = JSON.parse(val);
+              if (!Array.isArray(parsed)) {
+                setToolsError("Must be a JSON array, e.g. [\"Read\", \"Glob\"]");
+              } else {
+                setToolsError(null);
+              }
+            } catch {
+              setToolsError("Invalid JSON");
+            }
+          }}
           placeholder='e.g. ["Read", "Glob", "Grep"] — empty for full access'
           className="mt-1 font-mono text-xs"
         />
+        {toolsError && <p className="text-xs text-destructive mt-1">{toolsError}</p>}
       </div>
 
       <div>
         <Label>Output Schema (JSON)</Label>
         <Textarea
           value={editingTemplate.output_schema ?? ""}
-          onChange={(e) =>
+          onChange={(e) => {
             setEditingTemplate({
               ...editingTemplate,
               output_schema: e.target.value || null,
-            })
-          }
+            });
+            setSchemaError(null);
+          }}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (!val) { setSchemaError(null); return; }
+            try {
+              JSON.parse(val);
+              setSchemaError(null);
+            } catch {
+              setSchemaError("Invalid JSON");
+            }
+          }}
           rows={4}
           className="mt-1 font-mono text-xs resize-none"
           placeholder="Optional JSON schema for structured output"
         />
+        {schemaError && <p className="text-xs text-destructive mt-1">{schemaError}</p>}
       </div>
 
       <div className="flex items-center justify-end gap-3">
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} disabled={!editingTemplate.name.trim() || !!toolsError || !!schemaError}>
           Save Changes
         </Button>
       </div>
@@ -208,12 +238,12 @@ export function StageTemplateEditorContent() {
     if (!activeProject) return;
     setError(null);
     try {
-      const maxOrder = Math.max(...stageTemplates.map((t) => t.sort_order), -1);
+      const maxOrder = Math.max(...stageTemplates.map((t) => t.sort_order), 0);
       const created = await createTemplate(activeProject.id, {
         project_id: activeProject.id,
         name: "New Stage",
         description: "",
-        sort_order: maxOrder + 1,
+        sort_order: maxOrder + 100,
         prompt_template: "Task: {{task_description}}\n\nReview the completed stages in your system prompt for context. Use the get_stage_output MCP tool to retrieve full details from any prior stage.",
         input_source: "previous_stage",
         output_format: "auto",
