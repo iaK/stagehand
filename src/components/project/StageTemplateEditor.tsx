@@ -208,12 +208,12 @@ export function StageTemplateEditorContent() {
     if (!activeProject) return;
     setError(null);
     try {
-      const maxOrder = Math.max(...stageTemplates.map((t) => t.sort_order), -1);
+      const maxOrder = Math.max(...stageTemplates.map((t) => t.sort_order), 0);
       const created = await createTemplate(activeProject.id, {
         project_id: activeProject.id,
         name: "New Stage",
         description: "",
-        sort_order: maxOrder + 1,
+        sort_order: maxOrder + 100,
         prompt_template: "Task: {{task_description}}\n\nReview the completed stages in your system prompt for context. Use the get_stage_output MCP tool to retrieve full details from any prior stage.",
         input_source: "previous_stage",
         output_format: "auto",

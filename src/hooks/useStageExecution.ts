@@ -339,6 +339,21 @@ export function useStageExecution() {
                 !!priorAttemptOutput,
               );
               break;
+            case "error":
+              setStopped(sk);
+              appendOutput(sk, `[Error] ${event.message}`);
+              repo.updateStageExecution(activeProject!.id, executionId!, {
+                status: "failed",
+                error_message: event.message,
+                completed_at: new Date().toISOString(),
+              }).then(() => {
+                if (useTaskStore.getState().activeTask?.id === taskId) {
+                  loadExecutions(activeProject!.id, taskId);
+                } else {
+                  useTaskStore.getState().refreshTaskExecStatuses(activeProject!.id);
+                }
+              });
+              break;
           }
         };
 
@@ -369,8 +384,8 @@ export function useStageExecution() {
         let mcpConfig: string | undefined;
         try {
           const mcpServerPath = await invoke<string>("get_mcp_server_path");
-          const stagehandDir = await invoke<string>("get_stagehand_dir");
-          const dbPath = `${stagehandDir}/data/${activeProject.id}.db`;
+          const devflowDir = await invoke<string>("get_devflow_dir");
+          const dbPath = `${devflowDir}/data/${activeProject.id}.db`;
           const config = {
             mcpServers: {
               "stagehand-context": {
@@ -809,6 +824,7 @@ export async function generatePendingCommit(
 
     store.setPendingCommit({
       stageId: stage.id,
+      taskId: task.id,
       stageName: stage.name,
       message: commitMsg,
       diffStat: diffStat || "",

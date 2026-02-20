@@ -80,7 +80,7 @@ Every aspect of every stage is editable — prompt templates, output formats, ga
 
 **Tauri over Electron.** Tauri produces smaller binaries, uses less memory, and gives direct access to Rust's `tokio::process` for spawning and managing child processes — critical for streaming Claude Code's output in real time.
 
-**SQLite per project.** Each project gets its own database file (`~/.stagehand/data/{project_id}.db`). This provides complete isolation, makes backup/migration trivial (copy a file), and eliminates the need for a database server.
+**SQLite per project.** Each project gets its own database file (`~/.devflow/data/{project_id}.db`). This provides complete isolation, makes backup/migration trivial (copy a file), and eliminates the need for a database server.
 
 **Zustand over Redux/Context.** Three small stores (project, task, process) with no boilerplate. Actions are async functions that call repositories directly.
 
@@ -93,7 +93,7 @@ Every aspect of every stage is editable — prompt templates, output formats, ga
 ### Storage Layout
 
 ```
-~/.stagehand/
+~/.devflow/
 ├── app.db                    # Project registry
 └── data/
     ├── {project_id_1}.db     # Tasks, stage templates, executions
@@ -323,7 +323,7 @@ type ClaudeStreamEvent =
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
   | { type: "completed"; process_id: string; exit_code: number | null }
-
+  | { type: "error"; process_id: string; message: string };
 ```
 
 The frontend parses stdout lines as NDJSON, extracting text from Claude's stream-json format:
@@ -371,7 +371,8 @@ stagehand/
 │   │   ├── taskStore.ts                 # Tasks, templates, executions state
 │   │   └── processStore.ts             # Terminal output and running process state
 │   ├── hooks/
-│   │   └── useStageExecution.ts         # Core orchestration: run, approve, redo, kill
+│   │   ├── useStageExecution.ts         # Core orchestration: run, approve, redo, kill
+│   │   └── useKeyboardShortcuts.ts      # Cmd+N (new task), Cmd+Enter (run stage)
 │   └── components/
 │       ├── layout/
 │       │   ├── Layout.tsx               # Root layout: sidebar + pipeline + terminal
@@ -381,7 +382,8 @@ stagehand/
 │       │   ├── PipelineStepper.tsx      # Horizontal stage progress indicator
 │       │   ├── StageView.tsx            # Stage executor: input, actions, output
 │       │   ├── StageOutput.tsx          # Output format dispatcher
-│       │   └── StageHistory.tsx         # Collapsible completed stages panel
+│       │   ├── StageHistory.tsx         # Collapsible completed stages panel
+│       │   └── TerminalView.tsx         # Live process output with auto-scroll
 │       ├── output/
 │       │   ├── TextOutput.tsx           # Markdown renderer
 │       │   ├── OptionsOutput.tsx        # Selectable approach cards
@@ -480,7 +482,7 @@ Produces a native `.app` bundle at `src-tauri/target/release/bundle/macos/stageh
 On first project creation, Stagehand creates:
 
 ```
-~/.stagehand/
+~/.devflow/
 ├── app.db          # Created on first getAppDb() call
 └── data/           # Created in Tauri setup hook
     └── *.db        # Created per-project

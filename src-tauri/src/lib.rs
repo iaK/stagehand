@@ -6,10 +6,15 @@ use process_manager::ProcessManager;
 use tauri::Manager;
 
 #[tauri::command]
-fn get_stagehand_dir() -> Result<String, String> {
+fn greet(name: &str) -> String {
+    format!("Hello, {}! Backend connection verified.", name)
+}
+
+#[tauri::command]
+fn get_devflow_dir() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let stagehand_dir = home.join(".stagehand");
-    Ok(stagehand_dir.to_string_lossy().to_string())
+    let devflow_dir = home.join(".devflow");
+    Ok(devflow_dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -43,17 +48,6 @@ fn get_mcp_server_path(app_handle: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-fn delete_project_db(project_id: String) -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let db_path = home.join(".stagehand").join("data").join(format!("{}.db", project_id));
-    if db_path.exists() {
-        std::fs::remove_file(&db_path)
-            .map_err(|e| format!("Failed to delete project DB: {}", e))?;
-    }
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -71,30 +65,19 @@ pub fn run() {
                 )?;
             }
 
-            // Migrate ~/.devflow → ~/.stagehand if needed
+            // Create ~/.devflow/data/ directory
             if let Some(home) = dirs::home_dir() {
-                let old_dir = home.join(".devflow");
-                let new_dir = home.join(".stagehand");
-                if old_dir.exists() && !new_dir.exists() {
-                    if let Err(e) = std::fs::rename(&old_dir, &new_dir) {
-                        log::warn!("Failed to migrate .devflow to .stagehand: {}", e);
-                    }
-                }
-            }
-
-            // Create ~/.stagehand/data/ directory
-            if let Some(home) = dirs::home_dir() {
-                let data_dir = home.join(".stagehand").join("data");
-                std::fs::create_dir_all(&data_dir).ok();
-                log::info!("Stagehand data dir: {:?}", data_dir);
+                let devflow_dir = home.join(".devflow").join("data");
+                std::fs::create_dir_all(&devflow_dir).ok();
+                log::info!("DevFlow data dir: {:?}", devflow_dir);
             }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_stagehand_dir,
+            greet,
+            get_devflow_dir,
             get_mcp_server_path,
-            delete_project_db,
             commands::process::spawn_claude,
             commands::process::kill_process,
             commands::process::list_processes,
@@ -104,12 +87,11 @@ pub fn run() {
             commands::git::run_gh_command,
             commands::git::read_file_contents,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                let pm = app_handle.state::<ProcessManager>();
-                tauri::async_runtime::block_on(pm.kill_all());
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // Process cleanup happens via Drop
             }
-        });
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

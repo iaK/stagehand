@@ -130,14 +130,16 @@ export function StageView({ stage }: StageViewProps) {
   }, [!!latestExecution, latestExecution?.parsed_output, latestExecution?.raw_output, stage.output_format]);
 
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
-  // but no commit dialog is present (e.g. after app restart where in-memory state was lost)
+  // but no commit dialog is present (e.g. after app restart where in-memory state was lost,
+  // or a stale pendingCommit from a different stage is still in the store)
   const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
+  const hasPendingCommitForThisStage = pendingCommit?.stageId === stage.id && pendingCommit?.taskId === activeTask?.id;
   useEffect(() => {
     if (
       isCurrentStage &&
       stageStatus === "awaiting_user" &&
       !isRunning &&
-      !pendingCommit?.stageId &&
+      !hasPendingCommitForThisStage &&
       !noChangesToCommit &&
       !commitMessageLoading &&
       !committedHash &&
@@ -146,7 +148,7 @@ export function StageView({ stage }: StageViewProps) {
     ) {
       generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
     }
-  }, [isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
+  }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, commitMessageLoading, committedHash, activeTask?.id, activeProject?.id]);
 
   // Timeout fallback: if commit preparation takes too long, let the user approve manually
   useEffect(() => {
@@ -154,7 +156,7 @@ export function StageView({ stage }: StageViewProps) {
       isCurrentStage &&
       stageStatus === "awaiting_user" &&
       !isRunning &&
-      !pendingCommit?.stageId &&
+      !hasPendingCommitForThisStage &&
       !noChangesToCommit &&
       !committedHash
     ) {
@@ -163,7 +165,7 @@ export function StageView({ stage }: StageViewProps) {
       return () => clearTimeout(timer);
     }
     setCommitPrepTimedOut(false);
-  }, [isCurrentStage, stageStatus, isRunning, pendingCommit?.stageId, noChangesToCommit, committedHash]);
+  }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
   // Pre-fill research input with task description (e.g. from Linear import)
   useEffect(() => {
@@ -193,10 +195,11 @@ export function StageView({ stage }: StageViewProps) {
     if (!activeProject || !activeTask) return;
     setApproving(true);
     setStageError(null);
-    // Clear noChangesToCommit state if set (may have been set by generatePendingCommit)
+    // Clear commit-related state so it doesn't leak into the next stage
     if (noChangesToCommit) {
       useProcessStore.getState().setNoChangesToCommit(null);
     }
+    useProcessStore.getState().clearPendingCommit();
     try {
       await approveStage(activeTask, stage, decision);
       sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
@@ -231,6 +234,9 @@ export function StageView({ stage }: StageViewProps) {
   const handleApproveWithStages = async (selectedStageIds: string[]) => {
     if (!activeTask || !activeProject) return;
     setApproving(true);
+    // Clear commit-related state so it doesn't leak into the next stage
+    useProcessStore.getState().clearPendingCommit();
+    useProcessStore.getState().setNoChangesToCommit(null);
     try {
       // Auto-include PR Review whenever a PR Preparation stage is selected
       let ids = [...selectedStageIds];

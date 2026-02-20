@@ -64,7 +64,7 @@ export function PipelineView() {
     setActiveView("pipeline");
   }, [activeTaskId]);
 
-  // Sync viewed stage to process store so LiveStreamBubble can show the right output
+  // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
     useProcessStore.getState().setViewingStageId(sk);

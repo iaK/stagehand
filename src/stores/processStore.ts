@@ -23,6 +23,7 @@ export const DEFAULT_STAGE_STATE: StageProcessState = {
 
 export interface PendingCommit {
   stageId: string;
+  taskId: string;
   stageName: string;
   message: string;
   diffStat: string;

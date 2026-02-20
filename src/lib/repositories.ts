@@ -1,5 +1,4 @@
-import { getAppDb, getProjectDb, closeProjectDb } from "./db";
-import { invoke } from "@tauri-apps/api/core";
+import { getAppDb, getProjectDb } from "./db";
 import { getDefaultStageTemplates } from "./seed";
 import type {
   Project,
@@ -109,34 +108,7 @@ export async function createProject(name: string, path: string): Promise<Project
   return { id, name, path, archived: 0, created_at: now, updated_at: now };
 }
 
-export async function deleteProject(id: string, projectPath?: string): Promise<void> {
-  // Clean up worktrees and branches for all tasks
-  if (projectPath) {
-    try {
-      const projectDb = await getProjectDb(id);
-      const tasks = await projectDb.select<{ worktree_path: string | null; branch_name: string | null }[]>(
-        "SELECT worktree_path, branch_name FROM tasks WHERE project_id = $1",
-        [id],
-      );
-      const { gitWorktreeRemove, gitDeleteBranch } = await import("./git");
-      for (const task of tasks) {
-        if (task.worktree_path) {
-          try { await gitWorktreeRemove(projectPath, task.worktree_path); } catch { /* best-effort */ }
-        }
-        if (task.branch_name) {
-          try { await gitDeleteBranch(projectPath, task.branch_name); } catch { /* best-effort */ }
-        }
-      }
-    } catch {
-      // Project DB may not exist — continue with deletion
-    }
-  }
-
-  // Close the project DB connection and delete the file
-  await closeProjectDb(id);
-  try { await invoke("delete_project_db", { projectId: id }); } catch { /* DB file may not exist */ }
-
-  // Delete from projects table
+export async function deleteProject(id: string): Promise<void> {
   const db = await getAppDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
 }
@@ -303,7 +275,7 @@ export async function reorderStageTemplates(
   for (let i = 0; i < orderedIds.length; i++) {
     await db.execute(
       "UPDATE stage_templates SET sort_order = $1, updated_at = $2 WHERE id = $3",
-      [i, now, orderedIds[i]],
+      [(i + 1) * 100, now, orderedIds[i]],
     );
   }
 }
@@ -323,17 +295,28 @@ export async function duplicateStageTemplate(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Place after the source template
-  await db.execute(
-    "UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1 WHERE project_id = $2 AND sort_order > $3",
-    [now, projectId, source.sort_order],
+  // Find the next template's sort_order to place the copy between source and next
+  const nextRows = await db.select<{ sort_order: number }[]>(
+    "SELECT sort_order FROM stage_templates WHERE project_id = $1 AND sort_order > $2 ORDER BY sort_order ASC LIMIT 1",
+    [projectId, source.sort_order],
   );
+  const nextOrder = nextRows.length > 0 ? nextRows[0].sort_order : source.sort_order + 100;
+  const newOrder = Math.floor((source.sort_order + nextOrder) / 2);
+
+  // If there's no room (adjacent integers), shift everything after up by 100
+  if (newOrder === source.sort_order) {
+    await db.execute(
+      "UPDATE stage_templates SET sort_order = sort_order + 100, updated_at = $1 WHERE project_id = $2 AND sort_order > $3",
+      [now, projectId, source.sort_order],
+    );
+  }
+  const finalOrder = newOrder === source.sort_order ? source.sort_order + 50 : newOrder;
 
   const newTemplate: StageTemplate = {
     ...source,
     id,
     name: `${source.name} (Copy)`,
-    sort_order: source.sort_order + 1,
+    sort_order: finalOrder,
     created_at: now,
     updated_at: now,
   };

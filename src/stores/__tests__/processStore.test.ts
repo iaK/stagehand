@@ -98,6 +98,7 @@ describe("processStore", () => {
     it("sets and clears pending commit", () => {
       const commit = {
         stageId: "s1",
+        taskId: "t1",
         stageName: "Implementation",
         message: "fix: bug",
         diffStat: "1 file changed",

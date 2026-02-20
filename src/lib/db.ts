@@ -1,13 +1,13 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 
-let stagehandDir: string | null = null;
+let devflowDir: string | null = null;
 
-async function getStagehandDir(): Promise<string> {
-  if (!stagehandDir) {
-    stagehandDir = await invoke<string>("get_stagehand_dir");
+async function getDevflowDir(): Promise<string> {
+  if (!devflowDir) {
+    devflowDir = await invoke<string>("get_devflow_dir");
   }
-  return stagehandDir;
+  return devflowDir;
 }
 
 const connections: Record<string, Database> = {};
@@ -17,7 +17,7 @@ export async function getAppDb(): Promise<Database> {
   if (connections["app"]) return connections["app"];
   if (!connectionPromises["app"]) {
     connectionPromises["app"] = (async () => {
-      const dir = await getStagehandDir();
+      const dir = await getDevflowDir();
       const db = await Database.load(`sqlite:${dir}/app.db`);
       await initAppSchema(db);
       connections["app"] = db;
@@ -32,7 +32,7 @@ export async function getProjectDb(projectId: string): Promise<Database> {
   if (connections[key]) return connections[key];
   if (!connectionPromises[key]) {
     connectionPromises[key] = (async () => {
-      const dir = await getStagehandDir();
+      const dir = await getDevflowDir();
       const db = await Database.load(
         `sqlite:${dir}/data/${projectId}.db`,
       );
@@ -42,16 +42,6 @@ export async function getProjectDb(projectId: string): Promise<Database> {
     })();
   }
   return connectionPromises[key];
-}
-
-export async function closeProjectDb(projectId: string): Promise<void> {
-  const key = `project:${projectId}`;
-  const db = connections[key];
-  if (db) {
-    await db.close();
-    delete connections[key];
-  }
-  delete connectionPromises[key];
 }
 
 async function initAppSchema(db: Database): Promise<void> {
@@ -316,6 +306,9 @@ async function initProjectSchema(db: Database): Promise<void> {
 
   // Add Documentation stage between Security Review and PR Preparation
   await migrateDocumentationStage(db);
+
+  // Add Second Opinion stage between Planning and Implementation
+  await migrateSecondOpinionStage(db);
 }
 
 const RESEARCH_PROMPT = `You are a senior software engineer performing research on a task. Your ONLY job is to investigate and understand — do NOT plan, propose solutions, or discuss implementation approaches.
@@ -1155,4 +1148,129 @@ async function migrateDocumentationStage(db: Database): Promise<void> {
     `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'docs', updated_at = $1 WHERE name = 'Documentation'`,
     [now],
   );
+}
+
+const SECOND_OPINION_PROMPT = `{{#if prior_attempt_output}}You are revising an implementation plan based on the developer's selected concerns.
+
+Task: {{task_description}}
+
+Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan if needed.
+
+## Selected Concerns to Address
+
+The developer selected these concerns to address:
+
+{{prior_attempt_output}}
+
+Revise the plan to address ONLY these specific concerns. Do not make other changes. For each concern, explain what you changed and why.
+
+Output the revised plan as clear markdown.
+{{else}}You are an independent reviewer performing a critical analysis of an implementation plan. Your job is to find problems BEFORE implementation begins.
+
+Task: {{task_description}}
+
+Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan.
+
+## Review Dimensions
+
+Analyze the plan against each of these:
+
+1. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
+2. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
+3. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
+4. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
+5. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
+
+Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
+
+If the plan is solid and you find no issues, return an empty findings array. IMPORTANT: In this case, set the "summary" field to the FULL original plan text verbatim — this is critical because the summary is passed as input to the next stage, so it must contain the complete plan, not just an assessment.
+
+Do NOT modify the plan. Only identify and report concerns.
+
+Respond with a JSON object:
+{
+  "summary": "The full original plan text verbatim when no issues are found, OR a brief assessment when findings exist",
+  "findings": [
+    {
+      "id": "c1",
+      "title": "Short title of the concern",
+      "description": "Detailed description of the issue and what should change in the plan",
+      "severity": "critical|warning|info",
+      "category": "completeness|correctness|risk|simplicity|ordering",
+      "selected": true
+    }
+  ]
+}{{/if}}`;
+
+async function migrateSecondOpinionStage(db: Database): Promise<void> {
+  // Idempotency: bail if Second Opinion already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Second Opinion'",
+  );
+  if (existing.length > 0) return;
+
+  const now = new Date().toISOString();
+
+  // Bump sort_order for all stages at sort_order >= 3 to make room for Second Opinion
+  await db.execute(
+    `UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1
+     WHERE sort_order >= 3`,
+    [now],
+  );
+
+  // Insert Second Opinion stage for every project
+  const projectRows = await db.select<{ project_id: string }[]>(
+    "SELECT DISTINCT project_id FROM stage_templates",
+  );
+
+  for (const row of projectRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "Second Opinion",
+        "Critique the implementation plan — identify risks, gaps, and improvements for the developer to select, then revise the plan.",
+        3,
+        SECOND_OPINION_PROMPT,
+        "previous_stage",
+        "findings",
+        JSON.stringify({
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            findings: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  severity: {
+                    type: "string",
+                    enum: ["critical", "warning", "info"],
+                  },
+                  category: { type: "string" },
+                  selected: { type: "boolean" },
+                },
+                required: ["id", "title", "description", "severity", "selected"],
+              },
+            },
+          },
+          required: ["summary", "findings"],
+        }),
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        JSON.stringify(["Read", "Glob", "Grep"]),
+        "replace",
+        now,
+        now,
+      ],
+    );
+  }
 }

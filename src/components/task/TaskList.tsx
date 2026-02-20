@@ -104,12 +104,7 @@ export function TaskList({ onEdit }: TaskListProps) {
                 <div
                   className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${getTaskDotClass(task)}`}
                 />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="truncate">{task.title}</span>
-                  </TooltipTrigger>
-                  <TooltipContent>{task.title}</TooltipContent>
-                </Tooltip>
+                <span className="truncate">{task.title}</span>
               </div>
             </button>
             <Tooltip>

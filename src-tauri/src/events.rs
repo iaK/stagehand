@@ -17,4 +17,9 @@ pub enum ClaudeStreamEvent {
         process_id: String,
         exit_code: Option<i32>,
     },
+    #[serde(rename = "error")]
+    Error {
+        process_id: String,
+        message: String,
+    },
 }

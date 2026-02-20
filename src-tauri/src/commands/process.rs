@@ -93,6 +93,7 @@ pub async fn spawn_claude(
             process_id.clone(),
             kill_tx,
             args.stage_execution_id.clone(),
+            args.session_id.clone(),
         )
         .await;
 
