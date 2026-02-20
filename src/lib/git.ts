@@ -18,7 +18,7 @@ export async function gitDiff(workingDir: string): Promise<string> {
 }
 
 export async function gitDiffStat(workingDir: string): Promise<string> {
-  return runGit(workingDir, "diff", "--stat");
+  return runGit(workingDir, "diff", "HEAD", "--stat");
 }
 
 export async function gitAdd(workingDir: string): Promise<string> {

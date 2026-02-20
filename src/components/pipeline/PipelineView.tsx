@@ -26,8 +26,7 @@ import {
   ejectTaskToMainRepo,
   injectTaskFromMainRepo,
 } from "../../lib/git";
-import { updateTask as repoUpdateTask } from "../../lib/repositories";
-import { getCommitPrefix } from "../../lib/repositories";
+import { updateTask as repoUpdateTask, getCommitPrefix } from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
 import type { StageTemplate } from "../../lib/types";
@@ -114,11 +113,7 @@ export function PipelineView() {
         const stat = await gitDiffStat(activeTask.worktree_path).catch(() => "");
         setEjectDiffStat(stat);
         const prefix = await getCommitPrefix(activeProject.id).catch(() => "feat");
-        const slug = activeTask.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "");
-        setEjectCommitMessage(`${prefix}: ${slug}`);
+        setEjectCommitMessage(`${prefix}: ${activeTask.branch_name}`);
       }
     } catch (err) {
       setEjectError(err instanceof Error ? err.message : String(err));
@@ -172,7 +167,7 @@ export function PipelineView() {
       const mainDirty = await hasUncommittedChanges(activeProject.path);
       if (mainDirty) {
         setInjectError(
-          "You have uncommitted changes on the task branch. Please commit them before injecting back.",
+          "Your main project directory has uncommitted changes. Please commit or stash them before injecting back.",
         );
         setInjecting(false);
         return;
@@ -316,20 +311,22 @@ export function PipelineView() {
                 Inject
               </Button>
             ) : (
-              <Button
-                size="sm"
-                onClick={handleEjectClick}
-                disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
-              >
-                {checkingChanges ? (
-                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                ) : (
-                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                  </svg>
-                )}
-                Eject
-              </Button>
+              <span title={!activeTask.worktree_path ? "Run a pipeline stage first to create the worktree" : undefined}>
+                <Button
+                  size="sm"
+                  onClick={handleEjectClick}
+                  disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
+                >
+                  {checkingChanges ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                  )}
+                  Eject
+                </Button>
+              </span>
             )}
           </div>
         )}
