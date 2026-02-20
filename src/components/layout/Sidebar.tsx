@@ -59,11 +59,14 @@ export function Sidebar() {
     }
   }, [activeProject, loadTasks, loadStageTemplates, loadLinearForProject, loadGitHubForProject]);
 
-  // Refresh project status dots whenever tasks or execution statuses change
+  // Refresh project status dots whenever tasks or execution statuses change (debounced)
   useEffect(() => {
-    loadProjectStatuses().catch((err) =>
-      console.error("Failed to load project statuses:", err),
-    );
+    const timer = setTimeout(() => {
+      loadProjectStatuses().catch((err) =>
+        console.error("Failed to load project statuses:", err),
+      );
+    }, 500);
+    return () => clearTimeout(timer);
   }, [tasks, taskExecStatuses, loadProjectStatuses]);
 
   const confirmArchive = async () => {

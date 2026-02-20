@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProcessStore, DEFAULT_STAGE_STATE, stageKey } from "../../stores/processStore";
+import { useProcessStore, stageKey } from "../../stores/processStore";
 import { useStageExecution, generatePendingCommit } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
@@ -39,9 +39,7 @@ export function StageView({ stage }: StageViewProps) {
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const setTaskStages = useTaskStore((s) => s.setTaskStages);
   const sk = activeTask ? stageKey(activeTask.id, stage.id) : stage.id;
-  const { isRunning, streamOutput, killed: isStopping } = useProcessStore(
-    (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
-  );
+  const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
@@ -299,10 +297,9 @@ export function StageView({ stage }: StageViewProps) {
             {isRunning && prReview.fixingId && (
               <div className="mb-4">
                 <LiveStreamBubble
-                  streamLines={streamOutput}
+                  stageKey={sk}
                   label="Fixing review comment..."
                   onStop={() => killCurrent(activeTask!.id, stage.id)}
-                  isStopping={isStopping}
                 />
               </div>
             )}
@@ -317,7 +314,7 @@ export function StageView({ stage }: StageViewProps) {
               loading={prReview.loading}
               isCompleted={false}
               error={prReview.error}
-              streamOutput={streamOutput}
+              stageKey={sk}
             />
 
             {/* Commit dialog for individual fixes */}
@@ -531,10 +528,9 @@ export function StageView({ stage }: StageViewProps) {
           {/* Current round: RUNNING -- live stream */}
           {(stageStatus === "running" || isRunning) && (
             <LiveStreamBubble
-              streamLines={streamOutput}
+              stageKey={sk}
               label={`${stage.name} working...`}
               onStop={() => killCurrent(activeTask!.id, stage.id)}
-              isStopping={isStopping}
             />
           )}
 

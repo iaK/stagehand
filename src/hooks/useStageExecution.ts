@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
@@ -547,6 +547,8 @@ export function useStageExecution() {
   const runStageRef = useRef(runStage);
   runStageRef.current = runStage;
 
+  const killTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const approveStage = useCallback(
     async (task: Task, stage: StageTemplate, decision?: string) => {
       if (!activeProject) return;
@@ -783,7 +785,7 @@ export function useStageExecution() {
 
     // Fallback: if the process doesn't send a "completed" event within 3s,
     // force cleanup so the user isn't stuck forever.
-    setTimeout(async () => {
+    killTimeoutRef.current = setTimeout(async () => {
       const currentState = useProcessStore.getState().stages[sk];
       if (currentState?.isRunning && currentState?.killed) {
         useProcessStore.getState().setStopped(sk);
@@ -794,6 +796,15 @@ export function useStageExecution() {
       }
     }, 3000);
   }, [failStaleExecutions]);
+
+  // Cleanup kill timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (killTimeoutRef.current) {
+        clearTimeout(killTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return { runStage, approveStage, redoStage, killCurrent };
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { TextOutput } from "./TextOutput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import type { PrReviewFix } from "../../lib/types";
+import { useProcessStore } from "../../stores/processStore";
+
+const EMPTY_LINES: string[] = [];
 
 interface PrReviewOutputProps {
   fixes: PrReviewFix[];
@@ -17,7 +20,7 @@ interface PrReviewOutputProps {
   loading: boolean;
   isCompleted: boolean;
   error: string | null;
-  streamOutput?: string[];
+  stageKey: string;
 }
 
 const stateColors: Record<string, { badge: "critical" | "warning" | "info" | "secondary"; label: string }> = {
@@ -45,7 +48,7 @@ export function PrReviewOutput({
   loading,
   isCompleted,
   error,
-  streamOutput,
+  stageKey: sk,
 }: PrReviewOutputProps) {
   const [markingDone, setMarkingDone] = useState(false);
 
@@ -145,7 +148,7 @@ export function PrReviewOutput({
             onFix={onFix}
             onSkip={onSkip}
             isCompleted={isCompleted}
-            streamOutput={fixingId === fix.id ? streamOutput : undefined}
+            stageKey={sk}
           />
         ))}
       </div>
@@ -164,24 +167,28 @@ export function PrReviewOutput({
   );
 }
 
-function ReviewCard({
+const ReviewCard = memo(function ReviewCard({
   fix,
   fixingId,
   onFix,
   onSkip,
   isCompleted,
-  streamOutput,
+  stageKey: sk,
 }: {
   fix: PrReviewFix;
   fixingId: string | null;
   onFix: (fixId: string, context?: string) => void;
   onSkip: (fixId: string) => void;
   isCompleted: boolean;
-  streamOutput?: string[];
+  stageKey: string;
 }) {
   const [context, setContext] = useState("");
   const isResolved = fix.state === "APPROVED" || fix.state === "DISMISSED" || fix.fix_status === "fixed" || fix.fix_status === "skipped";
   const isFixing = fix.id === fixingId;
+  // Only subscribe when this card is the active fix
+  const streamOutput = useProcessStore(
+    (s) => isFixing ? (s.stages[sk]?.streamOutput ?? EMPTY_LINES) : EMPTY_LINES,
+  );
 
   const stateInfo = stateColors[fix.state] ?? { badge: "secondary" as const, label: fix.state };
   const fixInfo = fixStatusColors[fix.fix_status] ?? fixStatusColors.pending;
@@ -303,4 +310,4 @@ function ReviewCard({
       </div>
     </div>
   );
-}
+});
