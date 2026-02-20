@@ -119,11 +119,29 @@ async function detectBaseline(db: Database): Promise<number> {
     );
     if (prReviewRows.length > 0) return 8;
 
+    // v7: PR prep summaries — prompt contains {{stage_summaries}}
+    const prPrepSummaryRows = await db.select<{ cnt: number }[]>(
+      "SELECT COUNT(*) as cnt FROM stage_templates WHERE name = 'PR Preparation' AND prompt_template LIKE '%{{stage_summaries}}%'",
+    );
+    if (prPrepSummaryRows[0]?.cnt > 0) return 7;
+
+    // v6: Interactive stages — Planning uses 'plan' format with questions
+    const planFormatRows = await db.select<{ cnt: number }[]>(
+      "SELECT COUNT(*) as cnt FROM stage_templates WHERE name = 'Planning' AND output_format = 'plan'",
+    );
+    if (planFormatRows[0]?.cnt > 0) return 6;
+
+    // v4: Findings stages — Refinement uses 'findings' format
+    const findingsRows = await db.select<{ cnt: number }[]>(
+      "SELECT COUNT(*) as cnt FROM stage_templates WHERE name = 'Refinement' AND output_format = 'findings'",
+    );
+    if (findingsRows[0]?.cnt > 0) return 5; // v4 and v5 both touch Research/Refinement
+
     // v1: behavior_flags set
     const flagRows = await db.select<{ cnt: number }[]>(
       "SELECT COUNT(*) as cnt FROM stage_templates WHERE commits_changes = 1 OR creates_pr = 1",
     );
-    if (flagRows[0]?.cnt > 0) return 7; // If flags are set, at least v1-v7 have run
+    if (flagRows[0]?.cnt > 0) return 1;
 
     // Check if stage_templates has any data at all (indicates it's not a fresh DB)
     const anyRows = await db.select<{ cnt: number }[]>(
@@ -309,12 +327,15 @@ export async function migratePrPrepSummaries(db: Database): Promise<void> {
     "SELECT id, prompt_template FROM stage_templates WHERE name = 'PR Preparation' AND sort_order = 6",
   );
   for (const row of rows) {
-    if (!row.prompt_template.includes("{{stage_summaries}}")) {
-      await db.execute(
-        "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
-        [PR_PREP_PROMPT, new Date().toISOString(), row.id],
-      );
+    // Skip if already has {{stage_summaries}} (migration already applied)
+    // or if using MCP-based prompt (newer than this migration)
+    if (row.prompt_template.includes("{{stage_summaries}}") || row.prompt_template.includes("get_stage_output")) {
+      continue;
     }
+    await db.execute(
+      "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
+      [PR_PREP_PROMPT, new Date().toISOString(), row.id],
+    );
   }
 }
 

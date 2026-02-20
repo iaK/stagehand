@@ -13,11 +13,9 @@ import type { StageTemplate, Task } from "../../lib/types";
 interface PrReviewViewProps {
   stage: StageTemplate;
   task: Task;
-  projectPath: string;
-  projectId: string;
 }
 
-export function PrReviewView({ stage, task, projectPath: _projectPath, projectId: _projectId }: PrReviewViewProps) {
+export function PrReviewView({ stage, task }: PrReviewViewProps) {
   const sk = stageKey(task.id, stage.id);
   const { isRunning, streamOutput, killed: isStopping } = useProcessStore(
     (s) => s.stages[sk] ?? DEFAULT_STAGE_STATE,
@@ -31,11 +29,7 @@ export function PrReviewView({ stage, task, projectPath: _projectPath, projectId
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 
-  const isApproved = (() => {
-    const executions = useProcessStore.getState();
-    // We check via task status or approved flag passed from parent
-    return task.status === "completed";
-  })();
+  const prReviewCompleted = task.status === "completed";
 
   // Sync editable commit message when pending commit appears
   useEffect(() => {
@@ -64,7 +58,6 @@ export function PrReviewView({ stage, task, projectPath: _projectPath, projectId
   };
 
   const noPrUrl = !task.pr_url;
-  const prReviewCompleted = isApproved || task.status === "completed";
 
   return (
     <div className="p-6 max-w-4xl">

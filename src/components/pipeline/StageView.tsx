@@ -253,8 +253,6 @@ export function StageView({ stage }: StageViewProps) {
       <PrReviewView
         stage={stage}
         task={activeTask}
-        projectPath={activeProject.path}
-        projectId={activeProject.id}
       />
     );
   }
