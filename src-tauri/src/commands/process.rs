@@ -102,8 +102,8 @@ pub async fn spawn_claude(
         session_id: args.session_id.clone(),
     });
 
-    let stdout = child.stdout.take().expect("stdout piped");
-    let stderr = child.stderr.take().expect("stderr piped");
+    let stdout = child.stdout.take().ok_or("stdout not piped")?;
+    let stderr = child.stderr.take().ok_or("stderr not piped")?;
 
     let stdout_event = on_event.clone();
     let stdout_task = tokio::spawn(async move {

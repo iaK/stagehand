@@ -4,9 +4,7 @@ import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { listProcessesDetailed, killProcess } from "../lib/claude";
 import * as repo from "../lib/repositories";
-
-const POLL_INTERVAL_MS = 5_000;
-const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+import { PROCESS_HEALTH_POLL_MS, PROCESS_INACTIVITY_TIMEOUT_MS } from "../lib/constants";
 
 /**
  * Periodically checks that running processes are still alive.
@@ -90,7 +88,7 @@ export function useProcessHealthCheck(stageId: string | null) {
 
       // Check 2: Inactivity timeout
       const lastOutput = stageState?.lastOutputAt;
-      if (lastOutput && Date.now() - lastOutput > INACTIVITY_TIMEOUT_MS) {
+      if (lastOutput && Date.now() - lastOutput > PROCESS_INACTIVITY_TIMEOUT_MS) {
         await markStageCrashed(
           projectId,
           stageId,
@@ -102,7 +100,7 @@ export function useProcessHealthCheck(stageId: string | null) {
       }
     };
 
-    intervalRef.current = setInterval(check, POLL_INTERVAL_MS);
+    intervalRef.current = setInterval(check, PROCESS_HEALTH_POLL_MS);
 
     return () => {
       if (intervalRef.current) {

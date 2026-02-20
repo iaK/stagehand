@@ -7,7 +7,7 @@ import {
   formatSelectedApproach,
   extractImplementationSummary,
   shouldAutoStartStage,
-} from "../useStageExecution";
+} from "../../lib/stageUtils";
 import { makeStageTemplate, makeStageExecution } from "../../test/fixtures";
 import type { GateRule } from "../../lib/types";
 

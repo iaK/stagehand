@@ -5,6 +5,7 @@ import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { TaskOverview } from "../task/TaskOverview";
+import { logger } from "../../lib/logger";
 import type { StageTemplate } from "../../lib/types";
 
 export function PipelineView() {
@@ -37,10 +38,10 @@ export function PipelineView() {
   useEffect(() => {
     if (projectId && activeTaskId) {
       loadExecutions(projectId, activeTaskId).catch((err) =>
-        console.error("Failed to load executions:", err),
+        logger.error("Failed to load executions:", err),
       );
       loadTaskStages(projectId, activeTaskId).catch((err) =>
-        console.error("Failed to load task stages:", err),
+        logger.error("Failed to load task stages:", err),
       );
     }
   }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);

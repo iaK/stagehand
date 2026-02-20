@@ -22,14 +22,13 @@ import {
 import { getTaskWorkingDir } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
+import { PR_REVIEW_POLL_MS } from "../lib/constants";
 import type {
   Task,
   StageTemplate,
   PrReviewFix,
   ClaudeStreamEvent,
 } from "../lib/types";
-
-const POLL_INTERVAL_MS = 60_000;
 
 export function usePrReview(stage: StageTemplate, task: Task | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -587,7 +586,7 @@ Keep it under 72 characters for the first line.`,
     pollingRef.current = setInterval(() => {
       if (fixingId) return; // Don't poll while fixing
       fetchReviewsRef.current();
-    }, POLL_INTERVAL_MS);
+    }, PR_REVIEW_POLL_MS);
 
     return () => {
       if (pollingRef.current) {
