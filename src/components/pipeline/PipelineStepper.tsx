@@ -18,6 +18,7 @@ export function PipelineStepper({
 }: PipelineStepperProps) {
   const stageStatusMap = useMemo(() => {
     const map = new Map<string, string>();
+    const currentStage = stages.find((s) => s.id === currentStageId);
     for (const stage of stages) {
       if (isTaskCompleted) {
         map.set(stage.id, "completed");
@@ -35,7 +36,6 @@ export function PipelineStepper({
         else if (latestExec?.status === "awaiting_user") map.set(stage.id, "awaiting");
         else map.set(stage.id, "current");
       } else {
-        const currentStage = stages.find((s) => s.id === currentStageId);
         if (currentStage && stage.sort_order < currentStage.sort_order) {
           map.set(stage.id, "completed");
         } else {

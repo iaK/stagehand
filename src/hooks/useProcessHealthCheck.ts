@@ -17,6 +17,8 @@ export function useProcessHealthCheck(stageId: string | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const activeTask = useTaskStore((s) => s.activeTask);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const sk = stageId && activeTask ? stageKey(activeTask.id, stageId) : null;
+  const stageIsRunning = useProcessStore((s) => sk ? (s.stages[sk]?.isRunning ?? false) : false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -26,13 +28,14 @@ export function useProcessHealthCheck(stageId: string | null) {
     const taskId = activeTask.id;
     const sk = stageKey(taskId, stageId);
 
-    // Read executions non-reactively at setup time
-    const executions = useTaskStore.getState().executions;
-    const hasRunning = executions.some(
-      (e) => e.stage_template_id === stageId && e.status === "running",
-    );
-
-    if (!hasRunning) return;
+    // Check both process store running state and execution status
+    if (!stageIsRunning) {
+      const executions = useTaskStore.getState().executions;
+      const hasRunning = executions.some(
+        (e) => e.stage_template_id === stageId && e.status === "running",
+      );
+      if (!hasRunning) return;
+    }
 
     const check = async () => {
       // Read fresh executions at check time (non-reactive)
@@ -109,7 +112,7 @@ export function useProcessHealthCheck(stageId: string | null) {
         intervalRef.current = null;
       }
     };
-  }, [stageId, activeProject?.id, activeTask?.id, loadExecutions]);
+  }, [stageId, activeProject?.id, activeTask?.id, loadExecutions, stageIsRunning]);
 }
 
 async function markStageCrashed(
