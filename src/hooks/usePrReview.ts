@@ -46,7 +46,6 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
-  const isFetchingRef = useRef(false);
   const fetchReviewsRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const preFixFilesRef = useRef<Set<string>>(new Set());
 
@@ -100,7 +99,6 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
   }, [activeProject, task, stage.id, executionId, loadExecutions]);
 
   const fetchReviews = useCallback(async () => {
-    if (isFetchingRef.current) return;
     if (!activeProject || !task?.pr_url) return;
 
     const parsed = parsePrUrl(task.pr_url);
@@ -109,7 +107,6 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
       return;
     }
 
-    isFetchingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -243,7 +240,6 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
         setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      isFetchingRef.current = false;
       if (mountedRef.current) {
         setLoading(false);
       }

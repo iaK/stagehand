@@ -1,15 +1,4 @@
 import { vi } from "vitest";
-
-// Mock retry constants to use tiny delays for fast tests
-vi.mock("../constants", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../constants")>();
-  return {
-    ...original,
-    RETRY_BASE_DELAY_MS: 1,
-    RETRY_MAX_DELAY_MS: 2,
-  };
-});
-
 import { verifyApiKey, fetchMyIssues, fetchIssueDetail } from "../linear";
 
 const mockFetch = vi.fn();
@@ -50,7 +39,6 @@ describe("verifyApiKey", () => {
     const result = await verifyApiKey("bad_key");
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Invalid API key");
-    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("returns invalid with error on other HTTP errors", async () => {
@@ -62,7 +50,6 @@ describe("verifyApiKey", () => {
     const result = await verifyApiKey("bad_key");
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Linear API error: 500");
-    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it("returns invalid with error on GraphQL errors", async () => {
@@ -76,40 +63,15 @@ describe("verifyApiKey", () => {
     const result = await verifyApiKey("bad_key");
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Something went wrong");
-    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("returns invalid with error on network failure (fetch throws)", async () => {
-    mockFetch.mockImplementation(async () => {
-      throw new TypeError("Failed to fetch");
-    });
+    mockFetch.mockRejectedValue(new TypeError("Failed to fetch"));
 
     const result = await verifyApiKey("key");
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Failed to fetch");
-    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
-
-  it("retries on 429 and succeeds on second attempt", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: false, status: 429 })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: {
-            viewer: {
-              name: "Alice",
-              organization: { id: "org-1", name: "Acme" },
-            },
-          },
-        }),
-      });
-
-    const result = await verifyApiKey("lin_api_test");
-    expect(result.valid).toBe(true);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-  });
-
 });
 
 describe("fetchMyIssues", () => {

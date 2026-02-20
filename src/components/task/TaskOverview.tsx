@@ -180,9 +180,6 @@ export function TaskOverview() {
             />
           </div>
         </div>
-        {activeTask.ejected === 1 && (
-          <InfoCard label="Status" value="Ejected to main repo" />
-        )}
         <InfoCard
           label="Pull Request"
           value={activeTask.pr_url ? undefined : "No PR created yet"}

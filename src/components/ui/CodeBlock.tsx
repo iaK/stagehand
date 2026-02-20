@@ -1,6 +1,68 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useTheme } from "next-themes";
 import { codeToHtml } from "shiki";
+
+function detectLanguage(code: string): string | undefined {
+  const trimmed = code.trimStart();
+
+  // PHP — check before XML since <?php matches <[\w?!]
+  if (/^<\?php/.test(trimmed)) return "php";
+
+  // XML / HTML — starts with a tag or declaration
+  if (/^<[\w?!]/.test(trimmed)) {
+    if (/<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return "html";
+    return "xml";
+  }
+
+  // JSON — starts with { or [
+  if (/^[\[{]/.test(trimmed)) {
+    try { JSON.parse(code); return "json"; } catch { /* not json */ }
+  }
+
+  // YAML — key: value on the first line, or starts with ---
+  if (/^---\s*$/.test(trimmed.split("\n")[0]) || /^\w[\w\s]*:\s/.test(trimmed)) return "yaml";
+
+  // Shell — starts with shebang or common shell commands
+  if (/^#!\s*\//.test(trimmed)) return "bash";
+  if (/^(\$\s|npm |yarn |pnpm |brew |apt |sudo |curl |wget |git |cd |mkdir |chmod |export )/.test(trimmed)) return "bash";
+
+  // SQL
+  if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\s/i.test(trimmed)) return "sql";
+
+  // CSS
+  if (/^(@import|@media|@keyframes|[.#][\w-]+\s*\{|:\s*root\s*\{)/.test(trimmed)) return "css";
+
+  // TypeScript / JavaScript heuristics
+  if (/^(import\s|export\s|const\s|let\s|var\s|function\s|class\s|interface\s|type\s|enum\s|async\s|declare\s)/.test(trimmed)) {
+    // TypeScript signals
+    if (/:\s*(string|number|boolean|void|any|never|unknown|Record<|Array<|Promise<)/.test(code) ||
+        /^(interface|type|enum|declare)\s/m.test(code) ||
+        /<[A-Z]\w*>/.test(code)) {
+      return "typescript";
+    }
+    return "javascript";
+  }
+
+  // Python
+  if (/^(def |class |import |from |if __name__|print\(|#\s)/.test(trimmed)) return "python";
+
+  // Go
+  if (/^(package |func |import \(|type \w+ struct)/.test(trimmed)) return "go";
+
+  // Rust
+  if (/^(fn |pub fn |use |mod |struct |impl |let mut |enum )/.test(trimmed)) return "rust";
+
+  // Dockerfile
+  if (/^(FROM |ARG |RUN |CMD |COPY |ENV |EXPOSE |WORKDIR )/.test(trimmed)) return "dockerfile";
+
+  // Diff / patch
+  if (/^(diff --git|---\s+a\/|@@\s)/.test(trimmed)) return "diff";
+
+  // Markdown
+  if (/^#{1,6}\s/.test(trimmed)) return "markdown";
+
+  return undefined;
+}
 
 interface CodeBlockProps {
   code: string;
@@ -14,13 +76,14 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const shikiTheme = resolvedTheme === "dark" ? "github-dark" : "github-light";
+  const resolvedLang = useMemo(() => language || detectLanguage(code) || "text", [language, code]);
 
   useEffect(() => {
     let cancelled = false;
     setHtml(null);
 
     codeToHtml(code, {
-      lang: language || "text",
+      lang: resolvedLang,
       theme: shikiTheme,
     })
       .then((result) => {
@@ -33,7 +96,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, language, shikiTheme]);
+  }, [code, resolvedLang, shikiTheme]);
 
   const handleCopy = async () => {
     try {

@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { GIT_LOG_DEFAULT_MAX, GIT_COMMITS_DEFAULT_MAX } from "./constants";
-import { withRetry } from "./retry";
 
 export async function runGit(workingDir: string, ...args: string[]): Promise<string> {
   return invoke<string>("run_git_command", {
@@ -18,7 +17,7 @@ export async function gitDiff(workingDir: string): Promise<string> {
 }
 
 export async function gitDiffStat(workingDir: string): Promise<string> {
-  return runGit(workingDir, "diff", "HEAD", "--stat");
+  return runGit(workingDir, "diff", "--stat");
 }
 
 export async function gitAdd(workingDir: string): Promise<string> {
@@ -308,22 +307,6 @@ export async function runGh(workingDir: string, ...args: string[]): Promise<stri
   });
 }
 
-async function runGhWithRetry(workingDir: string, ...args: string[]): Promise<string> {
-  return withRetry(
-    () => runGh(workingDir, ...args),
-    {
-      shouldRetry: (error) => {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (/rate limit/i.test(msg)) return true;
-        if (/HTTP [5]\d{2}/i.test(msg)) return true;
-        if (/Failed to run gh/i.test(msg)) return true;
-        if (/connect/i.test(msg) && /refused|timeout|reset/i.test(msg)) return true;
-        return false;
-      },
-    },
-  );
-}
-
 export async function ghCreatePr(
   workingDir: string,
   title: string,
@@ -388,7 +371,7 @@ export async function ghFetchPrReviews(
   repo: string,
   prNumber: number,
 ): Promise<GhReview[]> {
-  const raw = await runGhWithRetry(
+  const raw = await runGh(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
@@ -403,7 +386,7 @@ export async function ghFetchPrComments(
   repo: string,
   prNumber: number,
 ): Promise<GhReviewComment[]> {
-  const raw = await runGhWithRetry(
+  const raw = await runGh(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}/comments`,
@@ -418,7 +401,7 @@ export async function ghFetchPrIssueComments(
   repo: string,
   prNumber: number,
 ): Promise<GhIssueComment[]> {
-  const raw = await runGhWithRetry(
+  const raw = await runGh(
     workingDir,
     "api",
     `repos/${owner}/${repo}/issues/${prNumber}/comments`,
@@ -438,7 +421,7 @@ export async function ghFetchPrState(
   repo: string,
   prNumber: number,
 ): Promise<GhPrState> {
-  const raw = await runGhWithRetry(
+  const raw = await runGh(
     workingDir,
     "api",
     `repos/${owner}/${repo}/pulls/${prNumber}`,
@@ -470,39 +453,6 @@ export async function gitDiffNameOnly(workingDir: string, base: string, head?: s
 
 export async function gitDiffStatBranch(workingDir: string, base: string): Promise<string> {
   return runGit(workingDir, "diff", "--stat", `${base}...HEAD`);
-}
-
-/**
- * Eject a task's branch from its worktree to the main repo checkout.
- * Removes the worktree, then checks out the branch in the main repo.
- */
-export async function ejectTaskToMainRepo(
-  projectPath: string,
-  worktreePath: string,
-  branchName: string,
-): Promise<void> {
-  await gitWorktreeRemove(projectPath, worktreePath);
-  await gitCheckoutBranch(projectPath, branchName);
-}
-
-/**
- * Inject a task's branch back from the main repo into a worktree.
- * Switches main repo to the default branch, then re-creates the worktree.
- */
-export async function injectTaskFromMainRepo(
-  projectPath: string,
-  worktreePath: string,
-  branchName: string,
-): Promise<void> {
-  const defaultBranch = await gitDefaultBranch(projectPath);
-  await gitCheckoutBranch(projectPath, defaultBranch ?? "main");
-  // Clean up any stale worktree entry before re-creating
-  try {
-    await gitWorktreeRemove(projectPath, worktreePath);
-  } catch {
-    // Worktree may not exist — that's fine
-  }
-  await gitWorktreeAdd(projectPath, worktreePath, branchName, false);
 }
 
 export async function readFileContents(path: string): Promise<string | null> {

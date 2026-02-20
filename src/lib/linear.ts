@@ -1,49 +1,28 @@
 import type { LinearIssue } from "./types";
 import { LINEAR_PAGE_SIZE } from "./constants";
-import { withRetry } from "./retry";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 
-export class HttpError extends Error {
-  constructor(message: string, public status: number) {
-    super(message);
-  }
-}
-
 async function gql<T>(apiKey: string, query: string, variables?: Record<string, unknown>): Promise<T> {
-  return withRetry(
-    async () => {
-      const res = await fetch(LINEAR_API, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: apiKey,
-        },
-        body: JSON.stringify(variables ? { query, variables } : { query }),
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Invalid API key");
-        throw new HttpError(`Linear API error: ${res.status}`, res.status);
-      }
-
-      const json = await res.json();
-      if (json.errors?.length) {
-        throw new Error(json.errors[0].message);
-      }
-      return json.data as T;
+  const res = await fetch(LINEAR_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
     },
-    {
-      shouldRetry: (error) => {
-        if (error instanceof TypeError) return true; // network error
-        if (error instanceof HttpError) {
-          if (error.status === 401) return false;
-          return error.status === 429 || error.status >= 500;
-        }
-        return false;
-      },
-    },
-  );
+    body: JSON.stringify(variables ? { query, variables } : { query }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Invalid API key");
+    throw new Error(`Linear API error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  if (json.errors?.length) {
+    throw new Error(json.errors[0].message);
+  }
+  return json.data as T;
 }
 
 interface ViewerResponse {
