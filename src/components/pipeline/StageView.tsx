@@ -249,6 +249,34 @@ export function StageView({ stage }: StageViewProps) {
     }
   };
 
+  const handleSplitTask = async (subtasks: { title: string; description: string }[]) => {
+    if (!activeProject || !activeTask) return;
+    setApproving(true);
+    setStageError(null);
+    try {
+      if (subtasks.length > 0) {
+        // 1. Create child tasks in the database
+        await useTaskStore.getState().createSubtasks(
+          activeProject.id,
+          activeTask.id,
+          subtasks,
+        );
+        // 2. Update parent task status to "split" (terminal)
+        await useTaskStore.getState().updateTask(
+          activeProject.id,
+          activeTask.id,
+          { status: "split" },
+        );
+      }
+      // 3. Approve the split stage (marks execution as approved)
+      await approveStage(activeTask, stage);
+    } catch (err) {
+      logger.error("Failed to split task:", err);
+      setStageError(err instanceof Error ? err.message : String(err));
+      setApproving(false);
+    }
+  };
+
   if (!activeProject || !activeTask) return null;
 
   // Ejected: full-screen overlay blocking all stage interaction
@@ -351,13 +379,27 @@ export function StageView({ stage }: StageViewProps) {
             </Collapsible>
           )}
 
-          {(stage.output_format === "research" || stage.output_format === "findings") && (
-            <Alert className="mb-4 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-              <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          {(stage.output_format === "research" || stage.output_format === "findings" || stage.output_format === "task_splitting") && (
+            <Alert className={`mb-4 ${
+              stage.output_format === "task_splitting"
+                ? "border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/10 text-violet-800 dark:text-violet-300"
+                : "border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+            }`}>
+              <svg className={`w-4 h-4 flex-shrink-0 ${
+                stage.output_format === "task_splitting"
+                  ? "text-violet-600 dark:text-violet-400"
+                  : "text-emerald-600 dark:text-emerald-400"
+              }`} fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-              <AlertDescription className="text-emerald-800 dark:text-emerald-300">
-                {stage.output_format === "research"
+              <AlertDescription className={
+                stage.output_format === "task_splitting"
+                  ? "text-violet-800 dark:text-violet-300"
+                  : "text-emerald-800 dark:text-emerald-300"
+              }>
+                {stage.output_format === "task_splitting"
+                  ? "Task Split Successfully"
+                  : stage.output_format === "research"
                   ? "Research Complete"
                   : (() => {
                       const out = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
@@ -453,6 +495,7 @@ export function StageView({ stage }: StageViewProps) {
                 onApprove={handleApprove}
                 onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
+                onSplitTask={stage.output_format === "task_splitting" ? handleSplitTask : undefined}
                 isApproved={false}
                 stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
                 approving={approving}

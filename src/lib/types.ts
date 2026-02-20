@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "auto";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "task_splitting" | "auto";
 
 export interface Task {
   id: string;
@@ -43,13 +43,14 @@ export interface Task {
   branch_name: string | null;
   worktree_path: string | null;
   pr_url: string | null;
+  parent_task_id: string | null;
   ejected: number;
   archived: number;
   created_at: string;
   updated_at: string;
 }
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "failed" | "split";
 
 export type CompletionStrategy = "pr" | "merge";
 
@@ -138,6 +139,18 @@ export interface FindingItem {
 export interface FindingsOutput {
   summary: string;
   findings: FindingItem[];
+}
+
+export interface ProposedSubtask {
+  id: string;
+  title: string;
+  description: string;
+  selected: boolean;
+}
+
+export interface TaskSplittingOutput {
+  reasoning: string;
+  proposed_tasks: ProposedSubtask[];
 }
 
 export interface ResearchQuestion {

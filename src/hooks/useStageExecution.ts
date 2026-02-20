@@ -653,6 +653,17 @@ export function useStageExecution() {
 
   const advanceFromStageInner = useCallback(
     async (projectId: string, task: Task, stage: StageTemplate, taskStageTemplates: StageTemplate[]) => {
+      // Split tasks are terminal — don't advance to the next stage.
+      // Query the DB directly instead of reading activeTask from the store,
+      // because the user may have navigated to a different task.
+      const freshTask = await repo.getTask(projectId, task.id);
+      if (freshTask?.status === "split") {
+        if (useTaskStore.getState().activeTask?.id === task.id) {
+          await loadExecutions(projectId, task.id);
+        }
+        return;
+      }
+
       const nextStage = taskStageTemplates
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;

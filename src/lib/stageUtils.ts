@@ -108,6 +108,13 @@ export function extractStageOutput(
       }
       return raw;
     }
+    case "task_splitting": {
+      try {
+        const data = JSON.parse(raw);
+        if (data.reasoning) return data.reasoning;
+      } catch { /* fall through */ }
+      return raw;
+    }
     case "pr_review":
       return raw || "PR Review completed";
     case "merge":
@@ -183,6 +190,15 @@ export function extractStageSummary(
       } catch {
         // Phase 2 text output — summarize
       }
+      return truncateToSentences(raw, 3);
+    }
+    case "task_splitting": {
+      try {
+        const data = JSON.parse(raw);
+        const count = data.proposed_tasks?.length ?? 0;
+        const summary = `Task split into ${count} subtask${count !== 1 ? "s" : ""}.`;
+        return data.reasoning ? `${summary} ${truncateToSentences(data.reasoning, 2)}` : summary;
+      } catch { /* fall through */ }
       return truncateToSentences(raw, 3);
     }
     case "pr_review":

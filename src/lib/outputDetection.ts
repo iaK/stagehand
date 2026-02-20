@@ -10,7 +10,8 @@ export type DetectedType =
   | "plan"
   | "pr_preparation"
   | "pr_review"
-  | "merge";
+  | "merge"
+  | "task_splitting";
 
 /**
  * Detect the interaction type from output content.
@@ -36,6 +37,9 @@ export function detectInteractionType(
   try {
     const data = JSON.parse(output);
     if (typeof data !== "object" || data === null) return "text";
+
+    // proposed_tasks array → task splitting UI
+    if (Array.isArray(data.proposed_tasks)) return "task_splitting";
 
     // findings array → findings/checklist UI
     if (Array.isArray(data.findings)) return "findings";

@@ -12,6 +12,8 @@ import {
   PLANNING_SCHEMA,
   DOCUMENTATION_PROMPT,
   PR_PREP_PROMPT,
+  TASK_SPLITTING_PROMPT,
+  TASK_SPLITTING_SCHEMA,
 } from "./prompts";
 
 // === Migration Registry ===
@@ -35,6 +37,7 @@ const MIGRATIONS: Migration[] = [
   { version: 10, name: "pr_preparation_format", fn: migratePrPreparationFormat },
   { version: 11, name: "documentation_stage", fn: migrateDocumentationStage },
   { version: 12, name: "second_opinion_stage", fn: migrateSecondOpinionStage },
+  { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
 ];
 
 /**
@@ -96,6 +99,12 @@ export async function runPendingMigrations(db: Database): Promise<void> {
 async function detectBaseline(db: Database): Promise<number> {
   // Check for features in reverse order (newest first) to find the highest applied migration
   try {
+    // v13: Task Splitting stage exists
+    const tsRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM stage_templates WHERE name = 'Task Splitting' LIMIT 1",
+    );
+    if (tsRows.length > 0) return 13;
+
     // v12: Second Opinion stage exists
     const soRows = await db.select<{ id: string }[]>(
       "SELECT id FROM stage_templates WHERE name = 'Second Opinion' LIMIT 1",
@@ -660,6 +669,61 @@ export async function migrateSecondOpinionStage(db: Database): Promise<void> {
           },
           required: ["summary", "findings"],
         }),
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        JSON.stringify(["Read", "Glob", "Grep"]),
+        "replace",
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+export async function migrateTaskSplittingStage(db: Database): Promise<void> {
+  // Step 1: Add parent_task_id column (idempotent via catch)
+  await db.execute(
+    `ALTER TABLE tasks ADD COLUMN parent_task_id TEXT`,
+  ).catch(() => {});
+
+  // Step 2: Insert Task Splitting stage template
+  // Idempotency: bail if Task Splitting already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Task Splitting'",
+  );
+  if (existing.length > 0) return;
+
+  const now = new Date().toISOString();
+
+  // Bump sort_order for all stages at sort_order >= 1 to make room
+  await db.execute(
+    `UPDATE stage_templates SET sort_order = sort_order + 1, updated_at = $1
+     WHERE sort_order >= 1`,
+    [now],
+  );
+
+  // Insert Task Splitting stage for every project
+  const projectRows = await db.select<{ project_id: string }[]>(
+    "SELECT DISTINCT project_id FROM stage_templates",
+  );
+
+  for (const row of projectRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "Task Splitting",
+        "Decompose a large task into smaller, independent subtasks.",
+        1,
+        TASK_SPLITTING_PROMPT,
+        "previous_stage",
+        "task_splitting",
+        TASK_SPLITTING_SCHEMA,
         JSON.stringify({ type: "require_approval" }),
         null,
         null,

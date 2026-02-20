@@ -438,6 +438,49 @@ Focus on:
 
 Keep the documentation concise and developer-focused. Do not include implementation details that aren't relevant to users of the code.`;
 
+export const TASK_SPLITTING_SCHEMA = JSON.stringify({
+  type: "object",
+  properties: {
+    reasoning: {
+      type: "string",
+      description: "Explanation of why this task should be split and how the subtasks relate to the whole.",
+    },
+    proposed_tasks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string", description: "Actionable title starting with a verb" },
+          description: { type: "string", description: "Enough context to work on independently" },
+          selected: { type: "boolean", description: "true for recommended subtasks, false for optional" },
+        },
+        required: ["id", "title", "description", "selected"],
+      },
+    },
+  },
+  required: ["reasoning", "proposed_tasks"],
+});
+
+export const TASK_SPLITTING_PROMPT = `You are a senior software engineer analyzing a task to decompose it into smaller, independent subtasks.
+
+Task: {{task_description}}
+
+Review the completed stages for research findings. Use the get_stage_output MCP tool to retrieve the full research output if needed.
+
+Based on the research, decompose this task into smaller, independently-completable subtasks. Each subtask should:
+- Be self-contained and independently implementable
+- Have a clear, specific title (actionable, starts with a verb)
+- Have a description that provides enough context to work on it independently
+- Not depend on other subtasks being completed first (when possible)
+- Each subtask will get its own git branch and full pipeline
+
+Set "selected": true for subtasks you recommend. Set "selected": false for optional or lower-priority subtasks.
+
+Your "reasoning" should explain WHY this task benefits from splitting and how the subtasks relate to the whole.
+
+Respond with a JSON object matching the required schema.`;
+
 export const PR_PREPARATION_PROMPT = `Prepare a pull request for the following completed task.
 
 Task: {{task_description}}

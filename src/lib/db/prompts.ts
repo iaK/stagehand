@@ -8,6 +8,8 @@ export {
   FINDINGS_SCHEMA,
   APPROACHES_SCHEMA,
   PLANNING_SCHEMA,
+  TASK_SPLITTING_SCHEMA,
+  TASK_SPLITTING_PROMPT,
 } from "../prompts/stagePrompts";
 
 // The Research prompt is identical for both migrations and seeds

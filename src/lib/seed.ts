@@ -13,6 +13,8 @@ import {
   DOCUMENTATION_PROMPT,
   PR_PREPARATION_PROMPT,
   PR_PREPARATION_SCHEMA,
+  TASK_SPLITTING_PROMPT,
+  TASK_SPLITTING_SCHEMA,
 } from "./prompts/stagePrompts";
 
 export function getDefaultStageTemplates(
@@ -41,10 +43,29 @@ export function getDefaultStageTemplates(
     {
       id: crypto.randomUUID(),
       project_id: projectId,
+      name: "Task Splitting",
+      description:
+        "Decompose a large task into smaller, independent subtasks.",
+      sort_order: 1,
+      prompt_template: TASK_SPLITTING_PROMPT,
+      input_source: "previous_stage",
+      output_format: "task_splitting",
+      output_schema: TASK_SPLITTING_SCHEMA,
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
+      requires_user_input: 0,
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
       name: "High-Level Approaches",
       description:
         "Generate multiple implementation approaches based on the research.",
-      sort_order: 1,
+      sort_order: 2,
       prompt_template: APPROACHES_PROMPT,
       input_source: "previous_stage",
       output_format: "options",
@@ -67,7 +88,7 @@ export function getDefaultStageTemplates(
       name: "Planning",
       description:
         "Create a detailed implementation plan based on the selected approach.",
-      sort_order: 2,
+      sort_order: 3,
       prompt_template: PLANNING_PROMPT,
       input_source: "previous_stage",
       output_format: "plan",
@@ -86,7 +107,7 @@ export function getDefaultStageTemplates(
       name: "Second Opinion",
       description:
         "Critique the implementation plan — identify risks, gaps, and improvements for the developer to select, then revise the plan.",
-      sort_order: 3,
+      sort_order: 4,
       prompt_template: `{{#if prior_attempt_output}}You are revising an implementation plan based on the developer's selected concerns.
 
 Task: {{task_description}}
@@ -179,7 +200,7 @@ Respond with a JSON object:
       name: "Implementation",
       description:
         "Execute the implementation plan — write code, create files, run commands.",
-      sort_order: 4,
+      sort_order: 5,
       prompt_template: IMPLEMENTATION_PROMPT,
       input_source: "previous_stage",
       output_format: "text",
@@ -198,7 +219,7 @@ Respond with a JSON object:
       name: "Refinement",
       description:
         "Self-review the implementation: identify issues for the developer to select, then apply chosen fixes.",
-      sort_order: 5,
+      sort_order: 6,
       prompt_template: REFINEMENT_FINDINGS_PROMPT,
       input_source: "previous_stage",
       output_format: "findings",
@@ -217,7 +238,7 @@ Respond with a JSON object:
       name: "Security Review",
       description:
         "Analyze for security vulnerabilities, then apply selected fixes.",
-      sort_order: 6,
+      sort_order: 7,
       prompt_template: SECURITY_FINDINGS_PROMPT,
       input_source: "previous_stage",
       output_format: "findings",
@@ -236,7 +257,7 @@ Respond with a JSON object:
       name: "Documentation",
       description:
         "Write or update documentation based on the changes made in this task.",
-      sort_order: 7,
+      sort_order: 8,
       prompt_template: DOCUMENTATION_PROMPT,
       input_source: "both",
       output_format: "text",
@@ -255,7 +276,7 @@ Respond with a JSON object:
       name: "PR Preparation",
       description:
         "Generate a pull request title, description, and test plan.",
-      sort_order: 8,
+      sort_order: 9,
       prompt_template: PR_PREPARATION_PROMPT,
       input_source: "previous_stage",
       output_format: "pr_preparation",
@@ -277,7 +298,7 @@ Respond with a JSON object:
       name: "PR Review",
       description:
         "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
-      sort_order: 9,
+      sort_order: 10,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "pr_review",
@@ -296,7 +317,7 @@ Respond with a JSON object:
       name: "Merge",
       description:
         "Merge the task branch into the target branch and push.",
-      sort_order: 10,
+      sort_order: 11,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "merge",
