@@ -163,6 +163,27 @@ describe("fetchIssueDetail", () => {
     ]);
   });
 
+  it("uses parameterized variables instead of string interpolation", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          issue: {
+            description: "desc",
+            comments: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await fetchIssueDetail("lin_api_test", "issue-1");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.variables).toEqual({ id: "issue-1" });
+    expect(body.query).toContain("$id: String!");
+    expect(body.query).not.toContain('"issue-1"');
+  });
+
   it("handles null description", async () => {
     mockFetch.mockResolvedValue({
       ok: true,

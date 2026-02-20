@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import * as repo from "../../lib/repositories";
+import { logger } from "../../lib/logger";
 import { useProjectStore } from "../../stores/projectStore";
 import type { ResearchQuestion, StageTemplate, StageSuggestion, CompletionStrategy } from "../../lib/types";
 
@@ -318,7 +319,7 @@ export function QuestionCards({
     try {
       await onSubmit(lines.join("\n\n"));
     } catch (err) {
-      console.error("Failed to submit answers:", err);
+      logger.error("Failed to submit answers:", err);
       setError(err instanceof Error ? err.message : String(err));
       setSubmitting(false);
     }

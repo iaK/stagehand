@@ -3,6 +3,7 @@ import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
 import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
+import { logger } from "../lib/logger";
 
 interface TaskStore {
   tasks: Task[];
@@ -80,8 +81,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (hasRunning) {
       try {
         detailedProcesses = await listProcessesDetailed();
-      } catch {
-        // If we can't reach the backend, don't assume anything about running state
+      } catch (err) {
+        logger.error("Failed to clean up stale executions", err);
       }
     }
 
@@ -110,7 +111,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
               exec.error_message = "Process crashed or was interrupted";
               useProcessStore.getState().setStopped(sk);
             } catch (err) {
-              console.error("Failed to clean up stale execution:", exec.id, err);
+              logger.error("Failed to clean up stale execution:", exec.id, err);
             }
           }
         }

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { GIT_LOG_DEFAULT_MAX, GIT_COMMITS_DEFAULT_MAX } from "./constants";
 
 export async function runGit(workingDir: string, ...args: string[]): Promise<string> {
   return invoke<string>("run_git_command", {
@@ -131,7 +132,7 @@ export interface GitCommit {
   author: string;
 }
 
-export async function gitLog(workingDir: string, maxCount: number = 50): Promise<GitCommit[]> {
+export async function gitLog(workingDir: string, maxCount: number = GIT_LOG_DEFAULT_MAX): Promise<GitCommit[]> {
   try {
     const delimiter = "---END-COMMIT---";
     const raw = await runGit(
@@ -153,7 +154,7 @@ export async function gitLog(workingDir: string, maxCount: number = 50): Promise
 export async function gitLogBranchDiff(
   workingDir: string,
   baseBranch: string,
-  maxCount: number = 200,
+  maxCount: number = GIT_COMMITS_DEFAULT_MAX,
 ): Promise<GitCommit[]> {
   try {
     const delimiter = "---END-COMMIT---";

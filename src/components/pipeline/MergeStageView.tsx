@@ -13,6 +13,7 @@ import {
   gitWorktreeRemove,
   gitDeleteBranch,
 } from "../../lib/git";
+import { logger } from "../../lib/logger";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
@@ -192,8 +193,8 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         status: "failed",
         error_message: msg,
         completed_at: new Date().toISOString(),
-      }).catch(() => {});
-      await loadExecutions(activeProject.id, activeTask.id).catch(() => {});
+      }).catch((err) => logger.error("Failed to update stage execution status after merge error", err));
+      await loadExecutions(activeProject.id, activeTask.id).catch((err) => logger.error("Failed to reload executions after merge error", err));
       setError(msg);
       setMergeState("error");
     }

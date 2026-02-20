@@ -1,15 +1,16 @@
 import type { LinearIssue } from "./types";
+import { LINEAR_PAGE_SIZE } from "./constants";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 
-async function gql<T>(apiKey: string, query: string): Promise<T> {
+async function gql<T>(apiKey: string, query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch(LINEAR_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: apiKey,
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(variables ? { query, variables } : { query }),
   });
 
   if (!res.ok) {
@@ -72,7 +73,7 @@ export async function fetchMyIssues(
       viewer {
         assignedIssues(
           filter: { state: { type: { nin: ["completed", "canceled"] } } }
-          first: 50
+          first: ${LINEAR_PAGE_SIZE}
         ) {
           nodes {
             id
@@ -120,10 +121,10 @@ export async function fetchIssueDetail(
 ): Promise<{ description: string | undefined; comments: string[] }> {
   const data = await gql<IssueDetailResponse>(
     apiKey,
-    `{
-      issue(id: "${issueId}") {
+    `query ($id: String!) {
+      issue(id: $id) {
         description
-        comments(first: 50) {
+        comments(first: ${LINEAR_PAGE_SIZE}) {
           nodes {
             body
             user { name }
@@ -132,6 +133,7 @@ export async function fetchIssueDetail(
         }
       }
     }`,
+    { id: issueId },
   );
 
   const comments = data.issue.comments.nodes.map((c) => {

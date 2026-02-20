@@ -4,6 +4,7 @@ import * as repo from "../lib/repositories";
 import { aggregateProjectDotClass } from "../lib/taskStatus";
 import { scanRepository } from "../lib/repoScanner";
 import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
+import { logger } from "../lib/logger";
 
 interface ProjectStore {
   projects: Project[];
@@ -78,7 +79,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const project = await repo.createProject(name, path);
 
     // Scan repository conventions (runs in background, non-blocking for UI)
-    scanRepository(project.id, path).catch(() => {});
+    scanRepository(project.id, path).catch((err) => logger.error("Failed to scan repository conventions", err));
 
     // Auto-detect git remote info (runs in background, non-blocking for UI)
     (async () => {
@@ -92,7 +93,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         await repo.setProjectSetting(project.id, "github_repo_full_name", `${parsed.owner}/${parsed.repo}`);
       }
       await repo.setProjectSetting(project.id, "github_default_branch", branch ?? "main");
-    })().catch(() => {});
+    })().catch((err) => logger.error("Failed to load project git settings", err));
 
     const projects = await repo.listProjects();
     set({ projects, activeProject: project });

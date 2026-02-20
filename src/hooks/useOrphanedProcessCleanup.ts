@@ -4,6 +4,7 @@ import { useProcessStore } from "../stores/processStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import * as repo from "../lib/repositories";
+import { logger } from "../lib/logger";
 
 export function useOrphanedProcessCleanup() {
   useEffect(() => {
@@ -41,8 +42,8 @@ export function useOrphanedProcessCleanup() {
                   error_message: "Process orphaned after reload",
                   completed_at: new Date().toISOString(),
                 });
-              } catch {
-                // Execution may not exist or already be updated
+              } catch (err) {
+                logger.error("Failed to mark orphaned process as failed", err);
               }
             }
           }
