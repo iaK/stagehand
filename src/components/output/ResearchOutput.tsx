@@ -150,11 +150,17 @@ function StageSelectionPanel({
     return { middleStages: middle, terminalStages: terminal, taskSplittingStage: splitting };
   }, [stageTemplates]);
 
+  // Look up AI suggestion for Task Splitting by template name (not hardcoded string)
+  const taskSplittingSuggestion = taskSplittingStage
+    ? suggestionMap.get(taskSplittingStage.name.trim().toLowerCase())
+    : undefined;
+
   // Track whether Task Splitting is selected (mutually exclusive with normal pipeline)
   const [taskSplittingSelected, setTaskSplittingSelected] = useState(() => {
-    if (suggestedStages.length > 0) {
+    if (taskSplittingStage && suggestedStages.length > 0) {
+      const splittingName = taskSplittingStage.name.trim().toLowerCase();
       return suggestedStages.some(
-        (s) => s.name.trim().toLowerCase() === "task splitting",
+        (s) => s.name.trim().toLowerCase() === splittingName,
       );
     }
     return false;
@@ -164,8 +170,9 @@ function StageSelectionPanel({
   const [checked, setChecked] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     // If AI suggested Task Splitting, don't check any middle stages
-    const aiSuggestedSplitting = suggestedStages.some(
-      (s) => s.name.trim().toLowerCase() === "task splitting",
+    const splittingName = taskSplittingStage?.name.trim().toLowerCase();
+    const aiSuggestedSplitting = splittingName != null && suggestedStages.some(
+      (s) => s.name.trim().toLowerCase() === splittingName,
     );
     if (aiSuggestedSplitting) {
       for (const t of middleStages) {
@@ -334,7 +341,7 @@ function StageSelectionPanel({
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground">{taskSplittingStage.name}</span>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Split into subtasks instead of running the full pipeline
+                  {taskSplittingSuggestion?.reason ?? "Split into subtasks instead of running the full pipeline"}
                 </p>
               </div>
             </label>
