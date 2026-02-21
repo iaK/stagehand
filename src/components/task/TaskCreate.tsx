@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,7 +16,6 @@ interface TaskCreateProps {
 
 export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
   const [title, setTitle] = useState(task?.title ?? "");
-  const [description, setDescription] = useState(task?.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const addTask = useTaskStore((s) => s.addTask);
   const updateTask = useTaskStore((s) => s.updateTask);
@@ -30,10 +28,10 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
     setError(null);
     try {
       if (isEditing) {
-        await updateTask(projectId, task.id, { title: title.trim(), description: description.trim() });
+        await updateTask(projectId, task.id, { title: title.trim() });
         sendNotification("Task updated", title.trim(), "success", { projectId, taskId: task.id });
       } else {
-        await addTask(projectId, title.trim(), description.trim());
+        await addTask(projectId, title.trim());
         sendNotification("Task created", title.trim(), "success", { projectId });
       }
       onClose();
@@ -57,15 +55,6 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs to be done?"
               autoFocus
-              className="mt-1"
-            />
-          </div>
-          <div className="mt-4">
-            <Label>Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the task (optional)"
               className="mt-1"
             />
           </div>

@@ -132,53 +132,25 @@ function StageSelectionPanel({
     [stageTemplates],
   );
 
-  // Split stages into toggleable middle stages, locked terminal stages, and Task Splitting
-  const { middleStages, terminalStages, taskSplittingStage } = useMemo(() => {
+  // Split stages into toggleable middle stages and locked terminal stages
+  const { middleStages, terminalStages } = useMemo(() => {
     const middle: StageTemplate[] = [];
     const terminal: StageTemplate[] = [];
-    let splitting: StageTemplate | null = null;
     for (const t of stageTemplates) {
       if (t.sort_order === 0) continue; // Research — always included separately
-      if (t.output_format === "task_splitting") {
-        splitting = t;
-      } else if ((SPECIAL_TERMINAL_FORMATS as readonly string[]).includes(t.output_format)) {
+      if ((SPECIAL_TERMINAL_FORMATS as readonly string[]).includes(t.output_format)) {
         terminal.push(t);
       } else {
         middle.push(t);
       }
     }
-    return { middleStages: middle, terminalStages: terminal, taskSplittingStage: splitting };
+    return { middleStages: middle, terminalStages: terminal };
   }, [stageTemplates]);
-
-  // Look up AI suggestion for Task Splitting by template name (not hardcoded string)
-  const taskSplittingSuggestion = taskSplittingStage
-    ? suggestionMap.get(taskSplittingStage.name.trim().toLowerCase())
-    : undefined;
-
-  // Track whether Task Splitting is selected (mutually exclusive with normal pipeline)
-  const [taskSplittingSelected, setTaskSplittingSelected] = useState(() => {
-    if (taskSplittingStage && suggestedStages.length > 0) {
-      const splittingName = taskSplittingStage.name.trim().toLowerCase();
-      return suggestedStages.some(
-        (s) => s.name.trim().toLowerCase() === splittingName,
-      );
-    }
-    return false;
-  });
 
   // Initialize checked state: pre-check AI-suggested stages for middle stages
   const [checked, setChecked] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    // If AI suggested Task Splitting, don't check any middle stages
-    const splittingName = taskSplittingStage?.name.trim().toLowerCase();
-    const aiSuggestedSplitting = splittingName != null && suggestedStages.some(
-      (s) => s.name.trim().toLowerCase() === splittingName,
-    );
-    if (aiSuggestedSplitting) {
-      for (const t of middleStages) {
-        initial[t.id] = false;
-      }
-    } else if (suggestedStages.length === 0) {
+    if (suggestedStages.length === 0) {
       for (const t of middleStages) {
         initial[t.id] = true;
       }
@@ -196,56 +168,30 @@ function StageSelectionPanel({
     return initial;
   });
 
-  // Mutual exclusion: toggling Task Splitting unchecks middle stages and vice versa
-  const handleToggleTaskSplitting = (selected: boolean) => {
-    setTaskSplittingSelected(selected);
-    if (selected) {
-      // Uncheck all middle stages
-      setChecked((prev) => {
-        const next = { ...prev };
-        for (const t of middleStages) {
-          next[t.id] = false;
-        }
-        return next;
-      });
-    }
-  };
-
-  const handleToggleMiddleStage = (stageId: string, value: boolean) => {
-    setChecked((prev) => ({ ...prev, [stageId]: value }));
-    if (value) {
-      // Uncheck Task Splitting when any middle stage is selected
-      setTaskSplittingSelected(false);
-    }
-  };
-
   const handleApprove = () => {
     const selectedIds: string[] = [];
     // Always include Research
     if (researchStage) selectedIds.push(researchStage.id);
-
-    if (taskSplittingSelected && taskSplittingStage) {
-      // Task Splitting path: Research → Task Splitting only (no middle or terminal stages)
-      selectedIds.push(taskSplittingStage.id);
-    } else {
-      // Normal pipeline: include checked middle stages + terminal stages
-      for (const t of middleStages) {
-        if (checked[t.id]) selectedIds.push(t.id);
-      }
-      for (const t of terminalStages) {
-        const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
-        const isMergeRelated = t.output_format === "merge";
-        if (completionStrategy === "pr" && isPrRelated) {
-          selectedIds.push(t.id);
-        } else if (completionStrategy === "merge" && isMergeRelated) {
-          selectedIds.push(t.id);
-        }
+    // Include checked middle stages
+    for (const t of middleStages) {
+      if (checked[t.id]) selectedIds.push(t.id);
+    }
+    // Include terminal stages based on strategy
+    // PR flow: include pr_preparation and pr_review stages
+    // Merge flow: include merge stages
+    for (const t of terminalStages) {
+      const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
+      const isMergeRelated = t.output_format === "merge";
+      if (completionStrategy === "pr" && isPrRelated) {
+        selectedIds.push(t.id);
+      } else if (completionStrategy === "merge" && isMergeRelated) {
+        selectedIds.push(t.id);
       }
     }
     onApprove(selectedIds);
   };
 
-  const selectedCount = taskSplittingSelected ? 1 : Object.values(checked).filter(Boolean).length;
+  const selectedCount = Object.values(checked).filter(Boolean).length;
 
   return (
     <div className="mt-6 space-y-3">
@@ -284,7 +230,9 @@ function StageSelectionPanel({
             >
               <Checkbox
                 checked={checked[t.id]}
-                onCheckedChange={(v) => handleToggleMiddleStage(t.id, !!v)}
+                onCheckedChange={(v) =>
+                  setChecked((prev) => ({ ...prev, [t.id]: !!v }))
+                }
                 className="mt-0.5"
               />
               <div className="flex-1 min-w-0">
@@ -297,8 +245,8 @@ function StageSelectionPanel({
           );
         })}
 
-        {/* Terminal stages: locked based on project completion strategy (hidden when Task Splitting is selected) */}
-        {!taskSplittingSelected && terminalStages.map((t) => {
+        {/* Terminal stages: locked based on project completion strategy */}
+        {terminalStages.map((t) => {
           const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
           const isMergeRelated = t.output_format === "merge";
           const isActive = (completionStrategy === "pr" && isPrRelated)
@@ -317,36 +265,6 @@ function StageSelectionPanel({
             </label>
           );
         })}
-
-        {/* Task Splitting: mutually exclusive alternative to the normal pipeline */}
-        {taskSplittingStage && (
-          <>
-            <div className="flex items-center gap-2 pt-2">
-              <div className="flex-1 border-t border-border" />
-              <span className="text-xs text-muted-foreground px-1">or</span>
-              <div className="flex-1 border-t border-border" />
-            </div>
-            <label
-              className={`flex items-start gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                taskSplittingSelected
-                  ? "border-amber-500 dark:border-amber-400 bg-amber-50 dark:bg-amber-500/10"
-                  : "border-border hover:border-zinc-400 dark:hover:border-zinc-500"
-              }`}
-            >
-              <Checkbox
-                checked={taskSplittingSelected}
-                onCheckedChange={(v) => handleToggleTaskSplitting(!!v)}
-                className="mt-0.5"
-              />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium text-foreground">{taskSplittingStage.name}</span>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {taskSplittingSuggestion?.reason ?? "Split into subtasks instead of running the full pipeline"}
-                </p>
-              </div>
-            </label>
-          </>
-        )}
       </div>
 
       <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving}>

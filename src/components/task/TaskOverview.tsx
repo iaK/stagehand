@@ -2,15 +2,20 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { gitLog, gitLogBranchDiff, gitListBranches, gitWorktreeRemove, gitDeleteBranch, gitDefaultBranch, gitCheckoutBranch, type GitCommit } from "../../lib/git";
+import { sendNotification } from "../../lib/notifications";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { statusColors } from "../../lib/taskStatus";
+import { TaskCreate } from "./TaskCreate";
 import type { Task, StageExecution } from "../../lib/types";
 
 function formatDate(iso: string): string {
@@ -70,6 +75,9 @@ export function TaskOverview() {
   const defaultBranch = useGitHubStore((s) => s.defaultBranch);
   const setDefaultBranch = useGitHubStore((s) => s.setDefaultBranch);
 
+  const setActiveTask = useTaskStore((s) => s.setActiveTask);
+  const updateTask = useTaskStore((s) => s.updateTask);
+
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [commitsLoading, setCommitsLoading] = useState(true);
   const [showTokenDetails, setShowTokenDetails] = useState(false);
@@ -77,6 +85,8 @@ export function TaskOverview() {
   const [branches, setBranches] = useState<string[]>([]);
   const [childTasks, setChildTasks] = useState<Task[]>([]);
   const [parentTask, setParentTask] = useState<Task | null>(null);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(false);
 
   useEffect(() => {
     if (activeTask?.status !== "split" || !activeProject) {
@@ -148,6 +158,35 @@ export function TaskOverview() {
     return () => { cancelled = true; };
   }, [activeTask?.id, activeProject?.path, defaultBranch]);
 
+  const confirmArchive = async () => {
+    if (!activeProject || !activeTask) return;
+    if (activeTask.ejected) {
+      try {
+        const defBranch = await gitDefaultBranch(activeProject.path);
+        await gitCheckoutBranch(activeProject.path, defBranch ?? "main");
+      } catch {
+        // Non-critical — best effort
+      }
+    } else if (activeTask.worktree_path) {
+      try {
+        await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
+      } catch {
+        // Worktree may already be gone
+      }
+    }
+    if (activeTask.branch_name) {
+      try {
+        await gitDeleteBranch(activeProject.path, activeTask.branch_name);
+      } catch {
+        // Non-critical — branch may already be gone
+      }
+    }
+    await updateTask(activeProject.id, activeTask.id, { archived: 1 });
+    sendNotification("Task archived", activeTask.title, "success", { projectId: activeProject.id, taskId: activeTask.id });
+    setArchiveDialogOpen(false);
+    setActiveTask(null);
+  };
+
   if (!activeTask) return null;
 
   const status = statusConfig[activeTask.status] ?? statusConfig.pending;
@@ -173,7 +212,37 @@ export function TaskOverview() {
             <p className="text-sm text-muted-foreground">{activeTask.description}</p>
           )}
         </div>
-        <Badge variant={status.variant}>{status.label}</Badge>
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant={status.variant}>{status.label}</Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setEditingTask(true)}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit task</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setArchiveDialogOpen(true)}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Archive task</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       <Separator />
@@ -389,6 +458,33 @@ export function TaskOverview() {
           )}
         </CardContent>
       </Card>
+
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={archiveDialogOpen} onOpenChange={(open) => !open && setArchiveDialogOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive Task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to archive <span className="font-medium text-foreground">"{activeTask.title}"</span>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmArchive}>
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Task Modal */}
+      {editingTask && activeProject && (
+        <TaskCreate
+          projectId={activeProject.id}
+          task={activeTask}
+          onClose={() => setEditingTask(false)}
+        />
+      )}
     </div>
   );
 }

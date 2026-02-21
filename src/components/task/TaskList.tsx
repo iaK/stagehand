@@ -1,28 +1,15 @@
 import { useState, useCallback, memo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProjectStore } from "../../stores/projectStore";
 import { Input } from "@/components/ui/input";
 import { useProcessStore, stageKey } from "../../stores/processStore";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { sendNotification } from "../../lib/notifications";
-import { gitWorktreeRemove, gitDeleteBranch, gitDefaultBranch, gitCheckoutBranch } from "../../lib/git";
 import { statusColors, pipelineColors } from "../../lib/taskStatus";
 import type { Task } from "../../lib/types";
 
-interface TaskListProps {
-  onEdit: (task: Task) => void;
-}
-
-export function TaskList({ onEdit }: TaskListProps) {
+export function TaskList() {
   const tasks = useTaskStore((s) => s.tasks);
   const activeTask = useTaskStore((s) => s.activeTask);
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
-  const updateTask = useTaskStore((s) => s.updateTask);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
-  const activeProject = useProjectStore((s) => s.activeProject);
-  const [archiveTarget, setArchiveTarget] = useState<Task | null>(null);
   const [query, setQuery] = useState("");
 
   const getTaskDotClass = (task: Task) => {
@@ -53,44 +40,6 @@ export function TaskList({ onEdit }: TaskListProps) {
   }
 
   const handleSelectTask = useCallback((task: Task) => setActiveTask(task), [setActiveTask]);
-  const handleArchiveClick = useCallback((e: React.MouseEvent, task: Task) => {
-    e.stopPropagation();
-    setArchiveTarget(task);
-  }, []);
-
-  const confirmArchive = async () => {
-    if (!activeProject || !archiveTarget) return;
-    if (activeTask?.id === archiveTarget.id) {
-      setActiveTask(null);
-    }
-    if (archiveTarget.ejected) {
-      // Branch is checked out in main repo — switch to default branch first
-      try {
-        const defaultBranch = await gitDefaultBranch(activeProject.path);
-        await gitCheckoutBranch(activeProject.path, defaultBranch ?? "main");
-      } catch {
-        // Non-critical — best effort
-      }
-    } else if (archiveTarget.worktree_path) {
-      // Remove worktree if it exists
-      try {
-        await gitWorktreeRemove(activeProject.path, archiveTarget.worktree_path);
-      } catch {
-        // Worktree may already be gone
-      }
-    }
-    // Delete the branch if it exists
-    if (archiveTarget.branch_name) {
-      try {
-        await gitDeleteBranch(activeProject.path, archiveTarget.branch_name);
-      } catch {
-        // Non-critical — branch may already be gone
-      }
-    }
-    await updateTask(activeProject.id, archiveTarget.id, { archived: 1 });
-    sendNotification("Task archived", archiveTarget.title, "success", { projectId: activeProject.id, taskId: archiveTarget.id });
-    setArchiveTarget(null);
-  };
 
   return (
     <>
@@ -115,28 +64,10 @@ export function TaskList({ onEdit }: TaskListProps) {
             isActive={isActive}
             dotClass={getTaskDotClass(task)}
             onSelect={handleSelectTask}
-            onEdit={onEdit}
-            onArchive={handleArchiveClick}
           />
         );
       })}
     </div>
-    <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Archive Task</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to archive <span className="font-medium text-foreground">"{archiveTarget?.title}"</span>?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={confirmArchive}>
-            Archive
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 }
@@ -146,81 +77,32 @@ const TaskListItem = memo(function TaskListItem({
   isActive,
   dotClass,
   onSelect,
-  onEdit,
-  onArchive,
 }: {
   task: Task;
   isActive: boolean;
   dotClass: string;
   onSelect: (task: Task) => void;
-  onEdit: (task: Task) => void;
-  onArchive: (e: React.MouseEvent, task: Task) => void;
 }) {
   return (
-    <div
-      className={`group flex items-center rounded-lg text-sm transition-colors ${
+    <button
+      onClick={() => onSelect(task)}
+      className={`w-full text-left flex items-center rounded-lg text-sm transition-colors px-3 py-2 ${
         isActive
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
       }`}
     >
-      <button
-        onClick={() => onSelect(task)}
-        className="flex-1 text-left px-3 py-2 min-w-0"
-      >
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`}
-          />
-          <span className="truncate">{task.title}</span>
-          {task.ejected === 1 && (
-            <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
-              ejected
-            </span>
-          )}
-        </div>
-      </button>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(task);
-            }}
-            className={`transition-opacity ${
-              isActive
-                ? "text-muted-foreground opacity-100"
-                : "text-muted-foreground opacity-0 group-hover:opacity-100"
-            }`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Edit task</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={(e) => onArchive(e, task)}
-            className={`mr-1 transition-opacity ${
-              isActive
-                ? "text-muted-foreground opacity-100"
-                : "text-muted-foreground opacity-0 group-hover:opacity-100"
-            }`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Archive task</TooltipContent>
-      </Tooltip>
-    </div>
+      <div className="flex items-center gap-2 min-w-0">
+        <div
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`}
+        />
+        <span className="truncate">{task.title}</span>
+        {task.ejected === 1 && (
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
+            ejected
+          </span>
+        )}
+      </div>
+    </button>
   );
 });

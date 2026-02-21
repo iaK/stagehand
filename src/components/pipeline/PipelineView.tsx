@@ -45,13 +45,22 @@ export function PipelineView() {
   const filteredStages = useMemo(() => {
     if (!activeTaskId) return stageTemplates;
     const selectedIds = taskStages[activeTaskId];
-    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    if (!selectedIds || selectedIds.length === 0) {
+      // During research stage (before user selects stages), only show the current stage
+      const currentStage = stageTemplates.find(
+        (t) => t.id === activeTask?.current_stage_id,
+      );
+      return currentStage ? [currentStage] : stageTemplates;
+    }
     const idSet = new Set(selectedIds);
     return stageTemplates.filter((t) => idSet.has(t.id));
-  }, [stageTemplates, taskStages, activeTaskId]);
+  }, [stageTemplates, taskStages, activeTaskId, activeTask?.current_stage_id]);
 
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
+
+  // Track all tasks that have been viewed so their stages stay mounted (preserves PTY sessions)
+  const [mountedTaskStages, setMountedTaskStages] = useState<Map<string, StageTemplate[]>>(new Map());
 
   // Eject/Inject state
   const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
@@ -232,39 +241,50 @@ export function PipelineView() {
     setActiveView("pipeline");
   }, [activeTaskId]);
 
+  // Keep mounted task stages in sync — add/update stages for the active task
+  useEffect(() => {
+    if (activeTaskId && filteredStages.length > 0) {
+      setMountedTaskStages((prev) => {
+        const next = new Map(prev);
+        next.set(activeTaskId, filteredStages);
+        return next;
+      });
+    }
+  }, [activeTaskId, filteredStages]);
+
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
     useProcessStore.getState().setViewingStageId(sk);
   }, [viewingStage, activeTaskId]);
 
-  if (!activeProject) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-muted-foreground text-lg">Welcome to Stagehand</p>
-          <p className="text-muted-foreground/60 text-sm mt-2">
-            Create a project to get started
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!activeTask) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full">
-        <p className="text-muted-foreground">Select or create a task to begin</p>
-      </div>
-    );
-  }
+  // Placeholder screens when no project/task — rendered alongside (not instead of)
+  // the mounted stages so that hidden terminals survive project/task switches.
+  const showPlaceholder = !activeProject || !activeTask;
 
   return (
     <div className="flex flex-col h-full">
+      {!activeProject && (
+        <div className="flex-1 flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-muted-foreground text-lg">Welcome to Stagehand</p>
+            <p className="text-muted-foreground/60 text-sm mt-2">
+              Create a project to get started
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeProject && !activeTask && (
+        <div className="flex-1 flex items-center justify-center h-full">
+          <p className="text-muted-foreground">Select or create a task to begin</p>
+        </div>
+      )}
+
       {/* Header bar */}
-      <div className="border-b border-border flex items-center">
+      <div className="border-b border-border flex items-center h-[57px]" style={{ display: showPlaceholder ? "none" : undefined }}>
         {/* Tab toggle */}
-        <div className="flex items-center gap-1 px-4 py-3">
+        <div className="flex items-center gap-1 px-4">
           <button
             onClick={() => setActiveView("overview")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
@@ -332,22 +352,29 @@ export function PipelineView() {
         )}
       </div>
 
-      {/* Content */}
-      {activeView === "overview" ? (
-        <div className="flex-1 overflow-y-auto">
-          <TaskOverview />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          {viewingStage ? (
-            <StageView key={viewingStage.id} stage={viewingStage} />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">No stage selected</p>
+      {/* Content — render both views simultaneously; toggle with CSS to preserve terminal state */}
+      <div className="flex-1 overflow-y-auto" style={{ display: !showPlaceholder && activeView === "overview" ? undefined : "none" }}>
+        <TaskOverview />
+      </div>
+      {/* Always rendered so mounted terminals survive project/task switches */}
+      <div className="flex-1 overflow-y-auto" style={{ display: !showPlaceholder && activeView === "pipeline" ? undefined : "none" }}>
+        {Array.from(mountedTaskStages.entries()).map(([tId, stages]) =>
+          stages.map((s) => (
+            <div
+              key={`${tId}:${s.id}`}
+              style={{ display: tId === activeTaskId && viewingStage?.id === s.id ? undefined : "none" }}
+              className="h-full"
+            >
+              <StageView stage={s} taskId={tId} />
             </div>
-          )}
-        </div>
-      )}
+          )),
+        )}
+        {!viewingStage && (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-muted-foreground">No stage selected</p>
+          </div>
+        )}
+      </div>
 
       {/* Eject Confirmation Dialog */}
       <AlertDialog

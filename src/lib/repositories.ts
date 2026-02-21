@@ -219,7 +219,7 @@ export async function createStageTemplate(
 }
 
 /** Output formats that identify non-deletable "special" stages. */
-export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "task_splitting", "pr_preparation", "pr_review", "merge"];
+export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "pr_preparation", "pr_review", "merge"];
 
 export function isSpecialStage(format: OutputFormat): boolean {
   return (SPECIAL_STAGE_FORMATS as string[]).includes(format);

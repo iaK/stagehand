@@ -77,7 +77,8 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     return (
       <div
         ref={containerRef}
-        className="w-full h-full min-h-[300px] rounded-lg overflow-hidden border border-border"
+        className="w-full h-full min-h-[300px] rounded-lg overflow-hidden border border-border px-3 py-2"
+        style={{ backgroundColor: "#09090b" }}
       />
     );
   },

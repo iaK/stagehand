@@ -22,6 +22,7 @@ interface ProjectStore {
   removeProject: (id: string) => Promise<void>;
   archiveProject: (id: string) => Promise<void>;
   unarchiveProject: (id: string) => Promise<void>;
+  renameProject: (id: string, name: string) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -130,5 +131,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const projects = await repo.listProjects();
     const archivedProjects = await repo.listArchivedProjects();
     set({ projects, archivedProjects });
+  },
+
+  renameProject: async (id, name) => {
+    await repo.updateProject(id, { name });
+    const projects = await repo.listProjects();
+    const current = get().activeProject;
+    set({
+      projects,
+      activeProject: current?.id === id ? { ...current, name } : current,
+    });
   },
 }));
