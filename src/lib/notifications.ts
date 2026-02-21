@@ -60,7 +60,7 @@ export async function sendNotification(
 
 export async function registerNotificationClickHandler() {
   return onAction(async (event) => {
-    const extra = (event.notification as { extra?: NotificationContext }).extra;
+    const extra = ((event as unknown as { notification?: { extra?: NotificationContext } }).notification?.extra);
     if (!extra?.projectId) return;
 
     await getCurrentWindow().setFocus();

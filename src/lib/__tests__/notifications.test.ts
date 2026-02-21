@@ -9,6 +9,7 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
+import type { Task, Project } from "../types";
 
 const mockIsPermissionGranted = vi.mocked(isPermissionGranted);
 const mockRequestPermission = vi.mocked(requestPermission);
@@ -202,8 +203,8 @@ describe("registerNotificationClickHandler", () => {
 
   it("navigates to correct project and task when extra contains both", async () => {
     // Set up store state
-    const mockProject = { id: "proj-1", name: "Test Project", path: "/test", archived: 0, created_at: "" };
-    const mockTask = { id: "task-1", title: "Test Task", status: "pending", project_id: "proj-1", current_stage_id: null, branch_name: null, worktree_path: null, pr_url: null, description: null, ejected: 0, archived: 0, created_at: "" };
+    const mockProject: Project = { id: "proj-1", name: "Test Project", path: "/test", archived: 0, created_at: "", updated_at: "" };
+    const mockTask: Task = { id: "task-1", title: "Test Task", status: "pending", project_id: "proj-1", current_stage_id: null, branch_name: null, worktree_path: null, pr_url: null, description: "", parent_task_id: null, ejected: 0, archived: 0, created_at: "", updated_at: "" };
 
     useProjectStore.setState({ projects: [mockProject] });
 
@@ -220,7 +221,7 @@ describe("registerNotificationClickHandler", () => {
     let capturedCallback: (event: unknown) => Promise<void>;
     mockOnAction.mockImplementation(async (cb) => {
       capturedCallback = cb as (event: unknown) => Promise<void>;
-      return { unregister: vi.fn() };
+      return { plugin: "notification", event: "actionPerformed", channelId: 0, unregister: vi.fn() };
     });
 
     await registerNotificationClickHandler();
@@ -243,7 +244,7 @@ describe("registerNotificationClickHandler", () => {
     let capturedCallback: (event: unknown) => Promise<void>;
     mockOnAction.mockImplementation(async (cb) => {
       capturedCallback = cb as (event: unknown) => Promise<void>;
-      return { unregister: vi.fn() };
+      return { plugin: "notification", event: "actionPerformed", channelId: 0, unregister: vi.fn() };
     });
 
     await registerNotificationClickHandler();
@@ -257,7 +258,7 @@ describe("registerNotificationClickHandler", () => {
   });
 
   it("handles projectId only — sets project but no task", async () => {
-    const mockProject = { id: "proj-2", name: "Project 2", path: "/test2", archived: 0, created_at: "" };
+    const mockProject: Project = { id: "proj-2", name: "Project 2", path: "/test2", archived: 0, created_at: "", updated_at: "" };
 
     useProjectStore.setState({ projects: [mockProject] });
 
@@ -270,7 +271,7 @@ describe("registerNotificationClickHandler", () => {
     let capturedCallback: (event: unknown) => Promise<void>;
     mockOnAction.mockImplementation(async (cb) => {
       capturedCallback = cb as (event: unknown) => Promise<void>;
-      return { unregister: vi.fn() };
+      return { plugin: "notification", event: "actionPerformed", channelId: 0, unregister: vi.fn() };
     });
 
     await registerNotificationClickHandler();
@@ -296,7 +297,7 @@ describe("registerNotificationClickHandler", () => {
     let capturedCallback: (event: unknown) => Promise<void>;
     mockOnAction.mockImplementation(async (cb) => {
       capturedCallback = cb as (event: unknown) => Promise<void>;
-      return { unregister: vi.fn() };
+      return { plugin: "notification", event: "actionPerformed", channelId: 0, unregister: vi.fn() };
     });
 
     await registerNotificationClickHandler();
