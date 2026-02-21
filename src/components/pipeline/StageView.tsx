@@ -18,6 +18,7 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
+import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { CommitWorkflow } from "./CommitWorkflow";
 import { StageInputArea } from "./StageInputArea";
 import { Button } from "@/components/ui/button";
@@ -311,6 +312,11 @@ export function StageView({ stage }: StageViewProps) {
   // Merge: custom rendering
   if (stage.output_format === "merge") {
     return <MergeStageView stage={stage} />;
+  }
+
+  // Interactive Terminal: self-contained PTY-based stage
+  if (stage.output_format === "interactive_terminal") {
+    return <InteractiveTerminalStageView stage={stage} />;
   }
 
   // PR Review: delegated to dedicated subcomponent

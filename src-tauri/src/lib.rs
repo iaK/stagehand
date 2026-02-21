@@ -1,8 +1,10 @@
 mod process_manager;
+mod pty_manager;
 mod events;
 mod commands;
 
 use process_manager::ProcessManager;
+use pty_manager::PtyManager;
 use tauri::Manager;
 
 #[tauri::command]
@@ -56,6 +58,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .manage(ProcessManager::new())
+        .manage(PtyManager::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -86,6 +89,10 @@ pub fn run() {
             commands::git::run_git_command,
             commands::git::run_gh_command,
             commands::git::read_file_contents,
+            commands::pty::spawn_pty,
+            commands::pty::write_to_pty,
+            commands::pty::resize_pty,
+            commands::pty::kill_pty,
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {

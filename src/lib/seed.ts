@@ -197,10 +197,29 @@ Respond with a JSON object:
     {
       id: crypto.randomUUID(),
       project_id: projectId,
+      name: "Guided Implementation",
+      description:
+        "Interactive Claude session — you guide the AI step by step in a live terminal.",
+      sort_order: 5,
+      prompt_template: "",
+      input_source: "previous_stage",
+      output_format: "interactive_terminal",
+      output_schema: null,
+      gate_rules: JSON.stringify({ type: "require_approval" }),
+      persona_name: null,
+      persona_system_prompt: null,
+      persona_model: null,
+      preparation_prompt: null,
+      allowed_tools: null,
+      requires_user_input: 0,
+    },
+    {
+      id: crypto.randomUUID(),
+      project_id: projectId,
       name: "Implementation",
       description:
         "Execute the implementation plan — write code, create files, run commands.",
-      sort_order: 5,
+      sort_order: 6,
       prompt_template: IMPLEMENTATION_PROMPT,
       input_source: "previous_stage",
       output_format: "text",
@@ -219,7 +238,7 @@ Respond with a JSON object:
       name: "Refinement",
       description:
         "Self-review the implementation: identify issues for the developer to select, then apply chosen fixes.",
-      sort_order: 6,
+      sort_order: 7,
       prompt_template: REFINEMENT_FINDINGS_PROMPT,
       input_source: "previous_stage",
       output_format: "findings",
@@ -238,7 +257,7 @@ Respond with a JSON object:
       name: "Security Review",
       description:
         "Analyze for security vulnerabilities, then apply selected fixes.",
-      sort_order: 7,
+      sort_order: 8,
       prompt_template: SECURITY_FINDINGS_PROMPT,
       input_source: "previous_stage",
       output_format: "findings",
@@ -257,7 +276,7 @@ Respond with a JSON object:
       name: "Documentation",
       description:
         "Write or update documentation based on the changes made in this task.",
-      sort_order: 8,
+      sort_order: 9,
       prompt_template: DOCUMENTATION_PROMPT,
       input_source: "both",
       output_format: "text",
@@ -276,7 +295,7 @@ Respond with a JSON object:
       name: "PR Preparation",
       description:
         "Generate a pull request title, description, and test plan.",
-      sort_order: 9,
+      sort_order: 10,
       prompt_template: PR_PREPARATION_PROMPT,
       input_source: "previous_stage",
       output_format: "pr_preparation",
@@ -298,7 +317,7 @@ Respond with a JSON object:
       name: "PR Review",
       description:
         "Fetch PR reviews from GitHub, fix reviewer comments, and complete the task.",
-      sort_order: 10,
+      sort_order: 11,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "pr_review",
@@ -317,7 +336,7 @@ Respond with a JSON object:
       name: "Merge",
       description:
         "Merge the task branch into the target branch and push.",
-      sort_order: 11,
+      sort_order: 12,
       prompt_template: "",
       input_source: "previous_stage",
       output_format: "merge",
