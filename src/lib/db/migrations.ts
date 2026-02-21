@@ -38,6 +38,7 @@ const MIGRATIONS: Migration[] = [
   { version: 11, name: "documentation_stage", fn: migrateDocumentationStage },
   { version: 12, name: "second_opinion_stage", fn: migrateSecondOpinionStage },
   { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
+  { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
 ];
 
 /**
@@ -99,6 +100,12 @@ export async function runPendingMigrations(db: Database): Promise<void> {
 async function detectBaseline(db: Database): Promise<number> {
   // Check for features in reverse order (newest first) to find the highest applied migration
   try {
+    // v14: Guided Implementation stage exists
+    const giRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM stage_templates WHERE name = 'Guided Implementation' LIMIT 1",
+    );
+    if (giRows.length > 0) return 14;
+
     // v13: Task Splitting stage exists
     const tsRows = await db.select<{ id: string }[]>(
       "SELECT id FROM stage_templates WHERE name = 'Task Splitting' LIMIT 1",
@@ -731,6 +738,51 @@ export async function migrateTaskSplittingStage(db: Database): Promise<void> {
         null,
         JSON.stringify(["Read", "Glob", "Grep"]),
         "replace",
+        now,
+        now,
+      ],
+    );
+  }
+}
+
+export async function migrateGuidedImplementationStage(db: Database): Promise<void> {
+  // Idempotency: bail if Guided Implementation already exists
+  const existing = await db.select<{ id: string }[]>(
+    "SELECT id FROM stage_templates WHERE name = 'Guided Implementation'",
+  );
+  if (existing.length > 0) return;
+
+  const now = new Date().toISOString();
+
+  // Insert Guided Implementation stage for every project at sort_order 5
+  // (same as Implementation — opt-in via Research stage selection, not in default pipeline)
+  const projectRows = await db.select<{ project_id: string }[]>(
+    "SELECT DISTINCT project_id FROM stage_templates",
+  );
+
+  for (const row of projectRows) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, result_mode, commits_changes, commit_prefix, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+      [
+        crypto.randomUUID(),
+        row.project_id,
+        "Guided Implementation",
+        "Interactive Claude session — you guide the AI step by step in a live terminal.",
+        5,
+        "",
+        "previous_stage",
+        "interactive_terminal",
+        null,
+        JSON.stringify({ type: "require_approval" }),
+        null,
+        null,
+        null,
+        null,
+        null,
+        "replace",
+        1,
+        "feat",
         now,
         now,
       ],

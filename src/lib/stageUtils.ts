@@ -119,6 +119,8 @@ export function extractStageOutput(
       return raw || "PR Review completed";
     case "merge":
       return raw || "Branch merged successfully";
+    case "interactive_terminal":
+      return raw || "Interactive session completed";
     default:
       return raw;
   }
@@ -205,6 +207,8 @@ export function extractStageSummary(
       return raw ? truncateToSentences(raw, 3) : null;
     case "merge":
       return raw ? truncateToSentences(raw, 3) : null;
+    case "interactive_terminal":
+      return raw ? truncateToSentences(raw, 3) : "Interactive session completed";
     case "text": {
       return extractImplementationSummary(raw);
     }
@@ -298,5 +302,6 @@ export function validateGate(
 /** Determine whether a stage should be auto-started after the previous stage completes. */
 export function shouldAutoStartStage(stage: StageTemplate): boolean {
   if (stage.output_format === "merge") return false;
+  if (stage.output_format === "interactive_terminal") return false;
   return !stage.requires_user_input;
 }

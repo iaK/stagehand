@@ -11,7 +11,8 @@ export type DetectedType =
   | "pr_preparation"
   | "pr_review"
   | "merge"
-  | "task_splitting";
+  | "task_splitting"
+  | "interactive_terminal";
 
 /**
  * Detect the interaction type from output content.
@@ -29,6 +30,7 @@ export function detectInteractionType(
   if (formatHint === "merge") return "merge";
   if (formatHint === "pr_review") return "pr_review";
   if (formatHint === "pr_preparation") return "pr_preparation";
+  if (formatHint === "interactive_terminal") return "interactive_terminal";
 
   // Explicit non-auto hints: trust them
   if (formatHint && formatHint !== "auto") return formatHint as DetectedType;

@@ -23,3 +23,16 @@ pub enum ClaudeStreamEvent {
         message: String,
     },
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PtyEvent {
+    #[serde(rename = "started")]
+    Started { id: String },
+    #[serde(rename = "output")]
+    Output { data: String },
+    #[serde(rename = "exited")]
+    Exited { id: String, exit_code: Option<i32> },
+    #[serde(rename = "error")]
+    Error { id: String, message: String },
+}

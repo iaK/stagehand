@@ -31,7 +31,7 @@ export interface StageTemplate {
 }
 
 export type InputSource = "user" | "previous_stage" | "both";
-export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "task_splitting" | "auto";
+export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "task_splitting" | "interactive_terminal" | "auto";
 
 export interface Task {
   id: string;
@@ -227,4 +227,19 @@ export interface SpawnClaudeArgs {
   allowedTools?: string[];
   maxTurns?: number;
   mcpConfig?: string;
+}
+
+// === PTY Types ===
+
+export type PtyEvent =
+  | { type: "started"; id: string }
+  | { type: "output"; data: string }
+  | { type: "exited"; id: string; exit_code: number | null }
+  | { type: "error"; id: string; message: string };
+
+export interface SpawnPtyArgs {
+  workingDirectory?: string;
+  appendSystemPrompt?: string;
+  cols?: number;
+  rows?: number;
 }
