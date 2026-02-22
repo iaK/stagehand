@@ -449,6 +449,7 @@ export function useStageExecution() {
                 ? stage.output_schema
                 : undefined,
             agent: effectiveAgent,
+            personaModel: stage.persona_model ?? undefined,
           },
           onEvent,
         );

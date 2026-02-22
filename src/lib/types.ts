@@ -23,7 +23,7 @@ export interface StageTemplate {
   persona_name: string | null;
   persona_system_prompt: string | null;
   persona_model: string | null;
-  agent: string | null;
+  agent: 'claude' | 'codex' | 'gemini' | 'amp' | 'opencode' | null;
   preparation_prompt: string | null;
   allowed_tools: string | null; // JSON array of tool names
   requires_user_input: number; // boolean: stage needs user input before running (shows input box)
@@ -228,6 +228,7 @@ export interface SpawnClaudeArgs {
   maxTurns?: number;
   mcpConfig?: string;
   agent?: string;
+  personaModel?: string;
 }
 
 // === PTY Types ===

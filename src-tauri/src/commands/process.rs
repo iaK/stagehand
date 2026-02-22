@@ -22,6 +22,7 @@ pub struct SpawnClaudeArgs {
     pub max_turns: Option<u32>,
     pub mcp_config: Option<String>,
     pub agent: Option<String>,
+    pub persona_model: Option<String>,
 }
 
 #[tauri::command]
@@ -83,9 +84,13 @@ pub async fn spawn_claude(
             if let Some(ref mcp_config) = args.mcp_config {
                 cmd.arg("--mcp-config").arg(mcp_config);
             }
+
+            if let Some(ref model) = args.persona_model {
+                cmd.arg("--model").arg(model);
+            }
         }
         Agent::Codex => {
-            cmd.arg(agent.auto_approve_flag());
+            if let Some(flag) = agent.auto_approve_flag() { cmd.arg(flag); }
             cmd.arg("exec").arg(&args.prompt);
             if args.output_format.as_deref() == Some("stream-json") || args.output_format.is_none() {
                 cmd.arg("--json");
@@ -94,18 +99,15 @@ pub async fn spawn_claude(
             // --mcp-config, --json-schema, --session-id, --max-turns
         }
         Agent::Gemini => {
-            cmd.arg(agent.auto_approve_flag());
+            if let Some(flag) = agent.auto_approve_flag() { cmd.arg(flag); }
             cmd.arg("-p").arg(&args.prompt);
-            let output_format = args.output_format.as_deref().unwrap_or("stream-json");
-            cmd.arg("--output-format").arg(output_format);
-            if output_format == "stream-json" {
-                cmd.arg("--verbose");
-            }
+            // Note: --output-format and --verbose are Claude-specific flags.
+            // Gemini CLI flag compatibility is unverified; omitting them for plain output.
             // Gemini does not support: --json-schema, --append-system-prompt,
             // --allowedTools, --mcp-config, --session-id
         }
         Agent::Amp => {
-            cmd.arg(agent.auto_approve_flag());
+            if let Some(flag) = agent.auto_approve_flag() { cmd.arg(flag); }
             cmd.arg("-x").arg(&args.prompt);
             if args.output_format.as_deref() == Some("stream-json") || args.output_format.is_none() {
                 cmd.arg("--stream-json");

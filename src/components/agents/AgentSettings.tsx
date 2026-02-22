@@ -5,14 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendNotification } from "../../lib/notifications";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const AVAILABLE_AGENTS = [
-  { value: "claude", label: "Claude", description: "Full feature support" },
-  { value: "codex", label: "Codex", description: "Uses 'codex exec' — no system prompt, no inline JSON schema" },
-  { value: "gemini", label: "Gemini", description: "No JSON schema, no system prompt append" },
-  { value: "amp", label: "AMP", description: "No JSON schema, no system prompt append" },
-  { value: "opencode", label: "OpenCode", description: "No JSON schema, no system prompt, no MCP" },
-] as const;
+import { AVAILABLE_AGENTS } from "../../lib/agents";
 
 export function AgentSettingsContent({ projectId }: { projectId: string }) {
   const [defaultAgent, setDefaultAgent] = useState<string>("claude");

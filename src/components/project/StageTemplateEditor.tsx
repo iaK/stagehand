@@ -12,15 +12,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendNotification } from "../../lib/notifications";
 import { isSpecialStage } from "../../lib/repositories";
+import { AVAILABLE_AGENTS } from "../../lib/agents";
 import type { StageTemplate, OutputFormat } from "../../lib/types";
-
-const AVAILABLE_AGENTS = [
-  { value: "claude", label: "Claude", description: "Full feature support" },
-  { value: "codex", label: "Codex", description: "Uses 'codex exec' — no system prompt, no inline JSON schema" },
-  { value: "gemini", label: "Gemini", description: "No JSON schema, no system prompt append" },
-  { value: "amp", label: "AMP", description: "No JSON schema, no system prompt append" },
-  { value: "opencode", label: "OpenCode", description: "No JSON schema, no system prompt, no MCP" },
-] as const;
 
 interface StageTemplateEditorProps {
   onClose: () => void;
@@ -146,8 +139,11 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
             {editingTemplate.persona_system_prompt && (
               <p className="text-xs text-amber-600 dark:text-amber-400">This agent does not support --append-system-prompt</p>
             )}
-            {editingTemplate.allowed_tools && (
+            {editingTemplate.allowed_tools && (() => { try { return JSON.parse(editingTemplate.allowed_tools!).length > 0; } catch { return false; } })() && (
               <p className="text-xs text-amber-600 dark:text-amber-400">This agent may not support tool restrictions</p>
+            )}
+            {editingTemplate.agent !== "amp" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">This agent does not support MCP tools — stage context access will be unavailable</p>
             )}
           </div>
         )}

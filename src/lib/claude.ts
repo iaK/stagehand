@@ -35,6 +35,10 @@ export async function checkClaudeAvailable(): Promise<string> {
   return invoke<string>("check_claude_available");
 }
 
+export async function checkAgentAvailable(agent: string): Promise<string> {
+  return invoke<string>("check_agent_available", { agent });
+}
+
 // === PTY (Interactive Terminal) ===
 
 export async function spawnPty(

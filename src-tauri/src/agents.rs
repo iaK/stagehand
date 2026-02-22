@@ -30,37 +30,15 @@ impl Agent {
         }
     }
 
-    pub fn auto_approve_flag(&self) -> &str {
+    /// Returns the CLI flag to bypass approval prompts, or None if the agent
+    /// uses a different mechanism (e.g. environment variable).
+    pub fn auto_approve_flag(&self) -> Option<&'static str> {
         match self {
-            Agent::Claude => "--dangerously-skip-permissions",
-            Agent::Codex => "--dangerously-bypass-approvals-and-sandbox",
-            Agent::Gemini => "--yolo",
-            Agent::Amp => "--dangerously-allow-all",
-            Agent::OpenCode => "--dangerously-skip-permissions",
+            Agent::Claude => Some("--dangerously-skip-permissions"),
+            Agent::Codex => Some("--dangerously-bypass-approvals-and-sandbox"),
+            Agent::Gemini => Some("--yolo"),
+            Agent::Amp => Some("--dangerously-allow-all"),
+            Agent::OpenCode => None, // auto-approval via environment variable, not a CLI flag
         }
-    }
-
-    pub fn supports_system_prompt(&self) -> bool {
-        matches!(self, Agent::Claude)
-    }
-
-    pub fn supports_json_schema(&self) -> bool {
-        matches!(self, Agent::Claude)
-    }
-
-    pub fn supports_allowed_tools(&self) -> bool {
-        matches!(self, Agent::Claude)
-    }
-
-    pub fn supports_mcp_config(&self) -> bool {
-        matches!(self, Agent::Claude | Agent::Amp)
-    }
-
-    pub fn supports_session_id(&self) -> bool {
-        matches!(self, Agent::Claude | Agent::OpenCode)
-    }
-
-    pub fn supports_max_turns(&self) -> bool {
-        matches!(self, Agent::Claude)
     }
 }
