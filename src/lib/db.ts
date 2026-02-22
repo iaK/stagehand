@@ -27,11 +27,15 @@ class SerializedDatabase {
   }
 
   execute(query: string, bindValues?: unknown[]): Promise<QueryResult> {
-    return this.enqueue(() => this.db.execute(query, bindValues));
+    return this.enqueue(() =>
+      this.retryOnLocked(() => this.db.execute(query, bindValues)),
+    );
   }
 
   select<T>(query: string, bindValues?: unknown[]): Promise<T> {
-    return this.enqueue(() => this.db.select<T>(query, bindValues));
+    return this.enqueue(() =>
+      this.retryOnLocked(() => this.db.select<T>(query, bindValues)),
+    );
   }
 
   close(db?: string): Promise<boolean> {
@@ -42,6 +46,23 @@ class SerializedDatabase {
     return new Promise<T>((resolve, reject) => {
       this.queue = this.queue.then(() => fn().then(resolve, reject));
     });
+  }
+
+  private async retryOnLocked<T>(fn: () => Promise<T>): Promise<T> {
+    const MAX_RETRIES = 4;
+    const BASE_DELAY = 100;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("database is locked") && attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, BASE_DELAY * 2 ** attempt));
+          continue;
+        }
+        throw e;
+      }
+    }
   }
 }
 

@@ -28,6 +28,7 @@ if (!dbPath || !taskId) {
 
 // Open DB in readonly mode — no locking conflicts with the main app
 const db = new Database(dbPath, { readonly: true });
+db.pragma("busy_timeout = 5000");
 
 const server = new McpServer({
   name: "stagehand-context",
