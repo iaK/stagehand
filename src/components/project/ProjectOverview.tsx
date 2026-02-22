@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { pipelineColors } from "../../lib/taskStatus";
+import { ChevronDown } from "lucide-react";
 import { formatRelativeTime, formatTokenCount, formatDuration, formatCost } from "../../lib/format";
 
 export function ProjectOverview() {
@@ -50,11 +51,10 @@ export function ProjectOverview() {
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Active Tasks"
-          value={loading ? undefined : String(tasks.length)}
-          loading={loading}
+          value={String(tasks.length)}
         />
         <StatCard
           label="Archived Tasks"
@@ -132,14 +132,7 @@ export function ProjectOverview() {
             <CardHeader className="pb-2">
               <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
                 <CardTitle className="text-base">Archived Tasks ({archivedTasks.length})</CardTitle>
-                <svg
-                  className={`w-4 h-4 text-muted-foreground transition-transform ${archivedOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${archivedOpen ? "rotate-180" : ""}`} />
               </CollapsibleTrigger>
             </CardHeader>
             <CollapsibleContent>
@@ -151,7 +144,7 @@ export function ProjectOverview() {
                     updatedAt={task.updated_at}
                     dotClass="bg-zinc-400"
                     muted
-                    onClick={() => setActiveTask(task)}
+                    disabled
                   />
                 ))}
               </CardContent>
@@ -230,6 +223,7 @@ function TaskRow({
   dotClass,
   status,
   muted,
+  disabled,
   onClick,
 }: {
   title: string;
@@ -237,12 +231,14 @@ function TaskRow({
   dotClass: string;
   status?: string;
   muted?: boolean;
-  onClick: () => void;
+  disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent transition-colors ${muted ? "opacity-60" : ""}`}
+      disabled={disabled}
+      className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${muted ? "opacity-60" : ""} ${disabled ? "cursor-default" : "hover:bg-accent"}`}
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
       <span className="text-sm truncate">{title}</span>

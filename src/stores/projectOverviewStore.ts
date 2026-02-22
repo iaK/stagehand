@@ -8,6 +8,7 @@ interface ProjectOverviewStore {
   tokenUsage: TokenTotals | null;
   tokenUsageToday: TokenTotals | null;
   loading: boolean;
+  error: string | null;
 
   loadProjectOverview: (projectId: string) => Promise<void>;
   clear: () => void;
@@ -18,26 +19,31 @@ export const useProjectOverviewStore = create<ProjectOverviewStore>((set) => ({
   tokenUsage: null,
   tokenUsageToday: null,
   loading: false,
+  error: null,
 
   loadProjectOverview: async (projectId) => {
-    set({ loading: true });
+    set({ loading: true, error: null, archivedTasks: [], tokenUsage: null, tokenUsageToday: null });
 
-    // Compute today's midnight in local timezone, converted to ISO UTC
-    const now = new Date();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayMidnightIso = todayMidnight.toISOString();
+    try {
+      // Compute today's midnight in local timezone, converted to ISO UTC
+      const now = new Date();
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayMidnightIso = todayMidnight.toISOString();
 
-    const [archivedTasks, tokenUsage, tokenUsageToday] = await Promise.all([
-      repo.listArchivedTasks(projectId),
-      repo.getProjectTokenUsage(projectId),
-      repo.getProjectTokenUsageSince(projectId, todayMidnightIso),
-    ]);
+      const [archivedTasks, tokenUsage, tokenUsageToday] = await Promise.all([
+        repo.listArchivedTasks(projectId),
+        repo.getProjectTokenUsage(projectId),
+        repo.getProjectTokenUsageSince(projectId, todayMidnightIso),
+      ]);
 
-    // Guard against stale responses
-    if (useProjectStore.getState().activeProject?.id !== projectId) return;
+      // Guard against stale responses
+      if (useProjectStore.getState().activeProject?.id !== projectId) return;
 
-    set({ archivedTasks, tokenUsage, tokenUsageToday, loading: false });
+      set({ archivedTasks, tokenUsage, tokenUsageToday, loading: false });
+    } catch (err) {
+      set({ loading: false, error: err instanceof Error ? err.message : "Failed to load project overview" });
+    }
   },
 
-  clear: () => set({ archivedTasks: [], tokenUsage: null, tokenUsageToday: null, loading: false }),
+  clear: () => set({ archivedTasks: [], tokenUsage: null, tokenUsageToday: null, loading: false, error: null }),
 }));
