@@ -233,7 +233,7 @@ export function useStageExecution() {
         });
 
         // Add the new execution to the store immediately so that killCurrent
-        // and the health check can find it even before spawnClaude fires events,
+        // and the health check can find it even before spawnAgent fires events,
         // without triggering a full loadExecutions reload (which involves IPC
         // calls and creates new object references that cascade re-renders).
         {

@@ -21,6 +21,7 @@ import { getTaskWorkingDir } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { spawnAgent } from "../../lib/agent";
+import { parseAgentStreamLine } from "../../lib/agentParsers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -263,6 +264,10 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     setFixOutput("");
     const workDir = getTaskWorkingDir(activeTask, activeProject.path);
 
+    // Resolve effective agent: per-stage override → project default → "claude"
+    const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+    const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
     const prompt = `A git merge operation failed with the following error. Fix whatever is preventing the merge from succeeding.
 
 Task: ${activeTask.title}
@@ -278,29 +283,22 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
         spawnAgent(
           {
             prompt,
+            agent: effectiveAgent,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",
           },
           (event: AgentStreamEvent) => {
             switch (event.type) {
-              case "stdout_line":
-                try {
-                  const parsed = JSON.parse(event.line);
-                  if (parsed.type === "assistant" && parsed.message?.content) {
-                    for (const block of parsed.message.content) {
-                      if (block.type === "text") setFixOutput((prev) => prev + block.text);
-                    }
-                  } else if (parsed.type === "result") {
-                    const output = parsed.result;
-                    if (output != null && output !== "") {
-                      setFixOutput((prev) => prev + (typeof output === "string" ? output : JSON.stringify(output)));
-                    }
-                  }
-                } catch {
+              case "stdout_line": {
+                const parsed = parseAgentStreamLine(event.line);
+                if (parsed) {
+                  if (parsed.text) setFixOutput((prev) => prev + parsed.text);
+                } else {
                   setFixOutput((prev) => prev + event.line + "\n");
                 }
                 break;
+              }
               case "stderr_line":
                 setFixOutput((prev) => prev + `[stderr] ${event.line}\n`);
                 break;
