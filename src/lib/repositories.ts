@@ -219,7 +219,7 @@ export async function createStageTemplate(
 }
 
 /** Output formats that identify non-deletable "special" stages. */
-export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "task_splitting", "pr_preparation", "pr_review", "merge"];
+export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "pr_preparation", "pr_review", "merge"];
 
 export function isSpecialStage(format: OutputFormat): boolean {
   return (SPECIAL_STAGE_FORMATS as string[]).includes(format);
@@ -345,7 +345,6 @@ export async function createTask(
   projectId: string,
   title: string,
   firstStageId: string,
-  description: string = "",
   branchName?: string,
   worktreePath?: string,
   parentTaskId?: string,
@@ -355,16 +354,15 @@ export async function createTask(
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
+    `INSERT INTO tasks (id, project_id, title, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [id, projectId, title, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
   );
 
   return {
     id,
     project_id: projectId,
     title,
-    description,
     current_stage_id: firstStageId,
     status: "pending",
     branch_name: branchName ?? null,

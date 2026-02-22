@@ -103,12 +103,12 @@ server.tool(
 );
 
 server.tool(
-  "get_task_description",
-  "Get the current task's title and description.",
+  "get_task_title",
+  "Get the current task's title.",
   {},
   async () => {
     const row = db
-      .prepare("SELECT title, description FROM tasks WHERE id = ?")
+      .prepare("SELECT title FROM tasks WHERE id = ?")
       .get(taskId);
 
     if (!row) {
@@ -123,7 +123,7 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify(
-            { title: row.title, description: row.description },
+            { title: row.title },
             null,
             2,
           ),

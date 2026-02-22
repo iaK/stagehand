@@ -154,13 +154,18 @@ export function useStageExecution() {
             }
             effectiveUserInput = undefined;
           } else {
-            // Preserve original user input from the first attempt
-            const firstAttempt = prevAttempts[0];
-            if (firstAttempt.user_input && userInput) {
-              effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
-            } else if (firstAttempt.user_input && !userInput) {
-              // Retry without new input — re-use original input
-              effectiveUserInput = firstAttempt.user_input;
+            // Accumulate user input from ALL previous attempts so answers
+            // from earlier rounds aren't lost when building the prompt.
+            const allPriorAnswers = prevAttempts
+              .map((a) => a.user_input)
+              .filter(Boolean)
+              .join("\n\n---\n\n");
+
+            if (allPriorAnswers && userInput) {
+              effectiveUserInput = `${allPriorAnswers}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+            } else if (allPriorAnswers && !userInput) {
+              // Retry without new input — re-use all prior answers
+              effectiveUserInput = allPriorAnswers;
             }
           }
         }

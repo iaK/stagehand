@@ -7,7 +7,11 @@ export async function withTransaction<T>(db: Database, fn: () => Promise<T>): Pr
     await db.execute("COMMIT");
     return result;
   } catch (e) {
-    await db.execute("ROLLBACK");
+    try {
+      await db.execute("ROLLBACK");
+    } catch {
+      // Transaction may have already been rolled back by SQLite
+    }
     throw e;
   }
 }

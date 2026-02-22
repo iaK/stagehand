@@ -11,11 +11,19 @@ async fn run_command(binary: &str, args: Vec<String>, working_directory: String)
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(if stderr.is_empty() {
+        let combined = [&stderr, &stdout]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        Err(if combined.is_empty() {
             format!("{} exited with code {}", binary, output.status.code().unwrap_or(-1))
         } else {
-            stderr
+            combined
         })
     }
 }

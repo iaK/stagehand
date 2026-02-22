@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useTheme } from "next-themes";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useLinearStore } from "../../stores/linearStore";
@@ -12,17 +13,14 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
-import type { Project, Task } from "../../lib/types";
+import logoSrc from "../../assets/logo.png";
 
 export function Sidebar() {
   const projects = useProjectStore((s) => s.projects);
   const activeProject = useProjectStore((s) => s.activeProject);
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
-  const archiveProject = useProjectStore((s) => s.archiveProject);
   const projectStatuses = useProjectStore((s) => s.projectStatuses);
   const loadProjectStatuses = useProjectStore((s) => s.loadProjectStatuses);
   const loadTasks = useTaskStore((s) => s.loadTasks);
@@ -30,11 +28,9 @@ export function Sidebar() {
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showProjectCreate, setShowProjectCreate] = useState(false);
   const [showLinearImport, setShowLinearImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
   const { apiKey: linearApiKey, loadForProject: loadLinearForProject } = useLinearStore();
   const loadGitHubForProject = useGitHubStore((s) => s.loadForProject);
 
@@ -70,24 +66,13 @@ export function Sidebar() {
     return () => clearTimeout(timer);
   }, [tasks, taskExecStatuses, loadProjectStatuses]);
 
-  const confirmArchive = async () => {
-    if (!archiveTarget) return;
-    await archiveProject(archiveTarget.id);
-    sendNotification("Project archived", archiveTarget.name, "success", { projectId: archiveTarget.id });
-    setArchiveTarget(null);
-  };
-
   return (
     <div className="w-64 flex-shrink-0 border-r border-border bg-muted/30 flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <h1 className="text-lg font-semibold text-foreground">Stagehand</h1>
-        <p className="text-xs text-muted-foreground mt-1">AI Development Workflow</p>
-      </div>
-
-      {/* Project Selector */}
-      <div className="p-3 border-b border-border">
-        <div className="flex items-center gap-2">
+      {/* Header + Project Selector */}
+      <div className="px-3 border-b border-border flex items-center h-[57px] gap-2.5">
+        <img src={logoSrc} alt="Stagehand" className="w-6 h-6 flex-shrink-0" />
+        <div className="w-px h-5 bg-border flex-shrink-0" />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <Select
             value={activeProject?.id ?? ""}
             onValueChange={(value) => {
@@ -111,22 +96,6 @@ export function Sidebar() {
               ))}
             </SelectContent>
           </Select>
-          {activeProject && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => setArchiveTarget(activeProject)}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                  </svg>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Archive Project</TooltipContent>
-            </Tooltip>
-          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -174,16 +143,16 @@ export function Sidebar() {
           )}
         </div>
         <div className="flex-1 overflow-y-auto px-2">
-          <TaskList onEdit={setEditingTask} />
+          <TaskList />
         </div>
       </div>
 
-      {/* Settings */}
+      {/* Footer */}
       <Separator />
-      <div className="p-3">
+      <div className="px-3 py-2 flex items-center justify-between">
         <button
           onClick={() => setShowSettings(true)}
-          className="w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -191,6 +160,7 @@ export function Sidebar() {
           </svg>
           Settings
         </button>
+        <ThemeToggle />
       </div>
 
       {/* Modals */}
@@ -198,13 +168,6 @@ export function Sidebar() {
         <TaskCreate
           projectId={activeProject.id}
           onClose={() => setShowTaskCreate(false)}
-        />
-      )}
-      {editingTask && activeProject && (
-        <TaskCreate
-          projectId={activeProject.id}
-          task={editingTask}
-          onClose={() => setEditingTask(null)}
         />
       )}
       {showProjectCreate && (
@@ -220,23 +183,45 @@ export function Sidebar() {
         <SettingsModal onClose={() => setShowSettings(false)} />
       )}
 
-      {/* Archive Project Confirmation */}
-      <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive Project</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to archive <span className="font-medium text-foreground">"{archiveTarget?.name}"</span>? You can unarchive it later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={confirmArchive}>
-              Archive
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
+  );
+}
+
+const themeOrder = ["system", "light", "dark"] as const;
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+
+  const cycle = useCallback(() => {
+    const idx = themeOrder.indexOf(theme as (typeof themeOrder)[number]);
+    setTheme(themeOrder[(idx + 1) % themeOrder.length]);
+  }, [theme, setTheme]);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={cycle}
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+        >
+          {theme === "dark" ? (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          ) : theme === "light" ? (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ) : (
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {theme === "dark" ? "Dark" : theme === "light" ? "Light" : "System"}
+      </TooltipContent>
+    </Tooltip>
   );
 }
