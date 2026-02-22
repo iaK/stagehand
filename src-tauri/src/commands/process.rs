@@ -1,4 +1,5 @@
-use crate::events::ClaudeStreamEvent;
+use crate::agent::get_agent_config;
+use crate::events::AgentStreamEvent;
 use crate::process_manager::ProcessManager;
 use serde::Deserialize;
 use tauri::ipc::Channel;
@@ -8,7 +9,7 @@ use tokio::process::Command;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SpawnClaudeArgs {
+pub struct SpawnAgentArgs {
     pub prompt: String,
     pub working_directory: Option<String>,
     pub session_id: Option<String>,
@@ -20,22 +21,26 @@ pub struct SpawnClaudeArgs {
     pub allowed_tools: Option<Vec<String>>,
     pub max_turns: Option<u32>,
     pub mcp_config: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
 }
 
 #[tauri::command]
-pub async fn spawn_claude(
-    args: SpawnClaudeArgs,
-    on_event: Channel<ClaudeStreamEvent>,
+pub async fn spawn_agent(
+    args: SpawnAgentArgs,
+    on_event: Channel<AgentStreamEvent>,
     process_manager: State<'_, ProcessManager>,
 ) -> Result<String, String> {
     let process_id = uuid::Uuid::new_v4().to_string();
 
-    let mut cmd = Command::new("claude");
-    cmd.arg("--dangerously-skip-permissions");
-    cmd.arg("-p").arg(&args.prompt);
+    let config = get_agent_config(args.agent_name.as_deref().unwrap_or("claude"));
+
+    let mut cmd = Command::new(config.command);
+    cmd.arg(config.skip_permissions_flag);
+    cmd.arg(config.prompt_flag).arg(&args.prompt);
 
     let output_format = args.output_format.as_deref().unwrap_or("stream-json");
-    cmd.arg("--output-format").arg(output_format);
+    cmd.arg(config.output_format_flag).arg(output_format);
 
     if output_format == "stream-json" {
         cmd.arg("--verbose");
@@ -46,7 +51,7 @@ pub async fn spawn_claude(
     }
 
     if let Some(ref system_prompt) = args.append_system_prompt {
-        cmd.arg("--append-system-prompt").arg(system_prompt);
+        cmd.arg(config.system_prompt_flag).arg(system_prompt);
     }
 
     if let Some(ref schema) = args.json_schema {
@@ -84,7 +89,7 @@ pub async fn spawn_claude(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn claude: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn agent: {}", e))?;
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -97,7 +102,7 @@ pub async fn spawn_claude(
         )
         .await;
 
-    let _ = on_event.send(ClaudeStreamEvent::Started {
+    let _ = on_event.send(AgentStreamEvent::Started {
         process_id: process_id.clone(),
         session_id: args.session_id.clone(),
     });
@@ -110,7 +115,7 @@ pub async fn spawn_claude(
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = stdout_event.send(ClaudeStreamEvent::StdoutLine { line });
+            let _ = stdout_event.send(AgentStreamEvent::StdoutLine { line });
         }
     });
 
@@ -119,7 +124,7 @@ pub async fn spawn_claude(
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = stderr_event.send(ClaudeStreamEvent::StderrLine { line });
+            let _ = stderr_event.send(AgentStreamEvent::StderrLine { line });
         }
     });
 
@@ -144,7 +149,7 @@ pub async fn spawn_claude(
         let _ = stdout_task.await;
         let _ = stderr_task.await;
 
-        let _ = completion_event.send(ClaudeStreamEvent::Completed {
+        let _ = completion_event.send(AgentStreamEvent::Completed {
             process_id: pid.clone(),
             exit_code,
         });
@@ -193,17 +198,18 @@ pub async fn list_processes_detailed(
 }
 
 #[tauri::command]
-pub async fn check_claude_available() -> Result<String, String> {
-    let output = Command::new("claude")
-        .arg("--version")
+pub async fn check_agent_available() -> Result<String, String> {
+    let config = get_agent_config("claude");
+    let output = Command::new(config.command)
+        .arg(config.version_flag)
         .output()
         .await
-        .map_err(|e| format!("Claude Code CLI not found: {}", e))?;
+        .map_err(|e| format!("Agent CLI not found: {}", e))?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
     } else {
-        Err("Claude Code CLI returned error".to_string())
+        Err("Agent CLI returned error".to_string())
     }
 }

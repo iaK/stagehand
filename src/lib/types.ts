@@ -204,9 +204,9 @@ export interface LinearIssue {
   branchName: string | undefined;
 }
 
-// === Claude Stream Events ===
+// === Agent Stream Events ===
 
-export type ClaudeStreamEvent =
+export type AgentStreamEvent =
   | { type: "started"; process_id: string; session_id: string | null }
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
@@ -215,7 +215,7 @@ export type ClaudeStreamEvent =
 
 // === Spawn Args ===
 
-export interface SpawnClaudeArgs {
+export interface SpawnAgentArgs {
   prompt: string;
   workingDirectory?: string;
   sessionId?: string;
@@ -227,6 +227,7 @@ export interface SpawnClaudeArgs {
   allowedTools?: string[];
   maxTurns?: number;
   mcpConfig?: string;
+  agentName?: string;
 }
 
 // === PTY Types ===
@@ -242,4 +243,5 @@ export interface SpawnPtyArgs {
   appendSystemPrompt?: string;
   cols?: number;
   rows?: number;
+  agentName?: string;
 }

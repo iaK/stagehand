@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { listProcessesDetailed, killProcess } from "../lib/claude";
+import { listProcessesDetailed, killProcess } from "../lib/agent";
 import { useProcessStore } from "../stores/processStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";

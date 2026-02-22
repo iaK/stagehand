@@ -39,6 +39,7 @@ const MIGRATIONS: Migration[] = [
   { version: 12, name: "second_opinion_stage", fn: migrateSecondOpinionStage },
   { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
   { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
+  { version: 15, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
 ];
 
 /**
@@ -788,4 +789,13 @@ export async function migrateGuidedImplementationStage(db: Database): Promise<vo
       ],
     );
   }
+}
+
+async function migrateAgentAgnosticDescriptions(db: Database): Promise<void> {
+  await db.execute(
+    `UPDATE stage_templates
+     SET description = 'Interactive agent session — you guide the AI step by step in a live terminal.'
+     WHERE name = 'Guided Implementation'
+       AND description LIKE '%Interactive Claude session%'`,
+  );
 }

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore } from "../../stores/processStore";
-import { spawnPty, writeToPty, resizePty, killPty, spawnClaude } from "../../lib/claude";
+import { spawnPty, writeToPty, resizePty, killPty, spawnAgent, DEFAULT_AGENT_CONFIG } from "../../lib/agent";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { generatePendingCommit } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
@@ -15,7 +15,7 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
-import type { StageTemplate, PtyEvent, ClaudeStreamEvent } from "../../lib/types";
+import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types";
 
 /**
  * InteractiveTerminalStageView — self-contained stage component (same pattern
@@ -214,10 +214,10 @@ export function InteractiveTerminalStageView({ stage }: Props) {
     try {
       // Generate summary via one-shot claude -p call
       const rawOutput = outputBufferRef.current;
-      const summaryPrompt = `Summarize what was accomplished in this interactive Claude session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
+      const summaryPrompt = `Summarize what was accomplished in this interactive ${DEFAULT_AGENT_CONFIG.displayName} session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
 
       let summary = "";
-      await spawnClaude(
+      await spawnAgent(
         {
           prompt: summaryPrompt,
           workingDirectory: getTaskWorkingDir(activeTask, activeProject.path),
@@ -225,7 +225,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
           allowedTools: [],
           maxTurns: 1,
         },
-        (event: ClaudeStreamEvent) => {
+        (event: AgentStreamEvent) => {
           if (event.type === "stdout_line") {
             try {
               const parsed = JSON.parse(event.line);
@@ -240,7 +240,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
       );
 
       if (!summary) {
-        summary = "Interactive Claude session completed.";
+        summary = `Interactive ${DEFAULT_AGENT_CONFIG.displayName} session completed.`;
       }
 
       // Update execution
@@ -404,11 +404,11 @@ export function InteractiveTerminalStageView({ stage }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span className="text-sm font-medium text-foreground">
-              Interactive Claude Session
+              Interactive {DEFAULT_AGENT_CONFIG.displayName} Session
             </span>
           </div>
           <p className="text-sm text-muted-foreground mb-3">
-            Launch a live Claude terminal where you can guide the AI step by step — type prompts, confirm tool uses, and steer the implementation interactively.
+            Launch a live {DEFAULT_AGENT_CONFIG.displayName} terminal where you can guide the AI step by step — type prompts, confirm tool uses, and steer the implementation interactively.
           </p>
           {error && (
             <Alert variant="destructive" className="mb-3">

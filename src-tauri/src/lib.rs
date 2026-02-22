@@ -1,3 +1,4 @@
+mod agent;
 mod process_manager;
 mod pty_manager;
 mod events;
@@ -81,11 +82,11 @@ pub fn run() {
             greet,
             get_devflow_dir,
             get_mcp_server_path,
-            commands::process::spawn_claude,
+            commands::process::spawn_agent,
             commands::process::kill_process,
             commands::process::list_processes,
             commands::process::list_processes_detailed,
-            commands::process::check_claude_available,
+            commands::process::check_agent_available,
             commands::git::run_git_command,
             commands::git::run_gh_command,
             commands::git::read_file_contents,

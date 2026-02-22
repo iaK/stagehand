@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { spawnClaude } from "../lib/claude";
+import { spawnAgent } from "../lib/agent";
 import {
   parsePrUrl,
   ghFetchPrReviews,
@@ -27,7 +27,7 @@ import type {
   Task,
   StageTemplate,
   PrReviewFix,
-  ClaudeStreamEvent,
+  AgentStreamEvent,
 } from "../lib/types";
 
 export function usePrReview(stage: StageTemplate, task: Task | null) {
@@ -302,14 +302,14 @@ ${fix.body}`;
 
         let resultText = "";
         await new Promise<void>((resolve) => {
-          spawnClaude(
+          spawnAgent(
             {
               prompt,
               workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
             },
-            (event: ClaudeStreamEvent) => {
+            (event: AgentStreamEvent) => {
               switch (event.type) {
                 case "started":
                   setRunning(sk, event.process_id);
@@ -362,7 +362,7 @@ ${fix.body}`;
           try {
             let msgText = "";
             await new Promise<void>((resolve) => {
-              spawnClaude(
+              spawnAgent(
                 {
                   prompt: `Generate a concise git commit message for fixing a PR review comment.
 
@@ -382,7 +382,7 @@ Keep it under 72 characters for the first line.`,
                   outputFormat: "text",
                   noSessionPersistence: true,
                 },
-                (event: ClaudeStreamEvent) => {
+                (event: AgentStreamEvent) => {
                   if (event.type === "stdout_line") {
                     msgText += event.line + "\n";
                   } else if (event.type === "completed" || event.type === "error") {

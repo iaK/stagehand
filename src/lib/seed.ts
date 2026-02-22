@@ -199,7 +199,7 @@ Respond with a JSON object:
       project_id: projectId,
       name: "Guided Implementation",
       description:
-        "Interactive Claude session — you guide the AI step by step in a live terminal.",
+        "Interactive agent session — you guide the AI step by step in a live terminal.",
       sort_order: 5,
       prompt_template: "",
       input_source: "previous_stage",
