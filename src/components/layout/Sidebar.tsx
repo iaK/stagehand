@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTheme } from "next-themes";
+import { ChevronLeft, Plus, Settings, Moon, Sun, Monitor } from "lucide-react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useLinearStore } from "../../stores/linearStore";
@@ -27,6 +28,8 @@ export function Sidebar() {
   const tasks = useTaskStore((s) => s.tasks);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const setActiveTask = useTaskStore((s) => s.setActiveTask);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
   const [showProjectCreate, setShowProjectCreate] = useState(false);
   const [showLinearImport, setShowLinearImport] = useState(false);
@@ -77,6 +80,7 @@ export function Sidebar() {
             value={activeProject?.id ?? ""}
             onValueChange={(value) => {
               const p = projects.find((p) => p.id === value);
+              useTaskStore.getState().setActiveTask(null);
               setActiveProject(p ?? null);
             }}
           >
@@ -103,9 +107,7 @@ export function Sidebar() {
                 size="icon-xs"
                 onClick={() => setShowProjectCreate(true)}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                <Plus className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>New Project</TooltipContent>
@@ -116,9 +118,20 @@ export function Sidebar() {
       {/* Tasks */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs text-muted-foreground uppercase tracking-wider">
-            Tasks
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              Tasks
+            </span>
+            {activeTask && (
+              <button
+                onClick={() => setActiveTask(null)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Project
+              </button>
+            )}
+          </div>
           {activeProject && (
             <div className="flex items-center gap-2">
               {linearApiKey && (
@@ -154,10 +167,7 @@ export function Sidebar() {
           onClick={() => setShowSettings(true)}
           className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <Settings className="w-3.5 h-3.5" />
           Settings
         </button>
         <ThemeToggle />
@@ -205,17 +215,11 @@ function ThemeToggle() {
           className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
         >
           {theme === "dark" ? (
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-            </svg>
+            <Moon className="w-3.5 h-3.5" />
           ) : theme === "light" ? (
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
+            <Sun className="w-3.5 h-3.5" />
           ) : (
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+            <Monitor className="w-3.5 h-3.5" />
           )}
         </button>
       </TooltipTrigger>

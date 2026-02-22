@@ -204,6 +204,19 @@ export interface LinearIssue {
   branchName: string | undefined;
 }
 
+// === Token Aggregation ===
+
+export interface TokenTotals {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  total_cost_usd: number;
+  duration_ms: number;
+  num_turns: number;
+  execution_count: number;
+}
+
 // === Agent Stream Events ===
 
 export type AgentStreamEvent =
