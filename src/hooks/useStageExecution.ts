@@ -4,8 +4,7 @@ import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { useGitHubStore } from "../stores/githubStore";
 import { invoke } from "@tauri-apps/api/core";
-import { spawnAgent, killProcess, listProcessesDetailed } from "../lib/agent";
-import { parseAgentStreamLine } from "../lib/agentParsers";
+import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
 import { renderPrompt } from "../lib/prompt";
 import {
   hasUncommittedChanges,
@@ -36,7 +35,7 @@ import type {
   StageTemplate,
   StageExecution,
   GateRule,
-  AgentStreamEvent,
+  ClaudeStreamEvent,
 } from "../lib/types";
 
 export function useStageExecution() {
@@ -233,7 +232,7 @@ export function useStageExecution() {
         });
 
         // Add the new execution to the store immediately so that killCurrent
-        // and the health check can find it even before spawnAgent fires events,
+        // and the health check can find it even before spawnClaude fires events,
         // without triggering a full loadExecutions reload (which involves IPC
         // calls and creates new object references that cascade re-renders).
         {
@@ -269,7 +268,7 @@ export function useStageExecution() {
         // Capture task.id so completion handler uses the correct task even if activeTask changes
         const taskId = task.id;
 
-        const onEvent = (event: AgentStreamEvent) => {
+        const onEvent = (event: ClaudeStreamEvent) => {
           switch (event.type) {
             case "started":
               // If kill was requested while spawning, kill immediately and don't re-enable
@@ -286,30 +285,55 @@ export function useStageExecution() {
                 useTaskStore.getState().refreshTaskExecStatuses(activeProject!.id);
               }
               break;
-            case "stdout_line": {
+            case "stdout_line":
               rawOutput += event.line + "\n";
-              const parsed = parseAgentStreamLine(event.line);
-              if (parsed) {
-                if (parsed.type === "text") {
-                  appendOutput(sk, parsed.text);
-                  resultText += parsed.text;
-                  thinkingText += parsed.text;
-                } else if (parsed.type === "result") {
-                  if (parsed.text) {
-                    resultText = parsed.text;
-                    appendOutput(sk, parsed.text);
+              // Try to parse stream-json events
+              try {
+                const parsed = JSON.parse(event.line);
+                if (parsed.type === "assistant" && parsed.message?.content) {
+                  for (const block of parsed.message.content) {
+                    if (block.type === "text") {
+                      appendOutput(sk, block.text);
+                      resultText += block.text;
+                      thinkingText += block.text;
+                    }
                   }
+                } else if (parsed.type === "result") {
+                  // With --json-schema, the output is in structured_output, not result
+                  const output = parsed.structured_output ?? parsed.result;
+                  if (output != null && output !== "") {
+                    const text =
+                      typeof output === "string"
+                        ? output
+                        : JSON.stringify(output);
+                    resultText = text;
+                    appendOutput(sk, text);
+                  }
+                  // Capture usage data from result event
                   if (parsed.usage) {
-                    usageData = parsed.usage;
+                    usageData = {
+                      input_tokens: parsed.usage.input_tokens,
+                      output_tokens: parsed.usage.output_tokens,
+                      cache_creation_input_tokens: parsed.usage.cache_creation_input_tokens,
+                      cache_read_input_tokens: parsed.usage.cache_read_input_tokens,
+                      total_cost_usd: parsed.total_cost_usd,
+                      duration_ms: parsed.duration_ms,
+                      num_turns: parsed.num_turns,
+                    };
                   }
                   // Don't add result to thinkingText — it's the final structured output
+                } else if (parsed.type === "content_block_delta") {
+                  if (parsed.delta?.text) {
+                    appendOutput(sk, parsed.delta.text);
+                    resultText += parsed.delta.text;
+                    thinkingText += parsed.delta.text;
+                  }
                 }
-              } else {
-                // Not recognized JSON, just append as-is
+              } catch {
+                // Not JSON, just append as-is
                 appendOutput(sk, event.line);
               }
               break;
-            }
             case "stderr_line":
               appendOutput(sk, `[stderr] ${event.line}`);
               break;
@@ -405,15 +429,9 @@ export function useStageExecution() {
           logger.warn("MCP server config failed, continuing without MCP:", err);
         }
 
-        // Resolve effective agent: per-stage override → project default → "claude"
-        const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-        const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
-
-        await spawnAgent(
+        await spawnClaude(
           {
             prompt,
-            agent: effectiveAgent,
-            personaModel: stage.persona_model ?? undefined,
             workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
@@ -847,8 +865,11 @@ export async function generatePendingCommit(
   const workDir = getTaskWorkingDir(task, projectPath);
   const store = useProcessStore.getState();
 
-  // Clear stale state before re-checking
-  if (store.pendingCommit?.stageId === stage.id) {
+  // Clear stale state from a *different* task before re-checking.
+  // If the pending commit already belongs to this exact task+stage, leave it
+  // alone — the caller should have skipped calling us in that case, but guard
+  // against unnecessary clearing which causes a "Preparing commit..." flash.
+  if (store.pendingCommit?.stageId === stage.id && store.pendingCommit?.taskId !== task.id) {
     store.clearPendingCommit();
   }
   if (store.noChangesStageId === stage.id) {

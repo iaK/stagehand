@@ -23,10 +23,17 @@ export function TaskList() {
       if (stageState?.isRunning) return pipelineColors.running;
     }
 
-    // For all tasks, use the cached latest execution status
+    // For all tasks, use the cached latest execution status — but only if
+    // it represents an active/ongoing state.  A stale "failed" execution
+    // should NOT paint the dot red when the task itself isn't failed (e.g.
+    // the user may have re-queued the task or it's still in_progress).
     const execStatus = taskExecStatuses[task.id];
-    if (execStatus) {
+    if (execStatus && execStatus !== "failed") {
       return pipelineColors[execStatus] ?? statusColors[task.status] ?? "bg-zinc-400";
+    }
+    // Show execution "failed" only when the task itself is also failed
+    if (execStatus === "failed" && task.status === "failed") {
+      return pipelineColors.failed;
     }
     return statusColors[task.status] ?? "bg-zinc-400";
   };

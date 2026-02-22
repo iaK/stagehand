@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
-import { listProcessesDetailed, type ProcessInfo } from "../lib/agent";
+import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
 import { logger } from "../lib/logger";
 
@@ -172,7 +172,25 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return stageTemplates.filter((t) => idSet.has(t.id));
   },
 
-  setActiveTask: (task) => set({ activeTask: task }),
+  setActiveTask: (task) => {
+    const prev = get().activeTask;
+    if (prev?.id !== task?.id) {
+      // Clear ALL stale commit-related state from processStore so it doesn't
+      // bleed across tasks. Stage template IDs are shared across tasks, so
+      // bare stage.id comparisons (used by committedStages, pendingCommit,
+      // noChangesStageId, commitMessageLoadingStageId) would match the wrong
+      // task's state — causing the "Preparing commit..." spinner to get stuck.
+      const ps = useProcessStore.getState();
+      ps.setCommitMessageLoading(null);
+      ps.clearPendingCommit();
+      ps.setNoChangesToCommit(null);
+      // committedStages is keyed by bare stage.id; stale entries from the
+      // previous task prevent both commit generation and the timeout fallback,
+      // leaving the UI permanently stuck on "Preparing commit...".
+      useProcessStore.setState({ committedStages: {} });
+    }
+    set({ activeTask: task });
+  },
 
   consumeInitialInput: (taskId) => {
     return consumeInitialInputFromStorage(taskId);

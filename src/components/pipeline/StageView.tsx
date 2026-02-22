@@ -16,10 +16,8 @@ import {
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { spawnAgent } from "../../lib/agent";
-import { parseAgentStreamLine } from "../../lib/agentParsers";
-import * as repo from "../../lib/repositories";
-import type { AgentStreamEvent } from "../../lib/types";
+import { spawnClaude } from "../../lib/claude";
+import type { ClaudeStreamEvent } from "../../lib/types";
 import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
@@ -110,10 +108,6 @@ export function StageView({ stage, taskId }: StageViewProps) {
     setRunning(sk, "fixing");
     setCommitError(null);
 
-    // Resolve effective agent: per-stage override → project default → "claude"
-    const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-    const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
-
     const prompt = `The following git commit failed with an error. Fix whatever is preventing the commit from succeeding.
 
 Task: ${task.title}
@@ -127,28 +121,35 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
 
     try {
       await new Promise<void>((resolve) => {
-        spawnAgent(
+        spawnClaude(
           {
             prompt,
-            agent: effectiveAgent,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",
           },
-          (event: AgentStreamEvent) => {
+          (event: ClaudeStreamEvent) => {
             switch (event.type) {
               case "started":
                 setRunning(sk, event.process_id);
                 break;
-              case "stdout_line": {
-                const parsed = parseAgentStreamLine(event.line);
-                if (parsed) {
-                  if (parsed.text) appendOutput(sk, parsed.text);
-                } else {
+              case "stdout_line":
+                try {
+                  const parsed = JSON.parse(event.line);
+                  if (parsed.type === "assistant" && parsed.message?.content) {
+                    for (const block of parsed.message.content) {
+                      if (block.type === "text") appendOutput(sk, block.text);
+                    }
+                  } else if (parsed.type === "result") {
+                    const output = parsed.result;
+                    if (output != null && output !== "") {
+                      appendOutput(sk, typeof output === "string" ? output : JSON.stringify(output));
+                    }
+                  }
+                } catch {
                   appendOutput(sk, event.line);
                 }
                 break;
-              }
               case "stderr_line":
                 appendOutput(sk, `[stderr] ${event.line}`);
                 break;
@@ -194,7 +195,10 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
 
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost,
-  // or a stale pendingCommit from a different stage is still in the store)
+  // or a stale pendingCommit from a different stage is still in the store).
+  // Skip if a valid pending commit already exists for this task+stage to avoid
+  // unnecessarily clearing and regenerating on tab switches (which causes the
+  // "Preparing commit..." spinner to flash or get stuck if git ops are slow).
   const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
   const hasPendingCommitForThisStage = pendingCommit?.stageId === stage.id && pendingCommit?.taskId === task?.id;
   useEffect(() => {
@@ -204,14 +208,17 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
       !isRunning &&
       !committedHash &&
       !commitMessageLoading &&
+      !hasPendingCommitForThisStage &&
+      !noChangesToCommit &&
       task &&
       activeProject
     ) {
-      // Always re-check git status when this stage is rendered as current + awaiting_user
-      // This handles: app restart, navigation back to stage, external commits
+      // Re-check git status when this stage is rendered as current + awaiting_user
+      // AND there's no existing commit state. This handles: app restart, navigation
+      // back to stage after state was lost, external commits.
       generatePendingCommit(task, stage, activeProject.path, activeProject.id).catch(() => {});
     }
-  }, [isCurrentStage, stageStatus, isRunning, committedHash, task?.id, activeProject?.id]);
+  }, [isCurrentStage, stageStatus, isRunning, committedHash, commitMessageLoading, hasPendingCommitForThisStage, noChangesToCommit, task?.id, activeProject?.id]);
 
   // Timeout fallback: if commit preparation takes too long, let the user approve manually
   useEffect(() => {

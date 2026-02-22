@@ -51,7 +51,11 @@ export function aggregateProjectDotClass(
     }
   }
 
+  // Ignore "failed" from execution statuses — a stale failed execution
+  // should not turn the project dot red when the task itself isn't failed.
+  // Genuine task failures are already captured in taskStatuses above.
   for (const status of execStatuses) {
+    if (status === "failed") continue;
     const u = statusUrgency(status);
     if (u > maxUrgency) {
       maxUrgency = u;
