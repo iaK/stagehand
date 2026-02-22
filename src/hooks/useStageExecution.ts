@@ -203,13 +203,7 @@ export function useStageExecution() {
           attempt_number: attemptNumber,
           status: "running",
           input_prompt: prompt,
-          user_input: userInput ?? (
-            !stage.requires_user_input && approvedOutputs.length > 0
-              ? approvedOutputs
-                  .map((s) => `### ${s.stage_name}\n${s.stage_summary || "(no summary)"}`)
-                  .join("\n\n")
-              : null
-          ),
+          user_input: userInput ?? null,
           raw_output: null,
           parsed_output: null,
           user_decision: null,
@@ -381,6 +375,10 @@ export function useStageExecution() {
           }
         };
 
+        // Resolve effective agent (stage override → project default → "claude")
+        const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+        const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
         // Always instruct the agent not to commit — the app handles
         // committing after the user reviews changes (harmless for read-only stages).
         let systemPrompt = stage.persona_system_prompt ?? undefined;
@@ -450,6 +448,8 @@ export function useStageExecution() {
               !(stage.output_format === "findings" && !!priorAttemptOutput)
                 ? stage.output_schema
                 : undefined,
+            agent: effectiveAgent,
+            personaModel: stage.persona_model ?? undefined,
           },
           onEvent,
         );
