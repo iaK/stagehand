@@ -41,6 +41,7 @@ const MIGRATIONS: Migration[] = [
   { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
   { version: 15, name: "drop_task_description", fn: migrateDropTaskDescription },
   { version: 16, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
+  { version: 17, name: "strip_json_from_prompts", fn: migrateStripJsonFromPrompts },
 ];
 
 /**
@@ -614,20 +615,7 @@ If the plan is solid and you find no issues, return an empty findings array. IMP
 
 Do NOT modify the plan. Only identify and report concerns.
 
-Respond with a JSON object:
-{
-  "summary": "The full original plan text verbatim when no issues are found, OR a brief assessment when findings exist",
-  "findings": [
-    {
-      "id": "c1",
-      "title": "Short title of the concern",
-      "description": "Detailed description of the issue and what should change in the plan",
-      "severity": "critical|warning|info",
-      "category": "completeness|correctness|risk|simplicity|ordering",
-      "selected": true
-    }
-  ]
-}{{/if}}`;
+Respond with a JSON object matching the output schema.{{/if}}`;
 
 export async function migrateSecondOpinionStage(db: Database): Promise<void> {
   // Idempotency: bail if Second Opinion already exists
@@ -813,4 +801,27 @@ async function migrateAgentAgnosticDescriptions(db: Database): Promise<void> {
     `UPDATE stage_templates SET description = 'Interactive agent session — you guide the AI step by step in a live terminal.', updated_at = $1 WHERE name = 'Guided Implementation' AND description LIKE '%Interactive Claude session%'`,
     [now],
   );
+}
+
+async function migrateStripJsonFromPrompts(db: Database): Promise<void> {
+  // Strip inline JSON examples from prompts that have an output_schema.
+  // The schema already defines the structure — the prompt doesn't need to repeat it.
+  const rows = await db.select<{ id: string; prompt_template: string }[]>(
+    "SELECT id, prompt_template FROM stage_templates WHERE output_schema IS NOT NULL AND output_schema != ''",
+  );
+  const now = new Date().toISOString();
+  // Match "Respond with a JSON object..." followed by a JSON block (possibly at end of string or before {{/if}})
+  const jsonBlockPattern = /Respond with a JSON object[^\n]*:\s*\n\{[\s\S]*?\n\}/g;
+  for (const row of rows) {
+    const updated = row.prompt_template.replace(
+      jsonBlockPattern,
+      "Respond with a JSON object matching the output schema.",
+    );
+    if (updated !== row.prompt_template) {
+      await db.execute(
+        "UPDATE stage_templates SET prompt_template = $1, updated_at = $2 WHERE id = $3",
+        [updated, now, row.id],
+      );
+    }
+  }
 }

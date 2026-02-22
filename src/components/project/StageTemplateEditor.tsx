@@ -13,6 +13,7 @@ import { sendNotification } from "../../lib/notifications";
 import { isSpecialStage } from "../../lib/repositories";
 import { AVAILABLE_AGENTS } from "../../lib/agents";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { JsonEditor } from "../ui/JsonEditor";
 import type { StageTemplate, OutputFormat } from "../../lib/types";
 
 interface StageTemplateEditorProps {
@@ -53,7 +54,11 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
   useEffect(() => {
     const template = stageTemplates.find((t) => t.id === templateId);
     if (template) {
-      setEditingTemplate({ ...template });
+      let schema = template.output_schema;
+      if (schema) {
+        try { schema = JSON.stringify(JSON.parse(schema), null, 2); } catch {}
+      }
+      setEditingTemplate({ ...template, output_schema: schema });
     }
   }, [templateId, stageTemplates]);
 
@@ -68,7 +73,9 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       persona_system_prompt: editingTemplate.persona_system_prompt,
       persona_model: editingTemplate.persona_model,
       allowed_tools: editingTemplate.allowed_tools,
-      output_schema: editingTemplate.output_schema,
+      output_schema: editingTemplate.output_schema
+        ? (() => { try { return JSON.stringify(JSON.parse(editingTemplate.output_schema)); } catch { return editingTemplate.output_schema; } })()
+        : null,
       requires_user_input: editingTemplate.requires_user_input,
       agent: editingTemplate.agent,
     });
@@ -195,22 +202,6 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       </div>
 
       <div>
-        <Label>Persona System Prompt</Label>
-        <Textarea
-          value={editingTemplate.persona_system_prompt ?? ""}
-          onChange={(e) =>
-            setEditingTemplate({
-              ...editingTemplate,
-              persona_system_prompt: e.target.value || null,
-            })
-          }
-          rows={3}
-          className="mt-1 font-mono text-xs resize-none"
-          placeholder="Optional system prompt override"
-        />
-      </div>
-
-      <div>
         <Label>Allowed Tools (JSON array)</Label>
         <Input
           value={editingTemplate.allowed_tools ?? ""}
@@ -243,28 +234,28 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
 
       <div>
         <Label>Output Schema (JSON)</Label>
-        <Textarea
+        <JsonEditor
           value={editingTemplate.output_schema ?? ""}
-          onChange={(e) => {
+          onChange={(val) => {
             setEditingTemplate({
               ...editingTemplate,
-              output_schema: e.target.value || null,
+              output_schema: val || null,
             });
             setSchemaError(null);
           }}
           onBlur={(e) => {
-            const val = e.target.value.trim();
+            const val = e.currentTarget.value.trim();
             if (!val) { setSchemaError(null); return; }
             try {
-              JSON.parse(val);
+              const formatted = JSON.stringify(JSON.parse(val), null, 2);
+              setEditingTemplate({ ...editingTemplate, output_schema: formatted });
               setSchemaError(null);
             } catch {
               setSchemaError("Invalid JSON");
             }
           }}
-          rows={4}
-          className="mt-1 font-mono text-xs resize-none"
           placeholder="Optional JSON schema for structured output"
+          className="mt-1"
         />
         {schemaError && <p className="text-xs text-destructive mt-1">{schemaError}</p>}
       </div>

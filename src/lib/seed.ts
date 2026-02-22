@@ -149,20 +149,7 @@ If the plan is solid and you find no issues, return an empty findings array. IMP
 
 Do NOT modify the plan. Only identify and report concerns.
 
-Respond with a JSON object:
-{
-  "summary": "The full original plan text verbatim when no issues are found, OR a brief assessment when findings exist",
-  "findings": [
-    {
-      "id": "c1",
-      "title": "Short title of the concern",
-      "description": "Detailed description of the issue and what should change in the plan",
-      "severity": "critical|warning|info",
-      "category": "completeness|correctness|risk|simplicity|ordering",
-      "selected": true
-    }
-  ]
-}{{/if}}`,
+Respond with a JSON object matching the output schema.{{/if}}`,
       input_source: "previous_stage",
       output_format: "findings",
       output_schema: JSON.stringify({

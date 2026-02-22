@@ -58,21 +58,7 @@ Be nitpicky. Flag everything you notice, even minor issues — the developer wil
 
 Do NOT make any code changes. Only identify and report findings.
 
-Respond with a JSON object:
-{
-  "summary": "Brief overview of what you reviewed and overall assessment",
-  "findings": [
-    {
-      "id": "f1",
-      "title": "Short title of the finding",
-      "description": "Detailed description of the issue and suggested fix",
-      "severity": "critical|warning|info",
-      "category": "completeness|correctness|consistency|cleanup|simplicity",
-      "file_path": "path/to/file.ts (optional)",
-      "selected": true
-    }
-  ]
-}{{/if}}`;
+Respond with a JSON object matching the output schema.{{/if}}`;
 
 export const SECURITY_FINDINGS_PROMPT = `{{#if prior_attempt_output}}You are applying selected security fixes to an implementation.
 
@@ -109,21 +95,7 @@ Be thorough. Flag everything you notice, even minor concerns — the developer w
 
 Do NOT make any code changes. Only identify and report findings.
 
-Respond with a JSON object:
-{
-  "summary": "Brief overview of security posture and key concerns",
-  "findings": [
-    {
-      "id": "sec-1",
-      "title": "Short title of the security finding",
-      "description": "Detailed description of the vulnerability and recommended fix",
-      "severity": "critical|warning|info",
-      "category": "validation|auth|injection|exposure|deps|config|error-handling",
-      "file_path": "path/to/file.ts (optional)",
-      "selected": true
-    }
-  ]
-}{{/if}}`;
+Respond with a JSON object matching the output schema.{{/if}}`;
 
 export const APPROACHES_PROMPT = `You are a senior software architect proposing implementation approaches for a task.
 
@@ -158,26 +130,7 @@ For each approach, provide:
 - Pros (advantages)
 - Cons (disadvantages)
 
-Respond with a JSON object matching this structure:
-{
-  "options": [
-    {
-      "id": "approach-1",
-      "title": "Approach Title",
-      "description": "Detailed description",
-      "pros": ["pro 1", "pro 2"],
-      "cons": ["con 1", "con 2"]
-    }
-  ],
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Your question here?",
-      "proposed_answer": "Your best-guess answer",
-      "options": ["Option A", "Option B"]
-    }
-  ]
-}`;
+Respond with a JSON object matching the output schema.`;
 
 export const PLANNING_PROMPT = `You are a senior software engineer creating a detailed implementation plan.
 
@@ -216,18 +169,7 @@ The plan should include:
 4. Testing strategy
 5. Potential edge cases to handle
 
-Respond with a JSON object matching this structure:
-{
-  "plan": "Your detailed implementation plan in Markdown...",
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Your question here?",
-      "proposed_answer": "Your best-guess answer",
-      "options": ["Option A", "Option B"]
-    }
-  ]
-}`;
+Respond with a JSON object matching the output schema.`;
 
 export const DOCUMENTATION_PROMPT = `You are a senior technical writer documenting changes made during a development task.
 
@@ -283,11 +225,4 @@ Generate:
 2. A detailed description explaining the changes
 3. A test plan describing how to verify the changes
 
-Respond with a JSON object:
-{
-  "fields": {
-    "title": "PR title here",
-    "description": "PR description here",
-    "test_plan": "Test plan here"
-  }
-}`;
+Respond with a JSON object matching the output schema.`;

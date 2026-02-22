@@ -343,7 +343,7 @@ export function PipelineView() {
       </div>
 
       {/* Content */}
-      {activeView === "overview" ? (
+      {showPlaceholder ? null : activeView === "overview" ? (
         <div className="flex-1 overflow-y-auto">
           <TaskOverview />
         </div>

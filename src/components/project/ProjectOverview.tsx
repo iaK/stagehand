@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useProjectOverviewStore } from "../../stores/projectOverviewStore";
+import { useGitHubStore } from "../../stores/githubStore";
+import { useLinearStore } from "../../stores/linearStore";
+import { AVAILABLE_AGENTS } from "../../lib/agents";
+import * as repo from "../../lib/repositories";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,11 +26,21 @@ export function ProjectOverview() {
   const loading = useProjectOverviewStore((s) => s.loading);
   const loadProjectOverview = useProjectOverviewStore((s) => s.loadProjectOverview);
 
+  const githubRepoFullName = useGitHubStore((s) => s.repoFullName);
+  const githubLoading = useGitHubStore((s) => s.loading);
+  const linearApiKey = useLinearStore((s) => s.apiKey);
+  const linearUserName = useLinearStore((s) => s.userName);
+  const linearOrgName = useLinearStore((s) => s.orgName);
+
+  const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
 
   useEffect(() => {
     if (activeProject) {
       loadProjectOverview(activeProject.id);
+      repo.getProjectSetting(activeProject.id, "default_agent").then((val) => {
+        setDefaultAgent(val ?? "claude");
+      });
     }
   }, [activeProject?.id, loadProjectOverview]);
 
@@ -43,7 +57,7 @@ export function ProjectOverview() {
   const sortedTasks = [...tasks].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6 min-h-full">
       {/* Project Header */}
       <div>
         <h1 className="text-xl font-semibold">{activeProject.name}</h1>
@@ -72,6 +86,50 @@ export function ProjectOverview() {
           sub={loading ? undefined : tokenUsageToday ? formatCost(tokenUsageToday.total_cost_usd) : undefined}
           loading={loading}
         />
+      </div>
+
+      {/* Integrations & Agent */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">GitHub</span>
+          {githubLoading ? (
+            <Skeleton className="h-5 w-24 mt-1" />
+          ) : githubRepoFullName ? (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+              <p className="text-sm font-medium truncate">{githubRepoFullName}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-2 h-2 rounded-full bg-zinc-400 shrink-0" />
+              <p className="text-sm text-muted-foreground">Not connected</p>
+            </div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Linear</span>
+          {linearApiKey ? (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+              <p className="text-sm font-medium truncate">{linearUserName}{linearOrgName ? ` (${linearOrgName})` : ""}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-2 h-2 rounded-full bg-zinc-400 shrink-0" />
+              <p className="text-sm text-muted-foreground">Not connected</p>
+            </div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <span className="text-xs text-muted-foreground">Default Agent</span>
+          {defaultAgent ? (
+            <p className="text-sm font-medium mt-1">
+              {AVAILABLE_AGENTS.find((a) => a.value === defaultAgent)?.label ?? defaultAgent}
+            </p>
+          ) : (
+            <Skeleton className="h-5 w-16 mt-1" />
+          )}
+        </div>
       </div>
 
       {/* Tasks Requiring Attention */}
