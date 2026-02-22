@@ -155,24 +155,22 @@ export function StageView({ stage }: StageViewProps) {
     setCommitPrepTimedOut(false);
   }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
-  // Pre-fill research input with task description (e.g. from Linear import).
-  // latestExecution is in deps so the effect re-runs once async loadExecutions
-  // completes — fixing the race where stale executions from the previous task
-  // caused the !latestExecution guard to incorrectly block the pre-fill.
-  //
-  // activeTask?.description is also in deps (required by exhaustive-deps), which
-  // means the effect re-fires if the task description is updated while mounted.
-  // This is intentional — a description update should only pre-fill if the user
-  // has not already edited the textarea (guarded by hasUserEdited below).
+  // Pre-fill research input with initial input (e.g. from Linear import).
+  // Consumed once from localStorage so it survives app restarts but is cleared
+  // after first use. latestExecution is in deps so the effect re-runs once async
+  // loadExecutions completes — fixing the race where stale executions from a
+  // previous task caused the !latestExecution guard to incorrectly block pre-fill.
   //
   // hasUserEdited prevents this effect from overwriting text the user has already
   // typed. The ref resets to false on every remount (i.e. every task switch),
   // so the guard is scoped to the current StageView instance.
+  const consumeInitialInput = useTaskStore((s) => s.consumeInitialInput);
   useEffect(() => {
-    if (activeTask?.description && needsUserInput && !latestExecution && !hasUserEdited.current) {
-      setUserInput(activeTask.description);
+    if (activeTask && needsUserInput && !latestExecution && !hasUserEdited.current) {
+      const input = consumeInitialInput(activeTask.id);
+      if (input) setUserInput(input);
     }
-  }, [activeTask?.id, activeTask?.description, needsUserInput, latestExecution]);
+  }, [activeTask?.id, needsUserInput, latestExecution]);
 
   // Past completed rounds (everything except the latest)
   const pastExecs = useMemo(
