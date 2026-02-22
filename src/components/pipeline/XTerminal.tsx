@@ -11,10 +11,11 @@ export interface XTerminalHandle {
 interface XTerminalProps {
   onData: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
+  isVisible?: boolean;
 }
 
 export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
-  function XTerminal({ onData, onResize }, ref) {
+  function XTerminal({ onData, onResize, isVisible }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const fitRef = useRef<FitAddon | null>(null);
@@ -86,6 +87,18 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
     }, []);
+
+    // Scroll to bottom when the terminal becomes visible (e.g. task switch)
+    useEffect(() => {
+      if (isVisible && termRef.current && fitRef.current) {
+        try {
+          fitRef.current.fit();
+          termRef.current.scrollToBottom();
+        } catch {
+          // ignore if disposed
+        }
+      }
+    }, [isVisible]);
 
     return (
       <div

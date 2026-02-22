@@ -100,14 +100,32 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
       if (mergeState === "loading") setMergeState("preview");
       return;
     }
-    if (isApproved) {
-      setMergeState("completed");
-      return;
-    }
 
+    const branchName = activeTask.branch_name;
     let cancelled = false;
     (async () => {
       try {
+        // If the DB says this stage was approved, trust it — the branch may
+        // have been deleted after a successful merge, so gitIsMerged would
+        // return false even though the merge actually happened.
+        if (isApproved) {
+          if (!cancelled) setMergeState("completed");
+          return;
+        }
+
+        // If the in-memory store thinks merge succeeded but we're re-mounting,
+        // verify against git before trusting the cached state.
+        if (mergeState === "completed" || mergeState === "success") {
+          const defaultBr = useGitHubStore.getState().defaultBranch
+            ?? await gitDefaultBranch(activeProject.path)
+            ?? "main";
+          const actuallyMerged = await gitIsMerged(activeProject.path, branchName, defaultBr).catch(() => false);
+          if (!cancelled && !actuallyMerged) {
+            setMergeState("preview");
+          }
+          return;
+        }
+
         const workDir = getTaskWorkingDir(activeTask, activeProject.path);
         const remote = await gitHasRemote(activeProject.path);
         if (!cancelled) setHasRemote(remote);
@@ -577,7 +595,7 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
               size="sm"
             >
               {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
-              {mergeState === "merging" ? "Merging..." : hasRemote ? "Merge & Push" : "Merge"}
+              {mergeState === "merging" ? "Merging..." : "Merge"}
             </Button>
             <Button
               variant="ghost"

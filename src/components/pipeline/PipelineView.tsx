@@ -379,7 +379,7 @@ export function PipelineView() {
                   className="absolute inset-0"
                   style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
                 >
-                  <InteractiveTerminalStageView stage={s} taskId={tId} />
+                  <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
                 </div>
               );
             });

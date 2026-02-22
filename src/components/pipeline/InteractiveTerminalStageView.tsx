@@ -26,6 +26,7 @@ import type { StageTemplate, PtyEvent, ClaudeStreamEvent } from "../../lib/types
 interface Props {
   stage: StageTemplate;
   taskId: string;
+  isVisible?: boolean;
 }
 
 type SessionState =
@@ -36,7 +37,7 @@ type SessionState =
   | "awaiting_commit"
   | "completed";
 
-export function InteractiveTerminalStageView({ stage, taskId }: Props) {
+export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const tasks = useTaskStore((s) => s.tasks);
   const storeTask = useMemo(() => tasks.find((t) => t.id === taskId) ?? null, [tasks, taskId]);
@@ -532,6 +533,7 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
         <div className="flex-1 min-h-[400px]">
           <XTerminal
             ref={xtermRef}
+            isVisible={isVisible}
             onData={(data) => {
               if (ptyIdRef.current) {
                 writeToPty(ptyIdRef.current, data).catch(() => {});
