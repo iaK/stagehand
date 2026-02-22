@@ -53,6 +53,7 @@ export function StageView({ stage, taskId }: StageViewProps) {
     useStageExecution();
   useProcessHealthCheck(stage.id, taskId);
   const [userInput, setUserInput] = useState("");
+  const hasUserEdited = useRef(false);
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -158,14 +159,19 @@ export function StageView({ stage, taskId }: StageViewProps) {
     setCommitPrepTimedOut(false);
   }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
-  // Pre-fill research input with initial input (e.g. from Linear import)
+  // Pre-fill research input with initial input (e.g. from Linear import).
+  // Consumed once from localStorage so it survives app restarts but is cleared
+  // after first use. latestExecution is in deps so the effect re-runs once async
+  // loadExecutions completes — fixing the race where stale executions from a
+  // previous task caused the !latestExecution guard to incorrectly block pre-fill.
+  // hasUserEdited prevents overwriting text the user has already typed.
   const consumeInitialInput = useTaskStore((s) => s.consumeInitialInput);
   useEffect(() => {
-    if (task && needsUserInput && !latestExecution) {
+    if (task && needsUserInput && !latestExecution && !hasUserEdited.current) {
       const input = consumeInitialInput(task.id);
       if (input) setUserInput(input);
     }
-  }, [task?.id]);
+  }, [task?.id, needsUserInput, latestExecution]);
 
   // Past completed rounds (everything except the latest)
   const pastExecs = useMemo(
@@ -363,7 +369,7 @@ export function StageView({ stage, taskId }: StageViewProps) {
         <StageInputArea
           needsUserInput={needsUserInput}
           userInput={userInput}
-          onUserInputChange={setUserInput}
+          onUserInputChange={(v) => { hasUserEdited.current = true; setUserInput(v); }}
           stageError={stageError}
           isRunning={isRunning}
           onRun={handleRun}
