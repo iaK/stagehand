@@ -55,7 +55,6 @@ export async function initProjectSchema(db: Database): Promise<void> {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
       current_stage_id TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       archived INTEGER NOT NULL DEFAULT 0,
@@ -138,6 +137,9 @@ export async function initProjectSchema(db: Database): Promise<void> {
 
   // Add requires_user_input column
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN requires_user_input INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+
+  // Add agent column
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN agent TEXT`).catch(() => {});
   await db.execute(`UPDATE stage_templates SET requires_user_input = 1 WHERE input_source IN ('user', 'both') AND requires_user_input = 0`).catch(() => {});
 
   // Migrate old completion strategy values

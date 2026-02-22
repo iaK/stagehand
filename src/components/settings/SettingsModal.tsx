@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { useTheme } from "next-themes";
 import { useProjectStore } from "../../stores/projectStore";
+import { sendNotification } from "../../lib/notifications";
 import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
 import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
 import { GitHubSettingsContent } from "../github/GitHubSettings";
 import { GitHubConventionsContent } from "../github/GitHubConventions";
+import { AgentSettingsContent } from "../agents/AgentSettings";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section = "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions";
+type Section = "project" | "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions" | "agents";
 
 type NavItem =
   | { header: string }
@@ -21,10 +24,11 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const [activeSection, setActiveSection] = useState<Section>("archived");
+  const [activeSection, setActiveSection] = useState<Section>(activeProject ? "project" : "archived");
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
+    { section: "project", label: "Project", projectRequired: true },
     { section: "archived", label: "Archived Projects" },
     { section: "appearance", label: "Appearance" },
     { section: "pipeline", label: "Pipeline", projectRequired: true },
@@ -33,6 +37,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     { section: "github", label: "Git", projectRequired: true },
     { header: "WORKFLOW" },
     { section: "conventions", label: "Conventions", projectRequired: true },
+    { section: "agents", label: "AI Agents", projectRequired: true },
   ];
 
   const currentItem = navItems.find(
@@ -132,6 +137,8 @@ function SectionContent({
   projectId?: string;
 }) {
   switch (section) {
+    case "project":
+      return <ProjectSettings projectId={projectId!} />;
     case "archived":
       return <ArchivedProjectsSettings />;
     case "appearance":
@@ -142,6 +149,8 @@ function SectionContent({
       return <GitHubSettingsContent projectId={projectId!} />;
     case "conventions":
       return <GitHubConventionsContent projectId={projectId!} />;
+    case "agents":
+      return <AgentSettingsContent projectId={projectId!} />;
     default:
       return null;
   }
@@ -186,6 +195,78 @@ function AppearanceSettings() {
             </div>
           </label>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectSettings({ projectId }: { projectId: string }) {
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const archiveProject = useProjectStore((s) => s.archiveProject);
+  const renameProject = useProjectStore((s) => s.renameProject);
+  const [confirming, setConfirming] = useState(false);
+  const [name, setName] = useState(activeProject?.name ?? "");
+  const nameChanged = name.trim() !== "" && name.trim() !== activeProject?.name;
+
+  const handleRename = async () => {
+    if (!nameChanged) return;
+    await renameProject(projectId, name.trim());
+    sendNotification("Project renamed", name.trim(), "success", { projectId });
+  };
+
+  const handleArchive = async () => {
+    if (!activeProject) return;
+    await archiveProject(activeProject.id);
+    sendNotification("Project archived", activeProject.name, "success", { projectId });
+    setConfirming(false);
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-semibold text-foreground">Project</h2>
+      <p className="text-sm text-muted-foreground mt-1 mb-6">
+        Manage the current project.
+      </p>
+
+      <div className="border border-border rounded-md p-4 space-y-1 mb-4">
+        <p className="text-sm font-medium text-foreground">Name</p>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleRename()}
+            className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          {nameChanged && (
+            <Button size="sm" onClick={handleRename}>
+              Save
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="border border-border rounded-md p-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-foreground">Archive project</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Remove this project from the sidebar. You can restore it later from Archived Projects.
+          </p>
+        </div>
+        {confirming ? (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" onClick={handleArchive}>
+              Confirm
+            </Button>
+          </div>
+        ) : (
+          <Button variant="outline" size="sm" className="flex-shrink-0" onClick={() => setConfirming(true)}>
+            Archive
+          </Button>
+        )}
       </div>
     </div>
   );

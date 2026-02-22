@@ -65,8 +65,21 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
       });
       observer.observe(containerRef.current);
 
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          try {
+            fit.fit();
+            term.scrollToBottom();
+          } catch {
+            // ignore if disposed
+          }
+        }
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
       return () => {
         observer.disconnect();
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         term.dispose();
         termRef.current = null;
         fitRef.current = null;
@@ -77,7 +90,8 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     return (
       <div
         ref={containerRef}
-        className="w-full h-full min-h-[300px] rounded-lg overflow-hidden border border-border"
+        className="w-full h-full min-h-[300px] rounded-lg overflow-hidden border border-border px-3 py-2"
+        style={{ backgroundColor: "#09090b" }}
       />
     );
   },

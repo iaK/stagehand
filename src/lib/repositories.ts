@@ -94,14 +94,14 @@ export async function createProject(name: string, path: string): Promise<Project
   const templates = getDefaultStageTemplates(id);
   for (const t of templates) {
     await projectDb.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
-        t.allowed_tools, t.requires_user_input,
+        t.allowed_tools, t.requires_user_input, t.agent,
       ],
     );
   }
@@ -168,6 +168,8 @@ export async function updateStageTemplate(
       | "sort_order"
       | "allowed_tools"
       | "persona_system_prompt"
+      | "persona_model"
+      | "agent"
       | "requires_user_input"
     >
   >,
@@ -203,15 +205,15 @@ export async function createStageTemplate(
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+    `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
     [
       id, template.project_id, template.name, template.description,
       template.sort_order, template.prompt_template, template.input_source,
       template.output_format, template.output_schema, template.gate_rules,
       template.persona_name, template.persona_system_prompt, template.persona_model,
       template.preparation_prompt, template.allowed_tools,
-      template.requires_user_input, now, now,
+      template.requires_user_input, template.agent, now, now,
     ],
   );
 
@@ -219,7 +221,7 @@ export async function createStageTemplate(
 }
 
 /** Output formats that identify non-deletable "special" stages. */
-export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "task_splitting", "pr_preparation", "pr_review", "merge"];
+export const SPECIAL_STAGE_FORMATS: OutputFormat[] = ["research", "pr_preparation", "pr_review", "merge"];
 
 export function isSpecialStage(format: OutputFormat): boolean {
   return (SPECIAL_STAGE_FORMATS as string[]).includes(format);
@@ -315,15 +317,15 @@ export async function duplicateStageTemplate(
     );
 
     await db.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [
         newTemplate.id, newTemplate.project_id, newTemplate.name, newTemplate.description,
         newTemplate.sort_order, newTemplate.prompt_template, newTemplate.input_source,
         newTemplate.output_format, newTemplate.output_schema, newTemplate.gate_rules,
         newTemplate.persona_name, newTemplate.persona_system_prompt, newTemplate.persona_model,
         newTemplate.preparation_prompt, newTemplate.allowed_tools,
-        newTemplate.requires_user_input, now, now,
+        newTemplate.requires_user_input, newTemplate.agent, now, now,
       ],
     );
   });
@@ -345,7 +347,6 @@ export async function createTask(
   projectId: string,
   title: string,
   firstStageId: string,
-  description: string = "",
   branchName?: string,
   worktreePath?: string,
   parentTaskId?: string,
@@ -355,16 +356,15 @@ export async function createTask(
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [id, projectId, title, description, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
+    `INSERT INTO tasks (id, project_id, title, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [id, projectId, title, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
   );
 
   return {
     id,
     project_id: projectId,
     title,
-    description,
     current_stage_id: firstStageId,
     status: "pending",
     branch_name: branchName ?? null,

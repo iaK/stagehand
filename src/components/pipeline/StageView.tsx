@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
@@ -30,23 +30,32 @@ import type { StageTemplate } from "../../lib/types";
 
 interface StageViewProps {
   stage: StageTemplate;
+  taskId: string;
 }
 
-export function StageView({ stage }: StageViewProps) {
+export function StageView({ stage, taskId }: StageViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const activeTask = useTaskStore((s) => s.activeTask);
+  const tasks = useTaskStore((s) => s.tasks);
+  const storeTask = useMemo(() => tasks.find((t) => t.id === taskId) ?? null, [tasks, taskId]);
+  // Cache the task so it survives project switches (store.tasks gets replaced)
+  const taskRef = useRef(storeTask);
+  if (storeTask) taskRef.current = storeTask;
+  const task = storeTask ?? taskRef.current;
   const executions = useTaskStore((s) => s.executions);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const setTaskStages = useTaskStore((s) => s.setTaskStages);
-  const sk = activeTask ? stageKey(activeTask.id, stage.id) : stage.id;
+  const sk = task ? stageKey(task.id, stage.id) : stage.id;
   const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
-  useProcessHealthCheck(stage.id);
+  useProcessHealthCheck(stage.id, taskId);
   const [userInput, setUserInput] = useState("");
+  // Tracks whether the user has manually edited the textarea since this StageView
+  // mounted. Used by the pre-fill effect to avoid overwriting intentional edits.
+  const hasUserEdited = useRef(false);
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -65,24 +74,24 @@ export function StageView({ stage }: StageViewProps) {
   }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
 
   const handleCommit = async () => {
-    if (!activeProject || !activeTask || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== stage.id) return;
     setCommitting(true);
     setCommitError(null);
     try {
-      const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+      const workDir = getTaskWorkingDir(task, activeProject.path);
       await gitAdd(workDir);
       const result = await gitCommit(workDir, commitMessage);
       const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
       const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
       useProcessStore.getState().setCommitted(stage.id, shortHash);
       useProcessStore.getState().clearPendingCommit();
-      sendNotification("Changes committed", shortHash, "success", { projectId: activeProject.id, taskId: activeTask.id });
-      await approveStage(activeTask, stage);
+      sendNotification("Changes committed", shortHash, "success", { projectId: activeProject.id, taskId: task.id });
+      await approveStage(task, stage);
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
       // Re-check git status — if user committed externally, switch to continue button
-      if (activeTask && activeProject) {
-        generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
+      if (task && activeProject) {
+        generatePendingCommit(task, stage, activeProject.path, activeProject.id).catch(() => {});
       }
     } finally {
       setCommitting(false);
@@ -103,7 +112,7 @@ export function StageView({ stage }: StageViewProps) {
   );
 
   const stageStatus = latestExecution?.status ?? "pending";
-  const isCurrentStage = activeTask?.current_stage_id === stage.id;
+  const isCurrentStage = task?.current_stage_id === stage.id;
   const isApproved = stageStatus === "approved";
   const needsUserInput = !!stage.requires_user_input;
 
@@ -118,7 +127,7 @@ export function StageView({ stage }: StageViewProps) {
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost,
   // or a stale pendingCommit from a different stage is still in the store)
   const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
-  const hasPendingCommitForThisStage = pendingCommit?.stageId === stage.id && pendingCommit?.taskId === activeTask?.id;
+  const hasPendingCommitForThisStage = pendingCommit?.stageId === stage.id && pendingCommit?.taskId === task?.id;
   useEffect(() => {
     if (
       isCurrentStage &&
@@ -126,14 +135,14 @@ export function StageView({ stage }: StageViewProps) {
       !isRunning &&
       !committedHash &&
       !commitMessageLoading &&
-      activeTask &&
+      task &&
       activeProject
     ) {
       // Always re-check git status when this stage is rendered as current + awaiting_user
       // This handles: app restart, navigation back to stage, external commits
-      generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id).catch(() => {});
+      generatePendingCommit(task, stage, activeProject.path, activeProject.id).catch(() => {});
     }
-  }, [isCurrentStage, stageStatus, isRunning, committedHash, activeTask?.id, activeProject?.id]);
+  }, [isCurrentStage, stageStatus, isRunning, committedHash, task?.id, activeProject?.id]);
 
   // Timeout fallback: if commit preparation takes too long, let the user approve manually
   useEffect(() => {
@@ -152,12 +161,22 @@ export function StageView({ stage }: StageViewProps) {
     setCommitPrepTimedOut(false);
   }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
-  // Pre-fill research input with task description (e.g. from Linear import)
+  // Pre-fill research input with initial input (e.g. from Linear import).
+  // Consumed once from localStorage so it survives app restarts but is cleared
+  // after first use. latestExecution is in deps so the effect re-runs once async
+  // loadExecutions completes — fixing the race where stale executions from a
+  // previous task caused the !latestExecution guard to incorrectly block pre-fill.
+  //
+  // hasUserEdited prevents this effect from overwriting text the user has already
+  // typed. The ref resets to false on every remount (i.e. every task switch),
+  // so the guard is scoped to the current StageView instance.
+  const consumeInitialInput = useTaskStore((s) => s.consumeInitialInput);
   useEffect(() => {
-    if (activeTask?.description && needsUserInput && !latestExecution) {
-      setUserInput(activeTask.description);
+    if (task && needsUserInput && !latestExecution && !hasUserEdited.current) {
+      const input = consumeInitialInput(task.id);
+      if (input) setUserInput(input);
     }
-  }, [activeTask?.id]);
+  }, [task?.id, needsUserInput, latestExecution]);
 
   // Past completed rounds (everything except the latest)
   const pastExecs = useMemo(
@@ -166,10 +185,10 @@ export function StageView({ stage }: StageViewProps) {
   );
 
   const handleRun = async () => {
-    if (!activeTask) return;
+    if (!task) return;
     setStageError(null);
     try {
-      await runStage(activeTask, stage, userInput || undefined);
+      await runStage(task, stage, userInput || undefined);
     } catch (err) {
       logger.error("Failed to run stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -177,7 +196,7 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   const handleApprove = async (decision?: string) => {
-    if (!activeProject || !activeTask) return;
+    if (!activeProject || !task) return;
     setApproving(true);
     setStageError(null);
     // Clear commit-related state so it doesn't leak into the next stage
@@ -186,8 +205,8 @@ export function StageView({ stage }: StageViewProps) {
     }
     useProcessStore.getState().clearPendingCommit();
     try {
-      await approveStage(activeTask, stage, decision);
-      sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: activeTask.id });
+      await approveStage(task, stage, decision);
+      sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: task.id });
     } catch (err) {
       logger.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -196,13 +215,13 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   const handleRedo = async () => {
-    if (!activeTask) return;
+    if (!task) return;
     useProcessStore.getState().clearPendingCommit();
     useProcessStore.getState().setNoChangesToCommit(null);
     setShowFeedback(false);
     setStageError(null);
     try {
-      await redoStage(activeTask, stage, feedback || undefined);
+      await redoStage(task, stage, feedback || undefined);
       setFeedback("");
     } catch (err) {
       logger.error("Failed to redo stage:", err);
@@ -211,13 +230,13 @@ export function StageView({ stage }: StageViewProps) {
   };
 
   const handleSubmitAnswers = async (answers: string) => {
-    if (!activeTask) return;
+    if (!task) return;
     setStageError(null);
-    await redoStage(activeTask, stage, answers);
+    await redoStage(task, stage, answers);
   };
 
   const handleApproveWithStages = async (selectedStageIds: string[]) => {
-    if (!activeTask || !activeProject) return;
+    if (!task || !activeProject) return;
     setApproving(true);
     // Clear commit-related state so it doesn't leak into the next stage
     useProcessStore.getState().clearPendingCommit();
@@ -241,8 +260,8 @@ export function StageView({ stage }: StageViewProps) {
         })
         .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
 
-      await setTaskStages(activeProject.id, activeTask.id, stages);
-      await approveStage(activeTask, stage);
+      await setTaskStages(activeProject.id, task.id, stages);
+      await approveStage(task, stage);
     } catch (err) {
       logger.error("Failed to approve with stages:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -250,8 +269,8 @@ export function StageView({ stage }: StageViewProps) {
     }
   };
 
-  const handleSplitTask = async (subtasks: { title: string; description: string }[]) => {
-    if (!activeProject || !activeTask) return;
+  const handleSplitTask = async (subtasks: { title: string; initialInput?: string }[]) => {
+    if (!activeProject || !task) return;
     setApproving(true);
     setStageError(null);
     try {
@@ -259,18 +278,18 @@ export function StageView({ stage }: StageViewProps) {
         // 1. Create child tasks in the database
         await useTaskStore.getState().createSubtasks(
           activeProject.id,
-          activeTask.id,
+          task.id,
           subtasks,
         );
         // 2. Update parent task status to "split" (terminal)
         await useTaskStore.getState().updateTask(
           activeProject.id,
-          activeTask.id,
+          task.id,
           { status: "split" },
         );
       }
       // 3. Approve the split stage (marks execution as approved)
-      await approveStage(activeTask, stage);
+      await approveStage(task, stage);
     } catch (err) {
       logger.error("Failed to split task:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -278,10 +297,10 @@ export function StageView({ stage }: StageViewProps) {
     }
   };
 
-  if (!activeProject || !activeTask) return null;
+  if (!activeProject || !task) return null;
 
   // Ejected: full-screen overlay blocking all stage interaction
-  if (activeTask.ejected) {
+  if (task.ejected) {
     return (
       <div className="flex-1 flex items-center justify-center h-full bg-background/80 backdrop-blur-sm">
         <div className="text-center space-y-4 max-w-md">
@@ -316,7 +335,7 @@ export function StageView({ stage }: StageViewProps) {
 
   // Interactive Terminal: self-contained PTY-based stage
   if (stage.output_format === "interactive_terminal") {
-    return <InteractiveTerminalStageView stage={stage} />;
+    return <InteractiveTerminalStageView stage={stage} taskId={taskId} />;
   }
 
   // PR Review: delegated to dedicated subcomponent
@@ -324,7 +343,7 @@ export function StageView({ stage }: StageViewProps) {
     return (
       <PrReviewView
         stage={stage}
-        task={activeTask}
+        task={task}
       />
     );
   }
@@ -355,7 +374,7 @@ export function StageView({ stage }: StageViewProps) {
         <StageInputArea
           needsUserInput={needsUserInput}
           userInput={userInput}
-          onUserInputChange={setUserInput}
+          onUserInputChange={(v) => { hasUserEdited.current = true; setUserInput(v); }}
           stageError={stageError}
           isRunning={isRunning}
           onRun={handleRun}
@@ -481,7 +500,7 @@ export function StageView({ stage }: StageViewProps) {
             <LiveStreamBubble
               stageKey={sk}
               label={`${stage.name} working...`}
-              onStop={() => killCurrent(activeTask!.id, stage.id)}
+              onStop={() => killCurrent(task!.id, stage.id)}
             />
           )}
 

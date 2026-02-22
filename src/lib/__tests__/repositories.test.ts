@@ -255,12 +255,11 @@ describe("listTasks", () => {
 
 describe("createTask", () => {
   it("inserts task and returns it", async () => {
-    const result = await createTask("p1", "Fix bug", "stage-1", "desc", "feature/fix");
+    const result = await createTask("p1", "Fix bug", "stage-1", "feature/fix");
     expect(result.title).toBe("Fix bug");
     expect(result.project_id).toBe("p1");
     expect(result.status).toBe("pending");
     expect(result.branch_name).toBe("feature/fix");
-    expect(result.description).toBe("desc");
   });
 
   it("uses null for branch_name when not provided", async () => {

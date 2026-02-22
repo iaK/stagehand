@@ -1,14 +1,15 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore } from "../../stores/processStore";
 import { spawnPty, writeToPty, resizePty, killPty, spawnAgent, DEFAULT_AGENT_CONFIG } from "../../lib/agent";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { generatePendingCommit } from "../../hooks/useStageExecution";
+import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
+import { toast } from "sonner";
 import { XTerminal, type XTerminalHandle } from "./XTerminal";
 import { CommitWorkflow } from "./CommitWorkflow";
 import { gitAdd, gitCommit } from "../../lib/git";
@@ -24,6 +25,7 @@ import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types"
  */
 interface Props {
   stage: StageTemplate;
+  taskId: string;
 }
 
 type SessionState =
@@ -34,11 +36,17 @@ type SessionState =
   | "awaiting_commit"
   | "completed";
 
-export function InteractiveTerminalStageView({ stage }: Props) {
+export function InteractiveTerminalStageView({ stage, taskId }: Props) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const activeTask = useTaskStore((s) => s.activeTask);
+  const tasks = useTaskStore((s) => s.tasks);
+  const storeTask = useMemo(() => tasks.find((t) => t.id === taskId) ?? null, [tasks, taskId]);
+  // Cache the task so it survives project switches (store.tasks gets replaced)
+  const taskCacheRef = useRef(storeTask);
+  if (storeTask) taskCacheRef.current = storeTask;
+  const task = storeTask ?? taskCacheRef.current;
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const { runStage } = useStageExecution();
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
@@ -49,6 +57,14 @@ export function InteractiveTerminalStageView({ stage }: Props) {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+
+  // Only refresh the global executions store if this is the active task,
+  // to avoid overwriting another task's data when this component is hidden
+  const safeLoadExecutions = useCallback(async (projectId: string, tId: string) => {
+    if (useTaskStore.getState().activeTask?.id === tId) {
+      await loadExecutions(projectId, tId);
+    }
+  }, [loadExecutions]);
 
   const ptyIdRef = useRef<string | null>(null);
   const xtermRef = useRef<XTerminalHandle>(null);
@@ -76,7 +92,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
   }, [isApproved]);
 
   const handleStart = useCallback(async () => {
-    if (!activeProject || !activeTask) return;
+    if (!activeProject || !task) return;
     setSessionState("starting");
     setError(null);
 
@@ -89,7 +105,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
       // Build system prompt from prior stages (mirrors useStageExecution)
       const approvedOutputs = await repo.getApprovedStageOutputs(
         activeProject.id,
-        activeTask.id,
+        task.id,
       );
 
       let systemPrompt =
@@ -122,7 +138,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
       // Create execution record
       await repo.createStageExecution(activeProject.id, {
         id: executionId,
-        task_id: activeTask.id,
+        task_id: task.id,
         stage_template_id: stage.id,
         attempt_number: attemptNumber,
         status: "running",
@@ -146,9 +162,27 @@ export function InteractiveTerminalStageView({ stage }: Props) {
         started_at: new Date().toISOString(),
       });
 
-      await loadExecutions(activeProject.id, activeTask.id);
+      await safeLoadExecutions(activeProject.id, task.id);
 
-      const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+
+      // Copy last stage output to clipboard so user can paste it into the terminal
+      if (approvedOutputs.length > 0) {
+        const last = approvedOutputs[approvedOutputs.length - 1];
+        const content = last.stage_result || last.stage_summary || "";
+        if (content) {
+          try {
+            await navigator.clipboard.writeText(content);
+            toast.success(`Copied ${last.stage_name} output to clipboard`);
+          } catch {
+            // clipboard may not be available
+          }
+        }
+      }
+
+      // Resolve effective agent (stage override → project default → "claude")
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
 
       // Spawn PTY
       outputBufferRef.current = "";
@@ -156,6 +190,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
         {
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
+          agent: effectiveAgent,
         },
         (event: PtyEvent) => {
           switch (event.type) {
@@ -193,13 +228,13 @@ export function InteractiveTerminalStageView({ stage }: Props) {
           error_message: msg,
           completed_at: new Date().toISOString(),
         }).catch((e) => logger.error("Failed to update execution after PTY spawn error", e));
-        await loadExecutions(activeProject.id, activeTask.id).catch(() => {});
+        await safeLoadExecutions(activeProject.id, task.id).catch(() => {});
       }
     }
-  }, [activeProject, activeTask, executions, stage, loadExecutions]);
+  }, [activeProject, task, executions, stage, safeLoadExecutions]);
 
   const handleFinish = useCallback(async () => {
-    if (!activeProject || !activeTask) return;
+    if (!activeProject || !task) return;
     setSessionState("finishing");
 
     // Kill PTY if still alive
@@ -220,7 +255,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
       await spawnAgent(
         {
           prompt: summaryPrompt,
-          workingDirectory: getTaskWorkingDir(activeTask, activeProject.path),
+          workingDirectory: getTaskWorkingDir(task, activeProject.path),
           noSessionPersistence: true,
           allowedTools: [],
           maxTurns: 1,
@@ -253,10 +288,10 @@ export function InteractiveTerminalStageView({ stage }: Props) {
         completed_at: new Date().toISOString(),
       });
 
-      await loadExecutions(activeProject.id, activeTask.id);
+      await safeLoadExecutions(activeProject.id, task.id);
 
       // Generate pending commit
-      await generatePendingCommit(activeTask, stage, activeProject.path, activeProject.id);
+      await generatePendingCommit(task, stage, activeProject.path, activeProject.id);
 
       setSessionState("awaiting_commit");
     } catch (err) {
@@ -268,10 +303,10 @@ export function InteractiveTerminalStageView({ stage }: Props) {
         error_message: msg,
         completed_at: new Date().toISOString(),
       }).catch((e) => logger.error("Failed to update execution after finish error", e));
-      await loadExecutions(activeProject.id, activeTask.id).catch(() => {});
+      await safeLoadExecutions(activeProject.id, task.id).catch(() => {});
       setSessionState("idle");
     }
-  }, [activeProject, activeTask, stage, loadExecutions]);
+  }, [activeProject, task, stage, safeLoadExecutions]);
 
   // When sessionState transitions to "finishing" and PTY is already dead, trigger finish logic
   useEffect(() => {
@@ -288,22 +323,22 @@ export function InteractiveTerminalStageView({ stage }: Props) {
     }
     setSessionState("idle");
     // Mark execution as failed
-    if (activeProject && activeTask && executionIdRef.current) {
+    if (activeProject && task && executionIdRef.current) {
       await repo.updateStageExecution(activeProject.id, executionIdRef.current, {
         status: "failed",
         error_message: "Stopped by user",
         completed_at: new Date().toISOString(),
       }).catch(() => {});
-      await loadExecutions(activeProject.id, activeTask.id).catch(() => {});
+      await safeLoadExecutions(activeProject.id, task.id).catch(() => {});
     }
-  }, [activeProject, activeTask, loadExecutions]);
+  }, [activeProject, task, safeLoadExecutions]);
 
   const handleCommit = async () => {
-    if (!activeProject || !activeTask || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== stage.id) return;
     setCommitting(true);
     setCommitError(null);
     try {
-      const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+      const workDir = getTaskWorkingDir(task, activeProject.path);
       await gitAdd(workDir);
       const result = await gitCommit(workDir, commitMessage);
       const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
@@ -312,7 +347,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
       useProcessStore.getState().clearPendingCommit();
       sendNotification("Changes committed", shortHash, "success", {
         projectId: activeProject.id,
-        taskId: activeTask.id,
+        taskId: task.id,
       });
       await handleApprove();
     } catch (e) {
@@ -323,7 +358,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
   };
 
   const handleApprove = async () => {
-    if (!activeProject || !activeTask) return;
+    if (!activeProject || !task) return;
     setApproving(true);
 
     const executionId = executionIdRef.current;
@@ -341,7 +376,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
 
       sendNotification("Stage approved", stage.name, "success", {
         projectId: activeProject.id,
-        taskId: activeTask.id,
+        taskId: task.id,
       });
 
       // Advance to next stage
@@ -351,16 +386,26 @@ export function InteractiveTerminalStageView({ stage }: Props) {
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 
       if (nextStage) {
-        await useTaskStore.getState().updateTask(activeProject.id, activeTask.id, {
+        await useTaskStore.getState().updateTask(activeProject.id, task.id, {
           current_stage_id: nextStage.id,
         });
+
+        // Auto-start next stage if it doesn't require user input
+        if (shouldAutoStartStage(nextStage)) {
+          const freshTask = useTaskStore.getState().activeTask;
+          if (freshTask && freshTask.id === task.id) {
+            runStage(freshTask, nextStage).catch((err) => {
+              logger.error("Auto-start next stage failed:", err);
+            });
+          }
+        }
       } else {
-        await useTaskStore.getState().updateTask(activeProject.id, activeTask.id, {
+        await useTaskStore.getState().updateTask(activeProject.id, task.id, {
           status: "completed",
         });
       }
 
-      await loadExecutions(activeProject.id, activeTask.id);
+      await safeLoadExecutions(activeProject.id, task.id);
       setSessionState("completed");
     } catch (err) {
       logger.error("Failed to approve interactive terminal stage:", err);
@@ -368,7 +413,7 @@ export function InteractiveTerminalStageView({ stage }: Props) {
     }
   };
 
-  if (!activeProject || !activeTask) return null;
+  if (!activeProject || !task) return null;
 
   // Completed state
   if (sessionState === "completed" || isApproved) {

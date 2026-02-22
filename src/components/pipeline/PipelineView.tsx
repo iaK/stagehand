@@ -45,10 +45,16 @@ export function PipelineView() {
   const filteredStages = useMemo(() => {
     if (!activeTaskId) return stageTemplates;
     const selectedIds = taskStages[activeTaskId];
-    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
+    if (!selectedIds || selectedIds.length === 0) {
+      // During research stage (before user selects stages), only show the current stage
+      const currentStage = stageTemplates.find(
+        (t) => t.id === activeTask?.current_stage_id,
+      );
+      return currentStage ? [currentStage] : stageTemplates;
+    }
     const idSet = new Set(selectedIds);
     return stageTemplates.filter((t) => idSet.has(t.id));
-  }, [stageTemplates, taskStages, activeTaskId]);
+  }, [stageTemplates, taskStages, activeTaskId, activeTask?.current_stage_id]);
 
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
@@ -238,33 +244,33 @@ export function PipelineView() {
     useProcessStore.getState().setViewingStageId(sk);
   }, [viewingStage, activeTaskId]);
 
-  if (!activeProject) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-muted-foreground text-lg">Welcome to Stagehand</p>
-          <p className="text-muted-foreground/60 text-sm mt-2">
-            Create a project to get started
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!activeTask) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full">
-        <p className="text-muted-foreground">Select or create a task to begin</p>
-      </div>
-    );
-  }
+  // Placeholder screens when no project/task — rendered alongside (not instead of)
+  // the mounted stages so that hidden terminals survive project/task switches.
+  const showPlaceholder = !activeProject || !activeTask;
 
   return (
     <div className="flex flex-col h-full">
+      {!activeProject && (
+        <div className="flex-1 flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-muted-foreground text-lg">Welcome to Stagehand</p>
+            <p className="text-muted-foreground/60 text-sm mt-2">
+              Create a project to get started
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeProject && !activeTask && (
+        <div className="flex-1 flex items-center justify-center h-full">
+          <p className="text-muted-foreground">Select or create a task to begin</p>
+        </div>
+      )}
+
       {/* Header bar */}
-      <div className="border-b border-border flex items-center">
+      <div className="border-b border-border flex items-center h-[57px]" style={{ display: showPlaceholder ? "none" : undefined }}>
         {/* Tab toggle */}
-        <div className="flex items-center gap-1 px-4 py-3">
+        <div className="flex items-center gap-1 px-4">
           <button
             onClick={() => setActiveView("overview")}
             className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
@@ -340,7 +346,14 @@ export function PipelineView() {
       ) : (
         <div className="flex-1 overflow-y-auto">
           {viewingStage ? (
-            <StageView key={viewingStage.id} stage={viewingStage} />
+            /* key includes activeTaskId so React fully remounts StageView on
+               task switch, resetting all local useState (userInput, feedback,
+               commitMessage, etc.) and all child component state
+               (MarkdownTextarea.isEditing, StructuredOutput.fields,
+               QuestionCards.selections, StageSelectionPanel.checked).
+               Do NOT simplify back to key={viewingStage.id} — that would let
+               stale state from the previous task bleed into the new one. */
+            <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} taskId={activeTaskId!} />
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">No stage selected</p>

@@ -53,8 +53,8 @@ export async function listProcessesDetailed(): Promise<ProcessInfo[]> {
   return invoke<ProcessInfo[]>("list_processes_detailed");
 }
 
-export async function checkAgentAvailable(): Promise<string> {
-  return invoke<string>("check_agent_available");
+export async function checkAgentAvailable(agent?: string): Promise<string> {
+  return invoke<string>("check_agent_available", { agent: agent ?? null });
 }
 
 // === PTY (Interactive Terminal) ===

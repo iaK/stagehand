@@ -155,13 +155,18 @@ export function useStageExecution() {
             }
             effectiveUserInput = undefined;
           } else {
-            // Preserve original user input from the first attempt
-            const firstAttempt = prevAttempts[0];
-            if (firstAttempt.user_input && userInput) {
-              effectiveUserInput = `${firstAttempt.user_input}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
-            } else if (firstAttempt.user_input && !userInput) {
-              // Retry without new input — re-use original input
-              effectiveUserInput = firstAttempt.user_input;
+            // Accumulate user input from ALL previous attempts so answers
+            // from earlier rounds aren't lost when building the prompt.
+            const allPriorAnswers = prevAttempts
+              .map((a) => a.user_input)
+              .filter(Boolean)
+              .join("\n\n---\n\n");
+
+            if (allPriorAnswers && userInput) {
+              effectiveUserInput = `${allPriorAnswers}\n\n---\n\nAnswers to follow-up questions:\n${userInput}`;
+            } else if (allPriorAnswers && !userInput) {
+              // Retry without new input — re-use all prior answers
+              effectiveUserInput = allPriorAnswers;
             }
           }
         }
@@ -345,6 +350,10 @@ export function useStageExecution() {
           }
         };
 
+        // Resolve effective agent (stage override → project default → "claude")
+        const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+        const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
         // Always instruct the agent not to commit — the app handles
         // committing after the user reviews changes (harmless for read-only stages).
         let systemPrompt = stage.persona_system_prompt ?? undefined;
@@ -414,6 +423,8 @@ export function useStageExecution() {
               !(stage.output_format === "findings" && !!priorAttemptOutput)
                 ? stage.output_schema
                 : undefined,
+            agent: effectiveAgent,
+            personaModel: stage.persona_model ?? undefined,
           },
           onEvent,
         );

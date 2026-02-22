@@ -9,8 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendNotification } from "../../lib/notifications";
 import { isSpecialStage } from "../../lib/repositories";
+import { AVAILABLE_AGENTS } from "../../lib/agents";
 import type { StageTemplate, OutputFormat } from "../../lib/types";
 
 interface StageTemplateEditorProps {
@@ -64,6 +66,8 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       input_source: editingTemplate.input_source,
       gate_rules: editingTemplate.gate_rules,
       persona_system_prompt: editingTemplate.persona_system_prompt,
+      persona_model: editingTemplate.persona_model,
+      agent: editingTemplate.agent,
       allowed_tools: editingTemplate.allowed_tools,
       output_schema: editingTemplate.output_schema,
       requires_user_input: editingTemplate.requires_user_input,
@@ -101,6 +105,62 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
             })
           }
           className="mt-1"
+        />
+      </div>
+
+      <div>
+        <Label>AI Agent</Label>
+        <Select
+          value={editingTemplate.agent ?? ""}
+          onValueChange={(v) =>
+            setEditingTemplate({
+              ...editingTemplate,
+              agent: v === "" ? null : v as StageTemplate['agent'],
+            })
+          }
+        >
+          <SelectTrigger className="mt-1">
+            <SelectValue placeholder="Project Default" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Project Default</SelectItem>
+            {AVAILABLE_AGENTS.map((a) => (
+              <SelectItem key={a.value} value={a.value}>
+                {a.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {editingTemplate.agent && editingTemplate.agent !== "claude" && (
+          <div className="mt-1 space-y-0.5">
+            {editingTemplate.output_schema && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">This agent does not support JSON schema output</p>
+            )}
+            {editingTemplate.persona_system_prompt && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">This agent does not support --append-system-prompt</p>
+            )}
+            {editingTemplate.allowed_tools && (() => { try { return JSON.parse(editingTemplate.allowed_tools!).length > 0; } catch { return false; } })() && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">This agent may not support tool restrictions</p>
+            )}
+            {editingTemplate.agent !== "amp" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">This agent does not support MCP tools — stage context access will be unavailable</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Label>Model Override</Label>
+        <Input
+          value={editingTemplate.persona_model ?? ""}
+          onChange={(e) =>
+            setEditingTemplate({
+              ...editingTemplate,
+              persona_model: e.target.value || null,
+            })
+          }
+          placeholder="Optional — e.g. claude-sonnet-4-5-20250514"
+          className="mt-1 font-mono text-xs"
         />
       </div>
 
@@ -252,6 +312,7 @@ export function StageTemplateEditorContent() {
         persona_name: null,
         persona_system_prompt: null,
         persona_model: null,
+        agent: null,
         preparation_prompt: null,
         allowed_tools: null,
         requires_user_input: 0,

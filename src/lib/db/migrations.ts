@@ -40,6 +40,7 @@ const MIGRATIONS: Migration[] = [
   { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
   { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
   { version: 15, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
+  { version: 16, name: "drop_task_description", fn: migrateDropTaskDescription },
 ];
 
 /**
@@ -798,4 +799,8 @@ async function migrateAgentAgnosticDescriptions(db: Database): Promise<void> {
      WHERE name = 'Guided Implementation'
        AND description LIKE '%Interactive Claude session%'`,
   );
+}
+
+async function migrateDropTaskDescription(db: Database): Promise<void> {
+  await db.execute(`ALTER TABLE tasks DROP COLUMN description`);
 }

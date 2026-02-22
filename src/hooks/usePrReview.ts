@@ -274,6 +274,10 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
+      // Resolve effective agent (stage override → project default → "claude")
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
       // Snapshot currently changed files before Claude modifies anything
       const preFixFiles = await getChangedFiles(workDir).catch(() => []);
       preFixFilesRef.current = new Set(preFixFiles);
@@ -309,6 +313,7 @@ ${fix.body}`;
               workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
+              agent: effectiveAgent,
             },
             (event: AgentStreamEvent) => {
               switch (event.type) {

@@ -92,13 +92,12 @@ describe("taskStore", () => {
       vi.mocked(repo.createTask).mockResolvedValue(newTask);
       vi.mocked(repo.listTasks).mockResolvedValue([newTask]);
 
-      const result = await useTaskStore.getState().addTask("project-1", "New Task", "desc");
+      const result = await useTaskStore.getState().addTask("project-1", "New Task");
 
       expect(repo.createTask).toHaveBeenCalledWith(
         "project-1",
         "New Task",
         "stage-1",
-        "desc",
         undefined,
       );
       expect(result).toEqual(newTask);
