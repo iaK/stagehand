@@ -4,7 +4,7 @@ import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore } from "../../stores/processStore";
 import { spawnPty, writeToPty, resizePty, killPty, spawnClaude } from "../../lib/claude";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { generatePendingCommit } from "../../hooks/useStageExecution";
+import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "../../lib/notifications";
@@ -46,6 +46,7 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
   const task = storeTask ?? taskCacheRef.current;
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
+  const { runStage } = useStageExecution();
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
   const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
@@ -383,6 +384,16 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
         await useTaskStore.getState().updateTask(activeProject.id, task.id, {
           current_stage_id: nextStage.id,
         });
+
+        // Auto-start next stage if it doesn't require user input
+        if (shouldAutoStartStage(nextStage)) {
+          const freshTask = useTaskStore.getState().activeTask;
+          if (freshTask && freshTask.id === task.id) {
+            runStage(freshTask, nextStage).catch((err) => {
+              logger.error("Auto-start next stage failed:", err);
+            });
+          }
+        }
       } else {
         await useTaskStore.getState().updateTask(activeProject.id, task.id, {
           status: "completed",

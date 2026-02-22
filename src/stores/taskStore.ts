@@ -139,6 +139,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
 
     const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
+
+    // Discard stale responses: if the user switched tasks while this fetch was
+    // in flight, the active task has changed and this data should not overwrite
+    // the executions that were (or will be) loaded for the current task.
+    if (get().activeTask?.id !== taskId) return;
+
     set({ executions, taskExecStatuses });
   },
 
@@ -257,10 +263,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         undefined,
         parentTaskId,
       );
+      if (sub.initialInput) setInitialInput(task.id, sub.initialInput);
       created.push(task);
-      if (sub.initialInput) {
-        setInitialInput(task.id, sub.initialInput);
-      }
     }
 
     // Refresh the task list so new subtasks appear in sidebar

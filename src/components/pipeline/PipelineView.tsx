@@ -352,29 +352,29 @@ export function PipelineView() {
         )}
       </div>
 
-      {/* Content — render both views simultaneously; toggle with CSS to preserve terminal state */}
-      <div className="flex-1 overflow-y-auto" style={{ display: !showPlaceholder && activeView === "overview" ? undefined : "none" }}>
-        <TaskOverview />
-      </div>
-      {/* Always rendered so mounted terminals survive project/task switches */}
-      <div className="flex-1 overflow-y-auto" style={{ display: !showPlaceholder && activeView === "pipeline" ? undefined : "none" }}>
-        {Array.from(mountedTaskStages.entries()).map(([tId, stages]) =>
-          stages.map((s) => (
-            <div
-              key={`${tId}:${s.id}`}
-              style={{ display: tId === activeTaskId && viewingStage?.id === s.id ? undefined : "none" }}
-              className="h-full"
-            >
-              <StageView stage={s} taskId={tId} />
+      {/* Content */}
+      {activeView === "overview" ? (
+        <div className="flex-1 overflow-y-auto">
+          <TaskOverview />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {viewingStage ? (
+            /* key includes activeTaskId so React fully remounts StageView on
+               task switch, resetting all local useState (userInput, feedback,
+               commitMessage, etc.) and all child component state
+               (MarkdownTextarea.isEditing, StructuredOutput.fields,
+               QuestionCards.selections, StageSelectionPanel.checked).
+               Do NOT simplify back to key={viewingStage.id} — that would let
+               stale state from the previous task bleed into the new one. */
+            <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">No stage selected</p>
             </div>
-          )),
-        )}
-        {!viewingStage && (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-muted-foreground">No stage selected</p>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Eject Confirmation Dialog */}
       <AlertDialog

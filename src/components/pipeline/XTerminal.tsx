@@ -65,8 +65,21 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
       });
       observer.observe(containerRef.current);
 
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          try {
+            fit.fit();
+            term.scrollToBottom();
+          } catch {
+            // ignore if disposed
+          }
+        }
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
       return () => {
         observer.disconnect();
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         term.dispose();
         termRef.current = null;
         fitRef.current = null;
