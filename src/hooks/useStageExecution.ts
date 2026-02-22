@@ -398,6 +398,10 @@ export function useStageExecution() {
             : stageContext;
         }
 
+        // Resolve effective agent: per-stage override → project default → "claude"
+        const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+        const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
         // Build MCP config for stage context server
         let mcpConfig: string | undefined;
         try {
@@ -432,6 +436,8 @@ export function useStageExecution() {
         await spawnClaude(
           {
             prompt,
+            agent: effectiveAgent,
+            personaModel: stage.persona_model ?? undefined,
             workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,

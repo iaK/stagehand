@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useTheme } from "next-themes";
+
 import { useProjectStore } from "../../stores/projectStore";
 import { sendNotification } from "../../lib/notifications";
-import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
+
 import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
 import { GitHubSettingsContent } from "../github/GitHubSettings";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section = "project" | "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions" | "agents";
+type Section = "project" | "pipeline" | "linear" | "github" | "conventions" | "agents";
 
 type NavItem =
   | { header: string }
@@ -24,13 +24,11 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const [activeSection, setActiveSection] = useState<Section>(activeProject ? "project" : "archived");
+  const [activeSection, setActiveSection] = useState<Section>("project");
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
     { section: "project", label: "Project", projectRequired: true },
-    { section: "archived", label: "Archived Projects" },
-    { section: "appearance", label: "Appearance" },
     { section: "pipeline", label: "Pipeline", projectRequired: true },
     { header: "INTEGRATIONS" },
     { section: "linear", label: "Linear", projectRequired: true },
@@ -139,10 +137,6 @@ function SectionContent({
   switch (section) {
     case "project":
       return <ProjectSettings projectId={projectId!} />;
-    case "archived":
-      return <ArchivedProjectsSettings />;
-    case "appearance":
-      return <AppearanceSettings />;
     case "linear":
       return <LinearSettingsContent projectId={projectId!} />;
     case "github":
@@ -154,50 +148,6 @@ function SectionContent({
     default:
       return null;
   }
-}
-
-function AppearanceSettings() {
-  const { theme, setTheme } = useTheme();
-
-  const options = [
-    { value: "system", label: "System", description: "Follow your OS setting" },
-    { value: "light", label: "Light", description: "Always use light mode" },
-    { value: "dark", label: "Dark", description: "Always use dark mode" },
-  ] as const;
-
-  return (
-    <div>
-      <h2 className="text-lg font-semibold text-foreground">Appearance</h2>
-      <p className="text-sm text-muted-foreground mt-1 mb-4">
-        Choose how Stagehand looks.
-      </p>
-      <div className="space-y-2">
-        {options.map((opt) => (
-          <label
-            key={opt.value}
-            className={`flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
-              theme === opt.value
-                ? "border-primary bg-accent"
-                : "border-border hover:border-primary/50"
-            }`}
-          >
-            <input
-              type="radio"
-              name="theme"
-              value={opt.value}
-              checked={theme === opt.value}
-              onChange={() => setTheme(opt.value)}
-              className="mt-0.5"
-            />
-            <div>
-              <span className="text-sm font-medium text-foreground">{opt.label}</span>
-              <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>
-            </div>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function ProjectSettings({ projectId }: { projectId: string }) {

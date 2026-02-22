@@ -3,6 +3,7 @@ use crate::events::PtyEvent;
 use crate::pty_manager::{PtyEntry, PtyManager};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
 use tauri::State;
 
@@ -14,6 +15,40 @@ pub struct SpawnPtyArgs {
     pub append_system_prompt: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+}
+
+/// Track files written into the working directory for PTY sessions, cleaned up on exit.
+struct PtyTempFiles {
+    workdir_files: Vec<PathBuf>,
+    /// Temp dir under ~/.devflow/tmp/ for agent-specific temp files
+    temp_dir: Option<PathBuf>,
+}
+
+impl PtyTempFiles {
+    fn new() -> Self {
+        Self { workdir_files: Vec::new(), temp_dir: None }
+    }
+
+    fn ensure_temp_dir(&mut self, session_id: &str) -> Result<PathBuf, String> {
+        if let Some(ref dir) = self.temp_dir {
+            return Ok(dir.clone());
+        }
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let dir = home.join(".devflow").join("tmp").join(format!("pty-{}", session_id));
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create temp dir {:?}: {}", dir, e))?;
+        self.temp_dir = Some(dir.clone());
+        Ok(dir)
+    }
+
+    fn cleanup(self) {
+        for path in &self.workdir_files {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(ref dir) = self.temp_dir {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 #[tauri::command]
@@ -33,6 +68,8 @@ pub async fn spawn_pty(
     let cols = args.cols.unwrap_or(120);
     let rows = args.rows.unwrap_or(24);
 
+    let mut temp_files = PtyTempFiles::new();
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -49,10 +86,33 @@ pub async fn spawn_pty(
         cmd.arg(flag);
     }
 
-    if agent.supports_append_system_prompt() {
-        if let Some(ref system_prompt) = args.append_system_prompt {
-            cmd.arg("--append-system-prompt");
-            cmd.arg(system_prompt);
+    // System prompt — per-agent mechanism
+    if let Some(ref system_prompt) = args.append_system_prompt {
+        match agent {
+            Agent::Claude | Agent::Amp => {
+                cmd.arg("--append-system-prompt");
+                cmd.arg(system_prompt);
+            }
+            Agent::Codex => {
+                // Write AGENTS.md in the working directory
+                if let Some(ref dir) = args.working_directory {
+                    let path = Path::new(dir).join("AGENTS.md");
+                    std::fs::write(&path, system_prompt)
+                        .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
+                    temp_files.workdir_files.push(path);
+                }
+            }
+            Agent::Gemini => {
+                // Write system prompt to temp file and set env var
+                let temp_dir = temp_files.ensure_temp_dir(&session_id)?;
+                let path = temp_dir.join("system_prompt.md");
+                std::fs::write(&path, system_prompt)
+                    .map_err(|e| format!("Failed to write Gemini system prompt: {}", e))?;
+                cmd.env("GEMINI_SYSTEM_MD", path.to_string_lossy().as_ref());
+            }
+            Agent::OpenCode => {
+                // No system prompt support
+            }
         }
     }
 
@@ -151,6 +211,9 @@ pub async fn spawn_pty(
                 None
             }
         };
+
+        // Clean up temp files after PTY exits
+        temp_files.cleanup();
 
         let _ = exit_event.send(PtyEvent::Exited {
             id: sid.clone(),

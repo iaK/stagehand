@@ -2,10 +2,160 @@ use crate::agents::Agent;
 use crate::events::AgentStreamEvent;
 use crate::process_manager::ProcessManager;
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+
+/// Temporary directory context for a spawned agent process.
+/// Creates `~/.devflow/tmp/<process_id>/` for temp files (system prompt files,
+/// schema files, config files) and tracks working-directory files that need
+/// cleanup after the process exits.
+struct TempContext {
+    /// The per-process temp directory under ~/.devflow/tmp/
+    dir: PathBuf,
+    /// Files written into the agent's working directory that must be cleaned up.
+    workdir_files: Vec<PathBuf>,
+}
+
+impl TempContext {
+    fn new(process_id: &str) -> Result<Self, String> {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let dir = home.join(".devflow").join("tmp").join(process_id);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create temp dir {:?}: {}", dir, e))?;
+        Ok(Self {
+            dir,
+            workdir_files: Vec::new(),
+        })
+    }
+
+    /// Write a file into the per-process temp directory. Returns the full path.
+    fn write_temp_file(&self, name: &str, content: &str) -> Result<PathBuf, String> {
+        let path = self.dir.join(name);
+        std::fs::write(&path, content)
+            .map_err(|e| format!("Failed to write temp file {:?}: {}", path, e))?;
+        Ok(path)
+    }
+
+    /// Write a file into the working directory and track it for cleanup.
+    fn write_workdir_file(&mut self, workdir: &Path, relative_path: &str, content: &str) -> Result<PathBuf, String> {
+        let path = workdir.join(relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create dir {:?}: {}", parent, e))?;
+        }
+        std::fs::write(&path, content)
+            .map_err(|e| format!("Failed to write workdir file {:?}: {}", path, e))?;
+        self.workdir_files.push(path.clone());
+        Ok(path)
+    }
+
+    /// Clean up all temp files and directories.
+    fn cleanup(self) {
+        // Remove working directory files
+        for path in &self.workdir_files {
+            let _ = std::fs::remove_file(path);
+            // Try to remove parent dir if empty (e.g. .codex/ or .gemini/)
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::remove_dir(parent);
+            }
+        }
+        // Remove the per-process temp directory
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// Convert Claude-format MCP config JSON to Codex `.codex/config.toml` format.
+///
+/// Input (Claude format):
+/// ```json
+/// {"mcpServers":{"name":{"command":"node","args":["path"],"env":{"K":"V"}}}}
+/// ```
+///
+/// Output (Codex TOML):
+/// ```toml
+/// [[mcp_servers]]
+/// name = "name"
+/// command = "node"
+/// args = ["path"]
+/// env = { K = "V" }
+/// ```
+fn convert_mcp_json_to_codex_toml(mcp_json: &str) -> Result<String, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(mcp_json).map_err(|e| format!("Invalid MCP JSON: {}", e))?;
+
+    let servers = parsed
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .ok_or("MCP JSON missing mcpServers object")?;
+
+    let mut toml = String::new();
+    for (name, config) in servers {
+        toml.push_str("[[mcp_servers]]\n");
+        toml.push_str(&format!("name = {:?}\n", name));
+
+        if let Some(command) = config.get("command").and_then(|v| v.as_str()) {
+            toml.push_str(&format!("command = {:?}\n", command));
+        }
+
+        if let Some(args) = config.get("args").and_then(|v| v.as_array()) {
+            let args_str: Vec<String> = args
+                .iter()
+                .filter_map(|a| a.as_str())
+                .map(|a| format!("{:?}", a))
+                .collect();
+            toml.push_str(&format!("args = [{}]\n", args_str.join(", ")));
+        }
+
+        if let Some(env) = config.get("env").and_then(|v| v.as_object()) {
+            if !env.is_empty() {
+                let pairs: Vec<String> = env
+                    .iter()
+                    .map(|(k, v)| {
+                        let val = v.as_str().unwrap_or("");
+                        format!("{} = {:?}", k, val)
+                    })
+                    .collect();
+                toml.push_str(&format!("env = {{ {} }}\n", pairs.join(", ")));
+            }
+        }
+
+        toml.push('\n');
+    }
+
+    Ok(toml)
+}
+
+/// Convert Claude-format MCP config JSON to Gemini `.gemini/settings.json` format.
+///
+/// Input (Claude format):
+/// ```json
+/// {"mcpServers":{"name":{"command":"node","args":["path"],"env":{"K":"V"}}}}
+/// ```
+///
+/// Output (Gemini settings.json):
+/// ```json
+/// {"mcpServers":{"name":{"command":"node","args":["path"],"env":{"K":"V"}}}}
+/// ```
+///
+/// Gemini uses the same format as Claude, so this is essentially a pass-through
+/// but we validate and re-serialize to ensure correctness.
+fn convert_mcp_json_to_gemini_settings(mcp_json: &str) -> Result<String, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(mcp_json).map_err(|e| format!("Invalid MCP JSON: {}", e))?;
+
+    // Verify structure
+    parsed
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .ok_or("MCP JSON missing mcpServers object")?;
+
+    // Gemini uses the same mcpServers format
+    serde_json::to_string_pretty(&parsed)
+        .map_err(|e| format!("Failed to serialize Gemini settings: {}", e))
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +188,9 @@ pub async fn spawn_agent(
         .as_deref()
         .and_then(Agent::from_str_opt)
         .unwrap_or(Agent::Claude);
+
+    // Create temp context for this process
+    let mut temp_ctx = TempContext::new(&process_id)?;
 
     let mut cmd = if agent == Agent::Codex {
         let mut c = Command::new(agent.binary());
@@ -92,17 +245,47 @@ pub async fn spawn_agent(
         }
     }
 
-    // System prompt
-    if agent.supports_append_system_prompt() {
-        if let Some(ref system_prompt) = args.append_system_prompt {
-            cmd.arg("--append-system-prompt").arg(system_prompt);
+    // System prompt — per-agent mechanism
+    if let Some(ref system_prompt) = args.append_system_prompt {
+        match agent {
+            Agent::Claude | Agent::Amp => {
+                cmd.arg("--append-system-prompt").arg(system_prompt);
+            }
+            Agent::Codex => {
+                // Write AGENTS.md in the working directory for Codex to pick up
+                if let Some(ref dir) = args.working_directory {
+                    temp_ctx.write_workdir_file(
+                        Path::new(dir),
+                        "AGENTS.md",
+                        system_prompt,
+                    )?;
+                }
+            }
+            Agent::Gemini => {
+                // Write system prompt to temp file and set GEMINI_SYSTEM_MD env var
+                let path = temp_ctx.write_temp_file("system_prompt.md", system_prompt)?;
+                cmd.env("GEMINI_SYSTEM_MD", &path);
+            }
+            Agent::OpenCode => {
+                // No system prompt support
+            }
         }
     }
 
-    // JSON schema (Claude only)
-    if agent.supports_json_schema() {
-        if let Some(ref schema) = args.json_schema {
-            cmd.arg("--json-schema").arg(schema);
+    // JSON schema — per-agent mechanism
+    if let Some(ref schema) = args.json_schema {
+        match agent {
+            Agent::Claude => {
+                cmd.arg("--json-schema").arg(schema);
+            }
+            Agent::Codex => {
+                // Codex uses --output-schema <file_path>
+                let path = temp_ctx.write_temp_file("output_schema.json", schema)?;
+                cmd.arg("--output-schema").arg(&path);
+            }
+            _ => {
+                // Other agents don't support JSON schema via CLI flag
+            }
         }
     }
 
@@ -133,10 +316,37 @@ pub async fn spawn_agent(
         }
     }
 
-    // MCP config (Claude only)
-    if agent.supports_mcp_config() {
-        if let Some(ref mcp_config) = args.mcp_config {
-            cmd.arg("--mcp-config").arg(mcp_config);
+    // MCP config — per-agent mechanism
+    if let Some(ref mcp_config) = args.mcp_config {
+        match agent {
+            Agent::Claude => {
+                cmd.arg("--mcp-config").arg(mcp_config);
+            }
+            Agent::Codex => {
+                // Write .codex/config.toml in the working directory
+                if let Some(ref dir) = args.working_directory {
+                    let toml = convert_mcp_json_to_codex_toml(mcp_config)?;
+                    temp_ctx.write_workdir_file(
+                        Path::new(dir),
+                        ".codex/config.toml",
+                        &toml,
+                    )?;
+                }
+            }
+            Agent::Gemini => {
+                // Write .gemini/settings.json in the working directory
+                if let Some(ref dir) = args.working_directory {
+                    let settings = convert_mcp_json_to_gemini_settings(mcp_config)?;
+                    temp_ctx.write_workdir_file(
+                        Path::new(dir),
+                        ".gemini/settings.json",
+                        &settings,
+                    )?;
+                }
+            }
+            _ => {
+                // Amp, OpenCode: no MCP config support
+            }
         }
     }
 
@@ -206,6 +416,9 @@ pub async fn spawn_agent(
 
         let _ = stdout_task.await;
         let _ = stderr_task.await;
+
+        // Clean up temp files after process exits
+        temp_ctx.cleanup();
 
         let _ = completion_event.send(AgentStreamEvent::Completed {
             process_id: pid.clone(),

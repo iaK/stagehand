@@ -74,6 +74,13 @@ pub fn run() {
                 let devflow_dir = home.join(".devflow").join("data");
                 std::fs::create_dir_all(&devflow_dir).ok();
                 log::info!("DevFlow data dir: {:?}", devflow_dir);
+
+                // Clean up stale temp dirs from crashed processes
+                let tmp_dir = home.join(".devflow").join("tmp");
+                if tmp_dir.exists() {
+                    std::fs::remove_dir_all(&tmp_dir).ok();
+                    log::info!("Cleaned up stale temp dir: {:?}", tmp_dir);
+                }
             }
 
             Ok(())

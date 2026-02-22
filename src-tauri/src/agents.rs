@@ -48,21 +48,6 @@ impl Agent {
         matches!(self, Agent::Claude)
     }
 
-    /// Whether this agent supports `--json-schema`.
-    pub fn supports_json_schema(&self) -> bool {
-        matches!(self, Agent::Claude)
-    }
-
-    /// Whether this agent supports `--append-system-prompt`.
-    pub fn supports_append_system_prompt(&self) -> bool {
-        !matches!(self, Agent::OpenCode)
-    }
-
-    /// Whether this agent supports `--mcp-config`.
-    pub fn supports_mcp_config(&self) -> bool {
-        matches!(self, Agent::Claude)
-    }
-
     /// Whether this agent supports `--no-session-persistence`.
     pub fn supports_no_session_persistence(&self) -> bool {
         matches!(self, Agent::Claude)
