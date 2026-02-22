@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { spawnClaude } from "../lib/claude";
+import { spawnAgent } from "../lib/agent";
+import { parseAgentStreamLine } from "../lib/agentParsers";
 import {
   parsePrUrl,
   ghFetchPrReviews,
@@ -27,7 +28,7 @@ import type {
   Task,
   StageTemplate,
   PrReviewFix,
-  ClaudeStreamEvent,
+  AgentStreamEvent,
 } from "../lib/types";
 
 export function usePrReview(stage: StageTemplate, task: Task | null) {
@@ -273,7 +274,11 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
-      // Snapshot currently changed files before Claude modifies anything
+      // Resolve effective agent: per-stage override → project default → "claude"
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
+      // Snapshot currently changed files before the agent modifies anything
       const preFixFiles = await getChangedFiles(workDir).catch(() => []);
       preFixFilesRef.current = new Set(preFixFiles);
 
@@ -302,40 +307,31 @@ ${fix.body}`;
 
         let resultText = "";
         await new Promise<void>((resolve) => {
-          spawnClaude(
+          spawnAgent(
             {
               prompt,
+              agent: effectiveAgent,
               workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
             },
-            (event: ClaudeStreamEvent) => {
+            (event: AgentStreamEvent) => {
               switch (event.type) {
                 case "started":
                   setRunning(sk, event.process_id);
                   break;
-                case "stdout_line":
-                  try {
-                    const parsed = JSON.parse(event.line);
-                    if (parsed.type === "assistant" && parsed.message?.content) {
-                      for (const block of parsed.message.content) {
-                        if (block.type === "text") {
-                          appendOutput(sk, block.text);
-                          resultText += block.text;
-                        }
-                      }
-                    } else if (parsed.type === "result") {
-                      const output = parsed.result;
-                      if (output != null && output !== "") {
-                        const text = typeof output === "string" ? output : JSON.stringify(output);
-                        appendOutput(sk, text);
-                        resultText += text;
-                      }
+                case "stdout_line": {
+                  const parsed = parseAgentStreamLine(event.line);
+                  if (parsed) {
+                    if (parsed.text) {
+                      appendOutput(sk, parsed.text);
+                      resultText += parsed.text;
                     }
-                  } catch {
+                  } else {
                     appendOutput(sk, event.line);
                   }
                   break;
+                }
                 case "stderr_line":
                   appendOutput(sk, `[stderr] ${event.line}`);
                   break;
@@ -362,8 +358,9 @@ ${fix.body}`;
           try {
             let msgText = "";
             await new Promise<void>((resolve) => {
-              spawnClaude(
+              spawnAgent(
                 {
+                  agent: effectiveAgent,
                   prompt: `Generate a concise git commit message for fixing a PR review comment.
 
 Review comment by ${fix.author}:
@@ -382,7 +379,7 @@ Keep it under 72 characters for the first line.`,
                   outputFormat: "text",
                   noSessionPersistence: true,
                 },
-                (event: ClaudeStreamEvent) => {
+                (event: AgentStreamEvent) => {
                   if (event.type === "stdout_line") {
                     msgText += event.line + "\n";
                   } else if (event.type === "completed" || event.type === "error") {

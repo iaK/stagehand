@@ -26,6 +26,7 @@ export interface StageTemplate {
   preparation_prompt: string | null;
   allowed_tools: string | null; // JSON array of tool names
   requires_user_input: number; // boolean: stage needs user input before running (shows input box)
+  agent: string | null; // AI agent override: 'claude' | 'codex' | 'gemini' | 'amp' | 'opencode' | null (use project default)
   created_at: string;
   updated_at: string;
 }
@@ -203,19 +204,24 @@ export interface LinearIssue {
   branchName: string | undefined;
 }
 
-// === Claude Stream Events ===
+// === Agent Stream Events ===
 
-export type ClaudeStreamEvent =
+export type AgentStreamEvent =
   | { type: "started"; process_id: string; session_id: string | null }
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
   | { type: "completed"; process_id: string; exit_code: number | null }
   | { type: "error"; process_id: string; message: string };
 
+/** @deprecated Use AgentStreamEvent instead */
+export type ClaudeStreamEvent = AgentStreamEvent;
+
 // === Spawn Args ===
 
-export interface SpawnClaudeArgs {
+export interface SpawnAgentArgs {
   prompt: string;
+  agent?: string;
+  personaModel?: string;
   workingDirectory?: string;
   sessionId?: string;
   stageExecutionId?: string;
@@ -228,6 +234,9 @@ export interface SpawnClaudeArgs {
   mcpConfig?: string;
 }
 
+/** @deprecated Use SpawnAgentArgs instead */
+export type SpawnClaudeArgs = SpawnAgentArgs;
+
 // === PTY Types ===
 
 export type PtyEvent =
@@ -237,6 +246,7 @@ export type PtyEvent =
   | { type: "error"; id: string; message: string };
 
 export interface SpawnPtyArgs {
+  agent?: string;
   workingDirectory?: string;
   appendSystemPrompt?: string;
   cols?: number;

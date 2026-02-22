@@ -139,6 +139,9 @@ export async function initProjectSchema(db: Database): Promise<void> {
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN requires_user_input INTEGER NOT NULL DEFAULT 0`).catch(() => {});
   await db.execute(`UPDATE stage_templates SET requires_user_input = 1 WHERE input_source IN ('user', 'both') AND requires_user_input = 0`).catch(() => {});
 
+  // Add agent column for per-stage agent override
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN agent TEXT`).catch(() => {});
+
   // Migrate old completion strategy values
   await db.execute("UPDATE settings SET value = 'merge' WHERE key = 'default_completion_strategy' AND value = 'direct_merge'").catch(() => {});
   await db.execute("UPDATE settings SET value = 'pr' WHERE key = 'default_completion_strategy' AND value = 'none'").catch(() => {});

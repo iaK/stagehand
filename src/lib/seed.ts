@@ -39,6 +39,7 @@ export function getDefaultStageTemplates(
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
       requires_user_input: 1,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -58,6 +59,7 @@ export function getDefaultStageTemplates(
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -81,6 +83,7 @@ export function getDefaultStageTemplates(
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -100,6 +103,7 @@ export function getDefaultStageTemplates(
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -193,13 +197,14 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "Guided Implementation",
       description:
-        "Interactive Claude session — you guide the AI step by step in a live terminal.",
+        "Interactive agent session — you guide the AI step by step in a live terminal.",
       sort_order: 5,
       prompt_template: "",
       input_source: "previous_stage",
@@ -212,6 +217,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -231,6 +237,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null, // Full tool access
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -250,6 +257,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -269,6 +277,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -288,6 +297,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -310,6 +320,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -329,6 +340,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
     {
       id: crypto.randomUUID(),
@@ -348,6 +360,7 @@ Respond with a JSON object:
       preparation_prompt: null,
       allowed_tools: null,
       requires_user_input: 0,
+      agent: null,
     },
   ];
 }

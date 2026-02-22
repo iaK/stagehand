@@ -40,6 +40,7 @@ const MIGRATIONS: Migration[] = [
   { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
   { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
   { version: 15, name: "drop_task_description", fn: migrateDropTaskDescription },
+  { version: 16, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
 ];
 
 /**
@@ -101,6 +102,16 @@ export async function runPendingMigrations(db: Database): Promise<void> {
 async function detectBaseline(db: Database): Promise<number> {
   // Check for features in reverse order (newest first) to find the highest applied migration
   try {
+    // v16: agent column exists on stage_templates
+    try {
+      const agentCol = await db.select<{ name: string }[]>(
+        "SELECT name FROM pragma_table_info('stage_templates') WHERE name = 'agent'",
+      );
+      if (agentCol.length > 0) return 16;
+    } catch {
+      // pragma may not be available — continue
+    }
+
     // v14: Guided Implementation stage exists
     const giRows = await db.select<{ id: string }[]>(
       "SELECT id FROM stage_templates WHERE name = 'Guided Implementation' LIMIT 1",
@@ -793,4 +804,13 @@ export async function migrateGuidedImplementationStage(db: Database): Promise<vo
 
 async function migrateDropTaskDescription(db: Database): Promise<void> {
   await db.execute(`ALTER TABLE tasks DROP COLUMN description`);
+}
+
+async function migrateAgentAgnosticDescriptions(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+  // Update Guided Implementation description to be agent-agnostic
+  await db.execute(
+    `UPDATE stage_templates SET description = 'Interactive agent session — you guide the AI step by step in a live terminal.', updated_at = $1 WHERE name = 'Guided Implementation' AND description LIKE '%Interactive Claude session%'`,
+    [now],
+  );
 }

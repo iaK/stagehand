@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ThemeProvider } from "next-themes";
 import { Layout } from "./components/layout/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { checkClaudeAvailable } from "./lib/claude";
+import { checkAgentAvailable } from "./lib/agent";
 import { useOrphanedProcessCleanup } from "./hooks/useOrphanedProcessCleanup";
 import { requestNotificationPermission, registerNotificationClickHandler } from "./lib/notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,7 +17,7 @@ function App() {
   useEffect(() => {
     requestNotificationPermission();
     const unregisterPromise = registerNotificationClickHandler();
-    checkClaudeAvailable().catch((err) => {
+    checkAgentAvailable().catch((err) => {
       setClaudeError(String(err));
     });
     return () => {

@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
-import { spawnPty, writeToPty, resizePty, killPty, spawnClaude } from "../../lib/claude";
+import { spawnPty, writeToPty, resizePty, killPty, spawnAgent } from "../../lib/agent";
+import { parseAgentStreamLine } from "../../lib/agentParsers";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
@@ -16,7 +17,7 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, ClipboardCopy } from "lucide-react";
-import type { StageTemplate, PtyEvent, ClaudeStreamEvent } from "../../lib/types";
+import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types";
 
 /**
  * InteractiveTerminalStageView — self-contained stage component (same pattern
@@ -71,6 +72,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const xtermRef = useRef<XTerminalHandle>(null);
   const outputBufferRef = useRef("");
   const executionIdRef = useRef<string | null>(null);
+  const effectiveAgentRef = useRef<string>("claude");
 
   // Check if already approved
   const latestExecution = executions
@@ -217,10 +219,16 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         }
       }
 
+      // Resolve effective agent for the PTY session
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+      effectiveAgentRef.current = effectiveAgent;
+
       // Spawn PTY
       outputBufferRef.current = "";
       const ptyId = await spawnPty(
         {
+          agent: effectiveAgent,
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
         },
@@ -286,35 +294,32 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     if (!executionId) return;
 
     try {
-      // Generate summary via one-shot claude -p call
+      // Generate summary via one-shot agent call
       const rawOutput = outputBufferRef.current;
-      const summaryPrompt = `Summarize what was accomplished in this interactive Claude session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
+      const summaryPrompt = `Summarize what was accomplished in this interactive agent session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
 
       let summary = "";
-      await spawnClaude(
+      await spawnAgent(
         {
           prompt: summaryPrompt,
+          agent: effectiveAgentRef.current,
           workingDirectory: getTaskWorkingDir(task, activeProject.path),
           noSessionPersistence: true,
           allowedTools: [],
           maxTurns: 1,
         },
-        (event: ClaudeStreamEvent) => {
+        (event: AgentStreamEvent) => {
           if (event.type === "stdout_line") {
-            try {
-              const parsed = JSON.parse(event.line);
-              if (parsed.type === "result") {
-                summary = parsed.result ?? "";
-              }
-            } catch {
-              // not JSON
+            const parsed = parseAgentStreamLine(event.line);
+            if (parsed?.type === "result" && parsed.text) {
+              summary = parsed.text;
             }
           }
         },
       );
 
       if (!summary) {
-        summary = "Interactive Claude session completed.";
+        summary = "Interactive agent session completed.";
       }
 
       // Update execution
@@ -453,6 +458,8 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     }
   };
 
+  const agentLabel = effectiveAgentRef.current.charAt(0).toUpperCase() + effectiveAgentRef.current.slice(1);
+
   if (!activeProject || !task) return null;
 
   // Completed state
@@ -489,11 +496,11 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span className="text-sm font-medium text-foreground">
-              Interactive Claude Session
+              Interactive {agentLabel} Session
             </span>
           </div>
           <p className="text-sm text-muted-foreground mb-3">
-            Launch a live Claude terminal where you can guide the AI step by step — type prompts, confirm tool uses, and steer the implementation interactively.
+            Launch a live {agentLabel} terminal where you can guide the AI step by step — type prompts, confirm tool uses, and steer the implementation interactively.
           </p>
           {error && (
             <Alert variant="destructive" className="mb-3">
