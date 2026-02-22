@@ -180,12 +180,17 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
         }
       }
 
+      // Resolve effective agent (stage override → project default → "claude")
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
       // Spawn PTY
       outputBufferRef.current = "";
       const ptyId = await spawnPty(
         {
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
+          agent: effectiveAgent,
         },
         (event: PtyEvent) => {
           switch (event.type) {

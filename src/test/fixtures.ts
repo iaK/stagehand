@@ -53,6 +53,7 @@ export function makeStageTemplate(
     persona_name: null,
     persona_system_prompt: null,
     persona_model: null,
+    agent: null,
     preparation_prompt: null,
     allowed_tools: null,
     requires_user_input: 0,

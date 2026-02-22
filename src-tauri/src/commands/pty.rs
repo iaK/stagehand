@@ -1,3 +1,4 @@
+use crate::agents::Agent;
 use crate::events::PtyEvent;
 use crate::pty_manager::{PtyEntry, PtyManager};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -12,6 +13,7 @@ pub struct SpawnPtyArgs {
     pub append_system_prompt: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    pub agent: Option<String>,
 }
 
 #[tauri::command]
@@ -35,12 +37,34 @@ pub async fn spawn_pty(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let mut cmd = CommandBuilder::new("claude");
-    cmd.arg("--dangerously-skip-permissions");
+    let agent = Agent::from_str_opt(args.agent.as_deref());
+    let binary = agent.binary();
 
-    if let Some(ref system_prompt) = args.append_system_prompt {
-        cmd.arg("--append-system-prompt");
-        cmd.arg(system_prompt);
+    let mut cmd = CommandBuilder::new(binary);
+
+    match agent {
+        Agent::Claude => {
+            cmd.arg("--dangerously-skip-permissions");
+            if let Some(ref system_prompt) = args.append_system_prompt {
+                cmd.arg("--append-system-prompt");
+                cmd.arg(system_prompt);
+            }
+        }
+        Agent::Codex => {
+            cmd.arg("--dangerously-bypass-approvals-and-sandbox");
+            // Codex interactive mode — no system prompt support
+        }
+        Agent::Gemini => {
+            cmd.arg("--yolo");
+            // Gemini interactive mode — no system prompt support
+        }
+        Agent::Amp => {
+            cmd.arg("--dangerously-allow-all");
+            // AMP interactive mode — no system prompt support
+        }
+        Agent::OpenCode => {
+            // OpenCode interactive mode — no special flags needed
+        }
     }
 
     if let Some(ref dir) = args.working_directory {
@@ -50,7 +74,7 @@ pub async fn spawn_pty(
     let child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn claude in PTY: {}", e))?;
+        .map_err(|e| format!("Failed to spawn {} in PTY: {}", binary, e))?;
 
     // Drop the slave side — the child owns it now
     drop(pair.slave);

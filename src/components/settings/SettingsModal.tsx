@@ -7,6 +7,7 @@ import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
 import { GitHubSettingsContent } from "../github/GitHubSettings";
 import { GitHubConventionsContent } from "../github/GitHubConventions";
+import { AgentSettingsContent } from "../agents/AgentSettings";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -36,6 +37,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     { section: "github", label: "Git", projectRequired: true },
     { header: "WORKFLOW" },
     { section: "conventions", label: "Conventions", projectRequired: true },
+    { section: "agents", label: "AI Agents", projectRequired: true },
   ];
 
   const currentItem = navItems.find(
@@ -147,6 +149,8 @@ function SectionContent({
       return <GitHubSettingsContent projectId={projectId!} />;
     case "conventions":
       return <GitHubConventionsContent projectId={projectId!} />;
+    case "agents":
+      return <AgentSettingsContent projectId={projectId!} />;
     default:
       return null;
   }
