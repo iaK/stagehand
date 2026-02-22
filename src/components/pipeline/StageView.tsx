@@ -152,12 +152,15 @@ export function StageView({ stage }: StageViewProps) {
     setCommitPrepTimedOut(false);
   }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
-  // Pre-fill research input with task description (e.g. from Linear import)
+  // Pre-fill research input with task description (e.g. from Linear import).
+  // latestExecution is in deps so the effect re-runs once async loadExecutions
+  // completes — fixing the race where stale executions from the previous task
+  // caused the !latestExecution guard to incorrectly block the pre-fill.
   useEffect(() => {
     if (activeTask?.description && needsUserInput && !latestExecution) {
       setUserInput(activeTask.description);
     }
-  }, [activeTask?.id]);
+  }, [activeTask?.id, activeTask?.description, needsUserInput, latestExecution]);
 
   // Past completed rounds (everything except the latest)
   const pastExecs = useMemo(

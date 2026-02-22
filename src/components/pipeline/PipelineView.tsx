@@ -340,7 +340,7 @@ export function PipelineView() {
       ) : (
         <div className="flex-1 overflow-y-auto">
           {viewingStage ? (
-            <StageView key={viewingStage.id} stage={viewingStage} />
+            <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} />
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">No stage selected</p>
