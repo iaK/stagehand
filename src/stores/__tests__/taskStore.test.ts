@@ -15,8 +15,8 @@ vi.mock("../../lib/repositories", () => ({
   updateStageExecution: vi.fn(),
 }));
 
-// Mock claude
-vi.mock("../../lib/claude", () => ({
+// Mock agent
+vi.mock("../../lib/agent", () => ({
   listProcessesDetailed: vi.fn().mockResolvedValue([]),
 }));
 

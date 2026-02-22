@@ -82,7 +82,7 @@ pub fn run() {
             greet,
             get_devflow_dir,
             get_mcp_server_path,
-            commands::process::spawn_claude,
+            commands::process::spawn_agent,
             commands::process::kill_process,
             commands::process::list_processes,
             commands::process::list_processes_detailed,

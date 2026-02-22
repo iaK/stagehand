@@ -115,7 +115,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
           onValueChange={(v) =>
             setEditingTemplate({
               ...editingTemplate,
-              agent: v === "" ? null : v,
+              agent: v === "" ? null : v as StageTemplate['agent'],
             })
           }
         >

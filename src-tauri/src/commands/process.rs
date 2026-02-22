@@ -1,5 +1,5 @@
 use crate::agents::Agent;
-use crate::events::ClaudeStreamEvent;
+use crate::events::AgentStreamEvent;
 use crate::process_manager::ProcessManager;
 use serde::Deserialize;
 use tauri::ipc::Channel;
@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SpawnClaudeArgs {
+pub struct SpawnAgentArgs {
     pub prompt: String,
     pub working_directory: Option<String>,
     pub session_id: Option<String>,
@@ -26,9 +26,9 @@ pub struct SpawnClaudeArgs {
 }
 
 #[tauri::command]
-pub async fn spawn_claude(
-    args: SpawnClaudeArgs,
-    on_event: Channel<ClaudeStreamEvent>,
+pub async fn spawn_agent(
+    args: SpawnAgentArgs,
+    on_event: Channel<AgentStreamEvent>,
     process_manager: State<'_, ProcessManager>,
 ) -> Result<String, String> {
     let agent = Agent::from_str_opt(args.agent.as_deref());
@@ -157,7 +157,7 @@ pub async fn spawn_claude(
         )
         .await;
 
-    let _ = on_event.send(ClaudeStreamEvent::Started {
+    let _ = on_event.send(AgentStreamEvent::Started {
         process_id: process_id.clone(),
         session_id: args.session_id.clone(),
     });
@@ -170,7 +170,7 @@ pub async fn spawn_claude(
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = stdout_event.send(ClaudeStreamEvent::StdoutLine { line });
+            let _ = stdout_event.send(AgentStreamEvent::StdoutLine { line });
         }
     });
 
@@ -179,7 +179,7 @@ pub async fn spawn_claude(
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = stderr_event.send(ClaudeStreamEvent::StderrLine { line });
+            let _ = stderr_event.send(AgentStreamEvent::StderrLine { line });
         }
     });
 
@@ -204,7 +204,7 @@ pub async fn spawn_claude(
         let _ = stdout_task.await;
         let _ = stderr_task.await;
 
-        let _ = completion_event.send(ClaudeStreamEvent::Completed {
+        let _ = completion_event.send(AgentStreamEvent::Completed {
             process_id: pid.clone(),
             exit_code,
         });

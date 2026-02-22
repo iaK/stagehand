@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { listProcessesDetailed, killProcess } from "../lib/claude";
+import { listProcessesDetailed, killProcess } from "../lib/agent";
 import * as repo from "../lib/repositories";
 import { PROCESS_HEALTH_POLL_MS, PROCESS_INACTIVITY_TIMEOUT_MS } from "../lib/constants";
 
