@@ -294,7 +294,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     if (!executionId) return;
 
     try {
-      // Generate summary via one-shot claude -p call
+      // Generate summary via one-shot agent call
       const rawOutput = outputBufferRef.current;
       const summaryPrompt = `Summarize what was accomplished in this interactive agent session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
 
