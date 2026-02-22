@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
@@ -47,6 +47,9 @@ export function StageView({ stage }: StageViewProps) {
     useStageExecution();
   useProcessHealthCheck(stage.id);
   const [userInput, setUserInput] = useState("");
+  // Tracks whether the user has manually edited the textarea since this StageView
+  // mounted. Used by the pre-fill effect to avoid overwriting intentional edits.
+  const hasUserEdited = useRef(false);
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -156,8 +159,17 @@ export function StageView({ stage }: StageViewProps) {
   // latestExecution is in deps so the effect re-runs once async loadExecutions
   // completes — fixing the race where stale executions from the previous task
   // caused the !latestExecution guard to incorrectly block the pre-fill.
+  //
+  // activeTask?.description is also in deps (required by exhaustive-deps), which
+  // means the effect re-fires if the task description is updated while mounted.
+  // This is intentional — a description update should only pre-fill if the user
+  // has not already edited the textarea (guarded by hasUserEdited below).
+  //
+  // hasUserEdited prevents this effect from overwriting text the user has already
+  // typed. The ref resets to false on every remount (i.e. every task switch),
+  // so the guard is scoped to the current StageView instance.
   useEffect(() => {
-    if (activeTask?.description && needsUserInput && !latestExecution) {
+    if (activeTask?.description && needsUserInput && !latestExecution && !hasUserEdited.current) {
       setUserInput(activeTask.description);
     }
   }, [activeTask?.id, activeTask?.description, needsUserInput, latestExecution]);
@@ -358,7 +370,7 @@ export function StageView({ stage }: StageViewProps) {
         <StageInputArea
           needsUserInput={needsUserInput}
           userInput={userInput}
-          onUserInputChange={setUserInput}
+          onUserInputChange={(v) => { hasUserEdited.current = true; setUserInput(v); }}
           stageError={stageError}
           isRunning={isRunning}
           onRun={handleRun}

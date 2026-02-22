@@ -120,6 +120,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
 
     const taskExecStatuses = await repo.getLatestExecutionStatusPerTask(projectId);
+
+    // Discard stale responses: if the user switched tasks while this fetch was
+    // in flight, the active task has changed and this data should not overwrite
+    // the executions that were (or will be) loaded for the current task.
+    if (get().activeTask?.id !== taskId) return;
+
     set({ executions, taskExecStatuses });
   },
 

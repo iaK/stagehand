@@ -340,6 +340,13 @@ export function PipelineView() {
       ) : (
         <div className="flex-1 overflow-y-auto">
           {viewingStage ? (
+            /* key includes activeTaskId so React fully remounts StageView on
+               task switch, resetting all local useState (userInput, feedback,
+               commitMessage, etc.) and all child component state
+               (MarkdownTextarea.isEditing, StructuredOutput.fields,
+               QuestionCards.selections, StageSelectionPanel.checked).
+               Do NOT simplify back to key={viewingStage.id} — that would let
+               stale state from the previous task bleed into the new one. */
             <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} />
           ) : (
             <div className="flex items-center justify-center h-full">
