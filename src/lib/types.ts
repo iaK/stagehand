@@ -37,7 +37,6 @@ export interface Task {
   id: string;
   project_id: string;
   title: string;
-  description: string;
   current_stage_id: string | null;
   status: TaskStatus;
   branch_name: string | null;

@@ -208,9 +208,6 @@ export function TaskOverview() {
             </button>
           )}
           <h1 className="text-xl font-semibold truncate">{activeTask.title}</h1>
-          {activeTask.description && (
-            <p className="text-sm text-muted-foreground">{activeTask.description}</p>
-          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Badge variant={status.variant}>{status.label}</Badge>

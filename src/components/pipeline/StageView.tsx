@@ -158,10 +158,12 @@ export function StageView({ stage, taskId }: StageViewProps) {
     setCommitPrepTimedOut(false);
   }, [isCurrentStage, stageStatus, isRunning, hasPendingCommitForThisStage, noChangesToCommit, committedHash]);
 
-  // Pre-fill research input with task description (e.g. from Linear import)
+  // Pre-fill research input with initial input (e.g. from Linear import)
+  const consumeInitialInput = useTaskStore((s) => s.consumeInitialInput);
   useEffect(() => {
-    if (task?.description && needsUserInput && !latestExecution) {
-      setUserInput(task.description);
+    if (task && needsUserInput && !latestExecution) {
+      const input = consumeInitialInput(task.id);
+      if (input) setUserInput(input);
     }
   }, [task?.id]);
 
@@ -256,7 +258,7 @@ export function StageView({ stage, taskId }: StageViewProps) {
     }
   };
 
-  const handleSplitTask = async (subtasks: { title: string; description: string }[]) => {
+  const handleSplitTask = async (subtasks: { title: string; initialInput?: string }[]) => {
     if (!activeProject || !task) return;
     setApproving(true);
     setStageError(null);

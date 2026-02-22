@@ -39,6 +39,7 @@ const MIGRATIONS: Migration[] = [
   { version: 12, name: "second_opinion_stage", fn: migrateSecondOpinionStage },
   { version: 13, name: "task_splitting_stage", fn: migrateTaskSplittingStage },
   { version: 14, name: "guided_implementation_stage", fn: migrateGuidedImplementationStage },
+  { version: 15, name: "drop_task_description", fn: migrateDropTaskDescription },
 ];
 
 /**
@@ -788,4 +789,8 @@ export async function migrateGuidedImplementationStage(db: Database): Promise<vo
       ],
     );
   }
+}
+
+async function migrateDropTaskDescription(db: Database): Promise<void> {
+  await db.execute(`ALTER TABLE tasks DROP COLUMN description`);
 }

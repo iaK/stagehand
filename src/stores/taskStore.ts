@@ -5,6 +5,24 @@ import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
 import { logger } from "../lib/logger";
 
+const INITIAL_INPUT_PREFIX = "stagehand:initialInput:";
+
+function setInitialInput(taskId: string, value: string): void {
+  try { localStorage.setItem(`${INITIAL_INPUT_PREFIX}${taskId}`, value); } catch {}
+}
+
+function consumeInitialInputFromStorage(taskId: string): string | undefined {
+  const key = `${INITIAL_INPUT_PREFIX}${taskId}`;
+  try {
+    const value = localStorage.getItem(key);
+    if (value !== null) {
+      localStorage.removeItem(key);
+      return value;
+    }
+  } catch {}
+  return undefined;
+}
+
 interface TaskStore {
   tasks: Task[];
   activeTask: Task | null;
@@ -21,16 +39,17 @@ interface TaskStore {
   setTaskStages: (projectId: string, taskId: string, stages: { stageTemplateId: string; sortOrder: number }[]) => Promise<void>;
   getActiveTaskStageTemplates: () => StageTemplate[];
   setActiveTask: (task: Task | null) => void;
+  consumeInitialInput: (taskId: string) => string | undefined;
   addTask: (
     projectId: string,
     title: string,
-    description?: string,
+    initialInput?: string,
     branchName?: string,
   ) => Promise<Task>;
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "description" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
@@ -41,7 +60,7 @@ interface TaskStore {
   deleteStageTemplate: (projectId: string, templateId: string) => Promise<void>;
   reorderStageTemplates: (projectId: string, orderedIds: string[]) => Promise<void>;
   duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
-  createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; description: string }[]) => Promise<Task[]>;
+  createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; initialInput?: string }[]) => Promise<Task[]>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -149,17 +168,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   setActiveTask: (task) => set({ activeTask: task }),
 
-  addTask: async (projectId, title, description, branchName) => {
+  consumeInitialInput: (taskId) => {
+    return consumeInitialInputFromStorage(taskId);
+  },
+
+  addTask: async (projectId, title, initialInput, branchName) => {
     const templates = get().stageTemplates;
     const firstStage = templates.length > 0 ? templates[0].id : "";
     const task = await repo.createTask(
       projectId,
       title,
       firstStage,
-      description,
       branchName,
     );
     const tasks = await repo.listTasks(projectId);
+    if (initialInput) setInitialInput(task.id, initialInput);
     set({ tasks, activeTask: task });
     return task;
   },
@@ -230,12 +253,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         projectId,
         sub.title,
         firstStage.id,
-        sub.description,
         undefined,
         undefined,
         parentTaskId,
       );
       created.push(task);
+      if (sub.initialInput) {
+        setInitialInput(task.id, sub.initialInput);
+      }
     }
 
     // Refresh the task list so new subtasks appear in sidebar

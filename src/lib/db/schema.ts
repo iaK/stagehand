@@ -55,7 +55,6 @@ export async function initProjectSchema(db: Database): Promise<void> {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
       current_stage_id TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       archived INTEGER NOT NULL DEFAULT 0,

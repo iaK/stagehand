@@ -54,7 +54,7 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
     try {
       const detail = await fetchIssueDetail(apiKey, issue.id);
 
-      // Compose description from ticket info, description, and comments
+      // Compose initial input from ticket info for the research stage
       const parts: string[] = [`Linear ticket: ${issue.identifier} — ${issue.title}`];
       if (detail.description) {
         parts.push(`\n## Description\n${detail.description}`);
@@ -62,10 +62,10 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
       if (detail.comments.length > 0) {
         parts.push(`\n## Comments\n${detail.comments.join("\n\n")}`);
       }
-      const description = parts.join("\n");
+      const initialInput = parts.join("\n");
 
       const title = `[${issue.identifier}] ${issue.title}`;
-      await addTask(projectId, title, description, issue.branchName);
+      await addTask(projectId, title, initialInput, issue.branchName);
       sendNotification("Task imported", title, "success", { projectId });
       onClose();
     } catch (err) {
