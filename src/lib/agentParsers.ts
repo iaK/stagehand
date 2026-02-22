@@ -35,6 +35,8 @@ export function parseAgentStreamLine(line: string): ParsedAgentLine | null {
             ? output
             : JSON.stringify(output)
           : undefined;
+      // token counts live inside parsed.usage; total_cost_usd, duration_ms,
+      // and num_turns are top-level fields on the result event (not inside usage)
       const usage = parsed.usage
         ? {
             input_tokens: parsed.usage.input_tokens,

@@ -3,6 +3,7 @@ import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { spawnAgent } from "../lib/agent";
+import { parseAgentStreamLine } from "../lib/agentParsers";
 import {
   parsePrUrl,
   ghFetchPrReviews,
@@ -314,28 +315,19 @@ ${fix.body}`;
                 case "started":
                   setRunning(sk, event.process_id);
                   break;
-                case "stdout_line":
-                  try {
-                    const parsed = JSON.parse(event.line);
-                    if (parsed.type === "assistant" && parsed.message?.content) {
-                      for (const block of parsed.message.content) {
-                        if (block.type === "text") {
-                          appendOutput(sk, block.text);
-                          resultText += block.text;
-                        }
-                      }
-                    } else if (parsed.type === "result") {
-                      const output = parsed.result;
-                      if (output != null && output !== "") {
-                        const text = typeof output === "string" ? output : JSON.stringify(output);
-                        appendOutput(sk, text);
-                        resultText += text;
-                      }
+                case "stdout_line": {
+                  const parsedLine = parseAgentStreamLine(event.line);
+                  if (parsedLine) {
+                    const text = parsedLine.assistantText ?? parsedLine.resultText;
+                    if (text) {
+                      appendOutput(sk, text);
+                      resultText += text;
                     }
-                  } catch {
+                  } else {
                     appendOutput(sk, event.line);
                   }
                   break;
+                }
                 case "stderr_line":
                   appendOutput(sk, `[stderr] ${event.line}`);
                   break;

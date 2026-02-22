@@ -18,6 +18,8 @@ pub const CLAUDE_CONFIG: AgentConfig = AgentConfig {
     version_flag: "--version",
 };
 
-pub fn get_agent_config(_name: &str) -> &'static AgentConfig {
-    &CLAUDE_CONFIG
+pub fn get_agent_config(name: &str) -> &'static AgentConfig {
+    match name {
+        "claude" | _ => &CLAUDE_CONFIG,
+    }
 }
