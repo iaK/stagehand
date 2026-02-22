@@ -203,13 +203,7 @@ export function useStageExecution() {
           attempt_number: attemptNumber,
           status: "running",
           input_prompt: prompt,
-          user_input: userInput ?? (
-            !stage.requires_user_input && approvedOutputs.length > 0
-              ? approvedOutputs
-                  .map((s) => `### ${s.stage_name}\n${s.stage_summary || "(no summary)"}`)
-                  .join("\n\n")
-              : null
-          ),
+          user_input: userInput ?? null,
           raw_output: null,
           parsed_output: null,
           user_decision: null,
