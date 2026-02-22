@@ -27,6 +27,8 @@ export function Sidebar() {
   const tasks = useTaskStore((s) => s.tasks);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
+  const activeTask = useTaskStore((s) => s.activeTask);
+  const setActiveTask = useTaskStore((s) => s.setActiveTask);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
   const [showProjectCreate, setShowProjectCreate] = useState(false);
   const [showLinearImport, setShowLinearImport] = useState(false);
@@ -77,6 +79,7 @@ export function Sidebar() {
             value={activeProject?.id ?? ""}
             onValueChange={(value) => {
               const p = projects.find((p) => p.id === value);
+              useTaskStore.getState().setActiveTask(null);
               setActiveProject(p ?? null);
             }}
           >
@@ -116,9 +119,22 @@ export function Sidebar() {
       {/* Tasks */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs text-muted-foreground uppercase tracking-wider">
-            Tasks
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">
+              Tasks
+            </span>
+            {activeTask && (
+              <button
+                onClick={() => setActiveTask(null)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Project
+              </button>
+            )}
+          </div>
           {activeProject && (
             <div className="flex items-center gap-2">
               {linearApiKey && (

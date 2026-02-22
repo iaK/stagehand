@@ -9,6 +9,7 @@ import type {
   PrReviewFix,
   CompletionStrategy,
   OutputFormat,
+  TokenTotals,
 } from "./types";
 
 // === Settings ===
@@ -341,6 +342,52 @@ export async function listTasks(projectId: string): Promise<Task[]> {
     "SELECT * FROM tasks WHERE project_id = $1 AND archived = 0 ORDER BY created_at DESC",
     [projectId],
   );
+}
+
+export async function listArchivedTasks(projectId: string): Promise<Task[]> {
+  const db = await getProjectDb(projectId);
+  return db.select<Task[]>(
+    "SELECT * FROM tasks WHERE project_id = $1 AND archived = 1 ORDER BY updated_at DESC",
+    [projectId],
+  );
+}
+
+export async function getProjectTokenUsage(projectId: string): Promise<TokenTotals> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<TokenTotals[]>(
+    `SELECT
+       COALESCE(SUM(input_tokens), 0) as input_tokens,
+       COALESCE(SUM(output_tokens), 0) as output_tokens,
+       COALESCE(SUM(cache_creation_input_tokens), 0) as cache_creation_input_tokens,
+       COALESCE(SUM(cache_read_input_tokens), 0) as cache_read_input_tokens,
+       COALESCE(SUM(total_cost_usd), 0) as total_cost_usd,
+       COALESCE(SUM(duration_ms), 0) as duration_ms,
+       COALESCE(SUM(num_turns), 0) as num_turns,
+       COUNT(*) as execution_count
+     FROM stage_executions
+     WHERE total_cost_usd IS NOT NULL`,
+    [],
+  );
+  return rows[0];
+}
+
+export async function getProjectTokenUsageSince(projectId: string, sinceIso: string): Promise<TokenTotals> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<TokenTotals[]>(
+    `SELECT
+       COALESCE(SUM(input_tokens), 0) as input_tokens,
+       COALESCE(SUM(output_tokens), 0) as output_tokens,
+       COALESCE(SUM(cache_creation_input_tokens), 0) as cache_creation_input_tokens,
+       COALESCE(SUM(cache_read_input_tokens), 0) as cache_read_input_tokens,
+       COALESCE(SUM(total_cost_usd), 0) as total_cost_usd,
+       COALESCE(SUM(duration_ms), 0) as duration_ms,
+       COALESCE(SUM(num_turns), 0) as num_turns,
+       COUNT(*) as execution_count
+     FROM stage_executions
+     WHERE total_cost_usd IS NOT NULL AND started_at >= $1`,
+    [sinceIso],
+  );
+  return rows[0];
 }
 
 export async function createTask(

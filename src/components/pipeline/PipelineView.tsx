@@ -6,6 +6,7 @@ import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { TaskOverview } from "../task/TaskOverview";
+import { ProjectOverview } from "../project/ProjectOverview";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -265,8 +266,8 @@ export function PipelineView() {
       )}
 
       {activeProject && !activeTask && (
-        <div className="flex-1 flex items-center justify-center h-full">
-          <p className="text-muted-foreground">Select or create a task to begin</p>
+        <div className="flex-1 overflow-y-auto">
+          <ProjectOverview />
         </div>
       )}
 
