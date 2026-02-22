@@ -16,8 +16,8 @@ import {
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { spawnClaude } from "../../lib/claude";
-import type { ClaudeStreamEvent } from "../../lib/types";
+import { spawnAgent } from "../../lib/agent";
+import type { AgentStreamEvent } from "../../lib/types";
 import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
@@ -121,14 +121,14 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
 
     try {
       await new Promise<void>((resolve) => {
-        spawnClaude(
+        spawnAgent(
           {
             prompt,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",
           },
-          (event: ClaudeStreamEvent) => {
+          (event: AgentStreamEvent) => {
             switch (event.type) {
               case "started":
                 setRunning(sk, event.process_id);

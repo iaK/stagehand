@@ -1,3 +1,4 @@
+use crate::agents::Agent;
 use crate::events::PtyEvent;
 use crate::pty_manager::{PtyEntry, PtyManager};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -8,6 +9,7 @@ use tauri::State;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnPtyArgs {
+    pub agent: Option<String>,
     pub working_directory: Option<String>,
     pub append_system_prompt: Option<String>,
     pub cols: Option<u16>,
@@ -22,6 +24,12 @@ pub async fn spawn_pty(
 ) -> Result<String, String> {
     let session_id = uuid::Uuid::new_v4().to_string();
 
+    let agent = args
+        .agent
+        .as_deref()
+        .and_then(Agent::from_str_opt)
+        .unwrap_or(Agent::Claude);
+
     let cols = args.cols.unwrap_or(120);
     let rows = args.rows.unwrap_or(24);
 
@@ -35,12 +43,17 @@ pub async fn spawn_pty(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let mut cmd = CommandBuilder::new("claude");
-    cmd.arg("--dangerously-skip-permissions");
+    let mut cmd = CommandBuilder::new(agent.binary());
 
-    if let Some(ref system_prompt) = args.append_system_prompt {
-        cmd.arg("--append-system-prompt");
-        cmd.arg(system_prompt);
+    if let Some(flag) = agent.auto_approve_flag() {
+        cmd.arg(flag);
+    }
+
+    if agent.supports_append_system_prompt() {
+        if let Some(ref system_prompt) = args.append_system_prompt {
+            cmd.arg("--append-system-prompt");
+            cmd.arg(system_prompt);
+        }
     }
 
     if let Some(ref dir) = args.working_directory {
@@ -50,7 +63,7 @@ pub async fn spawn_pty(
     let child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn claude in PTY: {}", e))?;
+        .map_err(|e| format!("Failed to spawn {} in PTY: {}", agent.binary(), e))?;
 
     // Drop the slave side — the child owns it now
     drop(pair.slave);

@@ -20,7 +20,7 @@ import { logger } from "../../lib/logger";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
-import { spawnClaude } from "../../lib/claude";
+import { spawnAgent } from "../../lib/agent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -29,7 +29,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { Loader2 } from "lucide-react";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import type { MergeState } from "../../stores/processStore";
-import type { StageTemplate, ClaudeStreamEvent } from "../../lib/types";
+import type { StageTemplate, AgentStreamEvent } from "../../lib/types";
 
 /**
  * MergeStageView intentionally bypasses the standard useStageExecution hook and
@@ -275,14 +275,14 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
 
     try {
       await new Promise<void>((resolve) => {
-        spawnClaude(
+        spawnAgent(
           {
             prompt,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",
           },
-          (event: ClaudeStreamEvent) => {
+          (event: AgentStreamEvent) => {
             switch (event.type) {
               case "stdout_line":
                 try {

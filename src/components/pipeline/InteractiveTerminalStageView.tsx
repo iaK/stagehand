@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
-import { spawnPty, writeToPty, resizePty, killPty, spawnClaude } from "../../lib/claude";
+import { spawnPty, writeToPty, resizePty, killPty, spawnAgent } from "../../lib/agent";
+import { parseAgentStreamLine } from "../../lib/agentParsers";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
@@ -16,7 +17,7 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, ClipboardCopy } from "lucide-react";
-import type { StageTemplate, PtyEvent, ClaudeStreamEvent } from "../../lib/types";
+import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types";
 
 /**
  * InteractiveTerminalStageView — self-contained stage component (same pattern
@@ -217,10 +218,15 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         }
       }
 
+      // Resolve effective agent for the PTY session
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+
       // Spawn PTY
       outputBufferRef.current = "";
       const ptyId = await spawnPty(
         {
+          agent: effectiveAgent,
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
         },
@@ -291,7 +297,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       const summaryPrompt = `Summarize what was accomplished in this interactive Claude session. Be concise (2-4 sentences). Here is the terminal output:\n\n${rawOutput.slice(-8000)}`;
 
       let summary = "";
-      await spawnClaude(
+      await spawnAgent(
         {
           prompt: summaryPrompt,
           workingDirectory: getTaskWorkingDir(task, activeProject.path),
@@ -299,7 +305,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
           allowedTools: [],
           maxTurns: 1,
         },
-        (event: ClaudeStreamEvent) => {
+        (event: AgentStreamEvent) => {
           if (event.type === "stdout_line") {
             try {
               const parsed = JSON.parse(event.line);

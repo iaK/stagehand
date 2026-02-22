@@ -56,6 +56,7 @@ export function makeStageTemplate(
     preparation_prompt: null,
     allowed_tools: null,
     requires_user_input: 0,
+    agent: null,
     created_at: "2025-01-01T00:00:00.000Z",
     updated_at: "2025-01-01T00:00:00.000Z",
     ...overrides,
