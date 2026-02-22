@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section = "project" | "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions";
+type Section = "project" | "archived" | "appearance" | "pipeline" | "linear" | "github" | "conventions" | "agents";
 
 type NavItem =
   | { header: string }
