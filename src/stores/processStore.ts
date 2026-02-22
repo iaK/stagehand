@@ -1,9 +1,16 @@
 import { create } from "zustand";
 import { STREAM_OUTPUT_MAX_LINES } from "../lib/constants";
+import type { StageTemplate } from "../lib/types";
 
 /** Composite key for per-task, per-stage process tracking. */
 export function stageKey(taskId: string, stageId: string): string {
   return `${taskId}:${stageId}`;
+}
+
+export interface ActivePtySession {
+  taskId: string;
+  stageId: string;
+  stage: StageTemplate;
 }
 
 export interface StageProcessState {
@@ -54,6 +61,7 @@ export const DEFAULT_MERGE_STATE: MergeStageState = {
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
   mergeStages: Record<string, MergeStageState>;
+  activePtySessions: Record<string, ActivePtySession>;
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
   committedStages: Record<string, string>; // stageId → short commit hash
@@ -75,6 +83,8 @@ interface ProcessStore {
   getMergeState: (key: string) => MergeStageState;
   updateMergeState: (key: string, patch: Partial<MergeStageState>) => void;
   clearMergeState: (key: string) => void;
+  registerPtySession: (key: string, taskId: string, stageId: string, stage: StageTemplate) => void;
+  unregisterPtySession: (key: string) => void;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
@@ -84,6 +94,7 @@ function getStage(stages: Record<string, StageProcessState>, id: string): StageP
 export const useProcessStore = create<ProcessStore>((set, get) => ({
   stages: {},
   mergeStages: {},
+  activePtySessions: {},
   viewingStageId: null,
   pendingCommit: null,
   committedStages: {},
@@ -195,5 +206,19 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
     set((state) => {
       const { [key]: _, ...rest } = state.mergeStages;
       return { mergeStages: rest };
+    }),
+
+  registerPtySession: (key, taskId, stageId, stage) =>
+    set((state) => ({
+      activePtySessions: {
+        ...state.activePtySessions,
+        [key]: { taskId, stageId, stage },
+      },
+    })),
+
+  unregisterPtySession: (key) =>
+    set((state) => {
+      const { [key]: _, ...rest } = state.activePtySessions;
+      return { activePtySessions: rest };
     }),
 }));

@@ -1,12 +1,9 @@
 import {
   runGit,
-  gitFetch,
   gitWorktreeAddDetached,
   gitMerge,
   gitMergeAbort,
-  gitPushHeadTo,
   gitWorktreeRemove,
-  gitHasRemote,
   gitRevParse,
   gitCurrentBranch,
   hasUncommittedChanges,
@@ -15,10 +12,7 @@ import {
 /**
  * Merge the task branch into the target branch.
  *
- * Works with or without an `origin` remote:
- *   - With remote: fetches latest, merges, pushes, updates local ref.
- *   - Without remote: merges into the local target branch directly.
- *
+ * Operates entirely locally — does not fetch from or push to any remote.
  * Uses a temporary detached worktree so the project root's checkout is not
  * disturbed during the merge itself.
  *
@@ -31,16 +25,9 @@ export async function performMerge(params: {
 }): Promise<string> {
   const { projectPath, branchName, targetBranch } = params;
 
-  const hasRemote = await gitHasRemote(projectPath);
-
-  // Determine starting point for the merge
-  let startPoint: string;
-  if (hasRemote) {
-    await gitFetch(projectPath, targetBranch);
-    startPoint = `origin/${targetBranch}`;
-  } else {
-    startPoint = targetBranch;
-  }
+  // Always merge from the local target branch — this preserves any
+  // unpushed commits the user has made in the main repo.
+  const startPoint = targetBranch;
 
   // Use a temporary worktree to perform the merge so we don't
   // disturb the project root's checkout or any other worktrees.
@@ -60,16 +47,6 @@ export async function performMerge(params: {
   // Capture the merge commit SHA before any cleanup
   const mergeSha = await gitRevParse(mergeWorktreePath, "HEAD");
 
-  // Push to remote if applicable
-  if (hasRemote) {
-    try {
-      await gitPushHeadTo(mergeWorktreePath, targetBranch);
-    } catch (pushErr) {
-      try { await gitWorktreeRemove(projectPath, mergeWorktreePath); } catch { /* ignore */ }
-      throw pushErr;
-    }
-  }
-
   // Check if target branch is checked out and clean BEFORE updating the ref,
   // so we know whether it's safe to reset the working tree afterward.
   let shouldResetWorkingTree = false;
@@ -81,9 +58,7 @@ export async function performMerge(params: {
   } catch { /* ignore */ }
 
   // Update the local target branch ref to the merge commit
-  try {
-    await runGit(projectPath, "update-ref", `refs/heads/${targetBranch}`, mergeSha);
-  } catch { /* non-critical if push already succeeded */ }
+  await runGit(projectPath, "update-ref", `refs/heads/${targetBranch}`, mergeSha);
 
   // If the target branch is checked out in the project root and was clean,
   // sync the working tree to match the new ref.

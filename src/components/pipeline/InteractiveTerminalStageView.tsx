@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProcessStore } from "../../stores/processStore";
+import { useProcessStore, stageKey } from "../../stores/processStore";
 import { spawnPty, writeToPty, resizePty, killPty, spawnClaude } from "../../lib/claude";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
@@ -15,7 +15,7 @@ import { CommitWorkflow } from "./CommitWorkflow";
 import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Loader2, ClipboardCopy } from "lucide-react";
 import type { StageTemplate, PtyEvent, ClaudeStreamEvent } from "../../lib/types";
 
 /**
@@ -88,8 +88,44 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
   useEffect(() => {
     if (isApproved) {
       setSessionState("completed");
+      useProcessStore.getState().unregisterPtySession(stageKey(taskId, stage.id));
     }
-  }, [isApproved]);
+  }, [isApproved, taskId, stage.id]);
+
+  // Safety net: unregister PTY session on unmount
+  useEffect(() => {
+    const key = stageKey(taskId, stage.id);
+    return () => {
+      useProcessStore.getState().unregisterPtySession(key);
+    };
+  }, [taskId, stage.id]);
+
+  const handleCopyPastStepOutput = useCallback(async () => {
+    if (!activeProject || !task) return;
+    try {
+      const approvedOutputs = await repo.getApprovedStageOutputs(
+        activeProject.id,
+        task.id,
+      );
+      // Prefer planning step, fall back to research step
+      const planningOutput = approvedOutputs.find((s) => s.stage_name.toLowerCase().includes("planning"));
+      const researchOutput = approvedOutputs.find((s) => s.stage_name.toLowerCase().includes("research"));
+      const target = planningOutput ?? researchOutput;
+      if (!target) {
+        toast.error("No planning or research output found");
+        return;
+      }
+      const content = target.stage_result || target.stage_summary || "";
+      if (!content) {
+        toast.error(`${target.stage_name} output is empty`);
+        return;
+      }
+      await navigator.clipboard.writeText(content);
+      toast.success(`Copied ${target.stage_name} output to clipboard`);
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  }, [activeProject, task]);
 
   const handleStart = useCallback(async () => {
     if (!activeProject || !task) return;
@@ -212,6 +248,12 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
         },
       );
       ptyIdRef.current = ptyId;
+      useProcessStore.getState().registerPtySession(
+        stageKey(task.id, stage.id),
+        task.id,
+        stage.id,
+        stage,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -231,6 +273,7 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
   const handleFinish = useCallback(async () => {
     if (!activeProject || !task) return;
     setSessionState("finishing");
+    useProcessStore.getState().unregisterPtySession(stageKey(task.id, stage.id));
 
     // Kill PTY if still alive
     if (ptyIdRef.current) {
@@ -312,6 +355,7 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
   }, [sessionState]);
 
   const handleStop = useCallback(async () => {
+    useProcessStore.getState().unregisterPtySession(stageKey(task?.id ?? "", stage.id));
     if (ptyIdRef.current) {
       await killPty(ptyIdRef.current).catch(() => {});
       ptyIdRef.current = null;
@@ -455,9 +499,15 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <Button onClick={handleStart} size="sm">
-            Start Interactive Session
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleStart} size="sm">
+              Start Interactive Session
+            </Button>
+            <Button onClick={handleCopyPastStepOutput} size="sm" variant="outline">
+              <ClipboardCopy className="w-3.5 h-3.5 mr-1.5" />
+              Copy output from past step
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -500,6 +550,10 @@ export function InteractiveTerminalStageView({ stage, taskId }: Props) {
           </Button>
           <Button onClick={handleStop} size="sm" variant="outline">
             Stop
+          </Button>
+          <Button onClick={handleCopyPastStepOutput} size="sm" variant="outline">
+            <ClipboardCopy className="w-3.5 h-3.5 mr-1.5" />
+            Copy output from past step
           </Button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
+import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { TaskOverview } from "../task/TaskOverview";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,8 +60,7 @@ export function PipelineView() {
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
 
-  // Track all tasks that have been viewed so their stages stay mounted (preserves PTY sessions)
-  const [mountedTaskStages, setMountedTaskStages] = useState<Map<string, StageTemplate[]>>(new Map());
+  const activePtySessions = useProcessStore((s) => s.activePtySessions);
 
   // Eject/Inject state
   const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
@@ -241,17 +241,6 @@ export function PipelineView() {
     setActiveView("pipeline");
   }, [activeTaskId]);
 
-  // Keep mounted task stages in sync — add/update stages for the active task
-  useEffect(() => {
-    if (activeTaskId && filteredStages.length > 0) {
-      setMountedTaskStages((prev) => {
-        const next = new Map(prev);
-        next.set(activeTaskId, filteredStages);
-        return next;
-      });
-    }
-  }, [activeTaskId, filteredStages]);
-
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
@@ -358,16 +347,49 @@ export function PipelineView() {
           <TaskOverview />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto relative">
+          {/* Layer 1: Persistent interactive terminals — survive navigation */}
+          {(() => {
+            // Build a de-duped map of interactive terminal sessions to render.
+            // Includes: the currently-viewed stage (if interactive_terminal) + all active PTY sessions.
+            const persistentTerminals = new Map<string, { taskId: string; stage: StageTemplate }>();
+
+            // Add all active PTY sessions
+            for (const [key, session] of Object.entries(activePtySessions)) {
+              persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
+            }
+
+            // Add the currently-viewed stage if it's an interactive terminal
+            if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
+              const key = stageKey(activeTaskId, viewingStage.id);
+              if (!persistentTerminals.has(key)) {
+                persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
+              }
+            }
+
+            const currentKey = activeTaskId && viewingStage
+              ? stageKey(activeTaskId, viewingStage.id)
+              : null;
+
+            return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
+              const isVisible = activeView === "pipeline" && key === currentKey;
+              return (
+                <div
+                  key={`pty-${key}`}
+                  className="absolute inset-0"
+                  style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
+                >
+                  <InteractiveTerminalStageView stage={s} taskId={tId} />
+                </div>
+              );
+            });
+          })()}
+
+          {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
           {viewingStage ? (
-            /* key includes activeTaskId so React fully remounts StageView on
-               task switch, resetting all local useState (userInput, feedback,
-               commitMessage, etc.) and all child component state
-               (MarkdownTextarea.isEditing, StructuredOutput.fields,
-               QuestionCards.selections, StageSelectionPanel.checked).
-               Do NOT simplify back to key={viewingStage.id} — that would let
-               stale state from the previous task bleed into the new one. */
-            <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} taskId={activeTaskId!} />
+            viewingStage.output_format !== "interactive_terminal" ? (
+              <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} taskId={activeTaskId!} />
+            ) : null
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">No stage selected</p>
