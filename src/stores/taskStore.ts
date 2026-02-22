@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Task, StageTemplate, StageExecution } from "../lib/types";
 import * as repo from "../lib/repositories";
-import { listProcessesDetailed, type ProcessInfo } from "../lib/agent";
+import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
 import { logger } from "../lib/logger";
 

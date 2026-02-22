@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum AgentStreamEvent {
+pub enum ClaudeStreamEvent {
     #[serde(rename = "started")]
     Started {
         process_id: String,

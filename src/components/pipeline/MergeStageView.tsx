@@ -12,17 +12,24 @@ import {
   gitIsMerged,
   gitWorktreeRemove,
   gitDeleteBranch,
+  gitDiffStat,
+  gitAdd,
+  gitCommit,
 } from "../../lib/git";
 import { logger } from "../../lib/logger";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
+import { spawnClaude } from "../../lib/claude";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Loader2 } from "lucide-react";
-import type { StageTemplate } from "../../lib/types";
+import { useProcessStore, stageKey } from "../../stores/processStore";
+import type { MergeState } from "../../stores/processStore";
+import type { StageTemplate, ClaudeStreamEvent } from "../../lib/types";
 
 /**
  * MergeStageView intentionally bypasses the standard useStageExecution hook and
@@ -35,8 +42,6 @@ interface MergeStageViewProps {
   stage: StageTemplate;
 }
 
-type MergeState = "loading" | "preview" | "merging" | "success" | "error" | "completed";
-
 export function MergeStageView({ stage }: MergeStageViewProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const activeTask = useTaskStore((s) => s.activeTask);
@@ -44,13 +49,40 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const updateTask = useTaskStore((s) => s.updateTask);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
 
-  const [mergeState, setMergeState] = useState<MergeState>("loading");
+  const sk = activeTask ? stageKey(activeTask.id, stage.id) : "";
+  const mergeStage = useProcessStore((s) => s.mergeStages[sk]);
+  const updateMergeState = useProcessStore((s) => s.updateMergeState);
+
+  // Store-persisted state (survives navigation)
+  const mergeState: MergeState = mergeStage?.mergeState ?? "loading";
+  const error = mergeStage?.error ?? null;
+  const fixRunning = mergeStage?.fixRunning ?? false;
+  const fixOutput = mergeStage?.fixOutput ?? "";
+  const fixCommitMessage = mergeStage?.fixCommitMessage ?? "";
+  const fixCommitDiffStat = mergeStage?.fixCommitDiffStat ?? "";
+
+  const setMergeState = (v: MergeState) => updateMergeState(sk, { mergeState: v });
+  const setError = (v: string | null) => updateMergeState(sk, { error: v });
+  const setFixRunning = (v: boolean) => updateMergeState(sk, { fixRunning: v });
+  const setFixOutput = (v: string | ((prev: string) => string)) => {
+    if (typeof v === "function") {
+      const current = useProcessStore.getState().mergeStages[sk]?.fixOutput ?? "";
+      updateMergeState(sk, { fixOutput: v(current) });
+    } else {
+      updateMergeState(sk, { fixOutput: v });
+    }
+  };
+  const setFixCommitMessage = (v: string) => updateMergeState(sk, { fixCommitMessage: v });
+  const setFixCommitDiffStat = (v: string) => updateMergeState(sk, { fixCommitDiffStat: v });
+
+  // Local-only state (OK to reset on navigation)
   const [targetBranch, setTargetBranch] = useState<string>("main");
   const [hasRemote, setHasRemote] = useState<boolean>(true);
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
+  const [fixCommitting, setFixCommitting] = useState(false);
+  const [fixCommitError, setFixCommitError] = useState<string | null>(null);
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
@@ -59,10 +91,13 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
   const isApproved = latestExecution?.status === "approved";
 
-  // Load merge preview data on mount
+  // Load merge preview data on mount. If the store already has a persisted
+  // mergeState (e.g. "error", "fix_commit") we keep it and only refresh the
+  // git metadata (targetBranch, changedFiles, diffStat). On first mount
+  // (mergeState === "loading") we transition to "preview" once data is ready.
   useEffect(() => {
     if (!activeProject || !activeTask?.branch_name) {
-      setMergeState("preview");
+      if (mergeState === "loading") setMergeState("preview");
       return;
     }
     if (isApproved) {
@@ -94,10 +129,11 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         if (!cancelled) {
           setChangedFiles(files);
           setDiffStat(stat);
-          setMergeState("preview");
+          // Only transition to preview on first load; keep persisted state otherwise
+          if (mergeState === "loading") setMergeState("preview");
         }
       } catch {
-        if (!cancelled) setMergeState("preview");
+        if (!cancelled && mergeState === "loading") setMergeState("preview");
       }
     })();
     return () => { cancelled = true; };
@@ -203,6 +239,102 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     }
   };
 
+  const handleAskAgentToFix = async () => {
+    if (!activeProject || !activeTask?.branch_name || !error) return;
+    setFixRunning(true);
+    setFixOutput("");
+    const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+
+    const prompt = `A git merge operation failed with the following error. Fix whatever is preventing the merge from succeeding.
+
+Task: ${activeTask.title}
+Merging: "${activeTask.branch_name}" into "${targetBranch}"
+
+${changedFiles.length > 0 ? `Changed files:\n${changedFiles.join("\n")}\n\n` : ""}${diffStat ? `Diff stat:\n${diffStat}\n\n` : ""}Git error:
+${error}
+
+Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility problems). Do NOT run git merge, git push, or any merge/push commands — the user will retry the merge after reviewing your fixes.`;
+
+    try {
+      await new Promise<void>((resolve) => {
+        spawnClaude(
+          {
+            prompt,
+            workingDirectory: workDir,
+            noSessionPersistence: true,
+            outputFormat: "stream-json",
+          },
+          (event: ClaudeStreamEvent) => {
+            switch (event.type) {
+              case "stdout_line":
+                try {
+                  const parsed = JSON.parse(event.line);
+                  if (parsed.type === "assistant" && parsed.message?.content) {
+                    for (const block of parsed.message.content) {
+                      if (block.type === "text") setFixOutput((prev) => prev + block.text);
+                    }
+                  } else if (parsed.type === "result") {
+                    const output = parsed.result;
+                    if (output != null && output !== "") {
+                      setFixOutput((prev) => prev + (typeof output === "string" ? output : JSON.stringify(output)));
+                    }
+                  }
+                } catch {
+                  setFixOutput((prev) => prev + event.line + "\n");
+                }
+                break;
+              case "stderr_line":
+                setFixOutput((prev) => prev + `[stderr] ${event.line}\n`);
+                break;
+              case "completed":
+              case "error":
+                resolve();
+                break;
+            }
+          },
+        ).catch(() => resolve());
+      });
+    } finally {
+      setFixRunning(false);
+      setError(null);
+      // Always show the commit view after the agent runs so the user can
+      // commit any changes before retrying the merge. If there's nothing
+      // to commit they can skip with the "Skip commit" button.
+      setFixCommitMessage("fix: resolve merge conflicts");
+      setFixCommitError(null);
+      try {
+        const workDir = getTaskWorkingDir(activeTask!, activeProject!.path);
+        const stat = await gitDiffStat(workDir).catch(() => "");
+        setFixCommitDiffStat(stat);
+      } catch {
+        setFixCommitDiffStat("");
+      }
+      setMergeState("fix_commit");
+    }
+  };
+
+  const handleFixCommit = async () => {
+    if (!activeProject || !activeTask) return;
+    setFixCommitting(true);
+    setFixCommitError(null);
+    try {
+      const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+      await gitAdd(workDir);
+      await gitCommit(workDir, fixCommitMessage);
+      setMergeState("preview");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // "nothing to commit" is not an error — just proceed to preview
+      if (/nothing to commit|nothing added to commit|no changes added/i.test(msg)) {
+        setMergeState("preview");
+      } else {
+        setFixCommitError(msg);
+      }
+    } finally {
+      setFixCommitting(false);
+    }
+  };
+
   const handleSkip = async () => {
     if (!activeProject || !activeTask) return;
 
@@ -248,6 +380,80 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
           <Loader2 className="w-4 h-4 animate-spin" />
           Loading merge preview...
         </div>
+      </div>
+    );
+  }
+
+  if (mergeState === "fix_commit") {
+    return (
+      <div className="p-6 max-w-4xl">
+        <div className="p-4 bg-muted/50 border border-border rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            <span className="text-sm font-medium text-foreground">Commit Agent Changes</span>
+          </div>
+
+          {fixCommitDiffStat ? (
+            <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
+              {fixCommitDiffStat}
+            </pre>
+          ) : (
+            <p className="text-xs text-muted-foreground mb-3">
+              No file changes detected. Skip if the agent didn't modify anything, or commit if you made manual changes.
+            </p>
+          )}
+
+          <Textarea
+            value={fixCommitMessage}
+            onChange={(e) => setFixCommitMessage(e.target.value)}
+            rows={2}
+            className="font-mono mb-3 resize-none"
+          />
+
+          {fixCommitError && (
+            <Alert variant="destructive" className="mb-3">
+              <AlertDescription>{fixCommitError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleFixCommit}
+              disabled={fixCommitting || !fixCommitMessage.trim()}
+              size="sm"
+              variant="success"
+            >
+              {fixCommitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {fixCommitting ? "Committing..." : "Commit & Retry Merge"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMergeState("preview")}
+              disabled={fixCommitting}
+            >
+              Skip commit
+            </Button>
+          </div>
+        </div>
+
+        {fixOutput && (
+          <Collapsible className="mt-3">
+            <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+              Show agent output
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre className="mt-1 text-xs text-muted-foreground bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">
+                {fixOutput}
+              </pre>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     );
   }
@@ -330,34 +536,59 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
                 </CollapsibleContent>
               </Collapsible>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setError(null); setMergeState("preview"); }}
-            >
-              Retry
-            </Button>
+            <div className="flex items-center gap-2">
+              {fixRunning ? (
+                <Button variant="outline" size="sm" disabled>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Agent fixing...
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setError(null); setMergeState("preview"); }}
+                  >
+                    Retry
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAskAgentToFix}
+                  >
+                    Ask agent to fix
+                  </Button>
+                </>
+              )}
+            </div>
+            {fixRunning && fixOutput && (
+              <pre className="mt-2 text-xs text-muted-foreground bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">
+                {fixOutput}
+              </pre>
+            )}
           </div>
         )}
 
-        <div className="flex gap-2">
-          <Button
-            onClick={handleMerge}
-            disabled={mergeState === "merging"}
-            size="sm"
-          >
-            {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
-            {mergeState === "merging" ? "Merging..." : hasRemote ? "Merge & Push" : "Merge"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSkipConfirm(true)}
-            disabled={mergeState === "merging"}
-          >
-            Skip
-          </Button>
-        </div>
+        {!fixRunning && (
+          <div className="flex gap-2">
+            <Button
+              onClick={handleMerge}
+              disabled={mergeState === "merging"}
+              size="sm"
+            >
+              {mergeState === "merging" && <Loader2 className="w-4 h-4 animate-spin" />}
+              {mergeState === "merging" ? "Merging..." : hasRemote ? "Merge & Push" : "Merge"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSkipConfirm(true)}
+              disabled={mergeState === "merging"}
+            >
+              Skip
+            </Button>
+          </div>
+        )}
       </div>
 
       <AlertDialog open={showSkipConfirm} onOpenChange={setShowSkipConfirm}>

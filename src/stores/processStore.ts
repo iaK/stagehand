@@ -31,8 +31,29 @@ export interface PendingCommit {
   fixId?: string;
 }
 
+export type MergeState = "loading" | "preview" | "merging" | "success" | "error" | "completed" | "fix_commit";
+
+export interface MergeStageState {
+  mergeState: MergeState;
+  error: string | null;
+  fixRunning: boolean;
+  fixOutput: string;
+  fixCommitMessage: string;
+  fixCommitDiffStat: string;
+}
+
+export const DEFAULT_MERGE_STATE: MergeStageState = {
+  mergeState: "loading",
+  error: null,
+  fixRunning: false,
+  fixOutput: "",
+  fixCommitMessage: "",
+  fixCommitDiffStat: "",
+};
+
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
+  mergeStages: Record<string, MergeStageState>;
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
   committedStages: Record<string, string>; // stageId → short commit hash
@@ -51,14 +72,18 @@ interface ProcessStore {
   setCommitted: (stageId: string, shortHash: string) => void;
   setCommitMessageLoading: (stageId: string | null) => void;
   setNoChangesToCommit: (stageId: string | null) => void;
+  getMergeState: (key: string) => MergeStageState;
+  updateMergeState: (key: string, patch: Partial<MergeStageState>) => void;
+  clearMergeState: (key: string) => void;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
   return stages[id] ?? DEFAULT_STAGE_STATE;
 }
 
-export const useProcessStore = create<ProcessStore>((set) => ({
+export const useProcessStore = create<ProcessStore>((set, get) => ({
   stages: {},
+  mergeStages: {},
   viewingStageId: null,
   pendingCommit: null,
   committedStages: {},
@@ -155,4 +180,20 @@ export const useProcessStore = create<ProcessStore>((set) => ({
   setCommitMessageLoading: (stageId) => set({ commitMessageLoadingStageId: stageId }),
 
   setNoChangesToCommit: (stageId) => set({ noChangesStageId: stageId }),
+
+  getMergeState: (key) => get().mergeStages[key] ?? DEFAULT_MERGE_STATE,
+
+  updateMergeState: (key, patch) =>
+    set((state) => ({
+      mergeStages: {
+        ...state.mergeStages,
+        [key]: { ...(state.mergeStages[key] ?? DEFAULT_MERGE_STATE), ...patch },
+      },
+    })),
+
+  clearMergeState: (key) =>
+    set((state) => {
+      const { [key]: _, ...rest } = state.mergeStages;
+      return { mergeStages: rest };
+    }),
 }));

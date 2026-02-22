@@ -21,12 +21,12 @@ export function CollapsibleInputBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
         </svg>
       </div>
-      <Collapsible open={expanded} onOpenChange={setExpanded} className="flex-1 min-w-0 pb-4 pt-0.5">
+      <Collapsible open={expanded} onOpenChange={setExpanded} className="flex-1 min-w-0 pb-4 pt-1">
         <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           <svg
             className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -58,12 +58,12 @@ export function UserBubble({
 }) {
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-blue-600 dark:bg-blue-500 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
         </svg>
       </div>
-      <div className="flex-1 min-w-0 pb-4">
+      <div className="flex-1 min-w-0 pt-1 pb-4">
         <p className="text-xs text-muted-foreground mb-1">{label}</p>
         <div className="p-3 bg-zinc-50 dark:bg-zinc-900 border border-border rounded-lg">
           <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{text}</p>
@@ -82,13 +82,13 @@ export function AiBubble({
 }) {
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-zinc-600 dark:text-zinc-400" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
         </svg>
       </div>
-      <div className="flex-1 min-w-0 pb-4">
-        <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <div className="flex-1 min-w-0 pt-1 pb-4">
+        <p className="text-xs text-muted-foreground mb-1 pl-[1.125rem]">{label}</p>
         <div className="border border-border rounded-lg overflow-hidden">
           {children}
         </div>
@@ -121,10 +121,10 @@ export function LiveStreamBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0">
         <div className={`w-2.5 h-2.5 rounded-full ${isStopping ? "bg-amber-500" : "bg-blue-500"} animate-pulse`} />
       </div>
-      <div className="flex-1 min-w-0 pb-4">
+      <div className="flex-1 min-w-0 pt-1 pb-4">
         <div className="flex items-center gap-2 mb-1">
           <p className={`text-xs ${isStopping ? "text-amber-600 dark:text-amber-400" : "text-blue-600 dark:text-blue-400"}`}>
             {isStopping ? "Stopping..." : label}
@@ -262,12 +262,12 @@ const CollapsibleTimelineEntry = memo(function CollapsibleTimelineEntry({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center flex-shrink-0">
         <svg className="w-3 h-3 text-zinc-600 dark:text-zinc-400" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
         </svg>
       </div>
-      <Collapsible open={expanded} onOpenChange={handleToggle} className="flex-1 min-w-0 pb-4 pt-0.5">
+      <Collapsible open={expanded} onOpenChange={handleToggle} className="flex-1 min-w-0 pb-4 pt-1">
         <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
           <svg
             className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}

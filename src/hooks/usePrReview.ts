@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
-import { spawnAgent } from "../lib/agent";
-import { parseAgentStreamLine } from "../lib/agentParsers";
+import { spawnClaude } from "../lib/claude";
 import {
   parsePrUrl,
   ghFetchPrReviews,
@@ -28,7 +27,7 @@ import type {
   Task,
   StageTemplate,
   PrReviewFix,
-  AgentStreamEvent,
+  ClaudeStreamEvent,
 } from "../lib/types";
 
 export function usePrReview(stage: StageTemplate, task: Task | null) {
@@ -274,10 +273,6 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
-      // Resolve effective agent (stage override → project default → "claude")
-      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
-
       // Snapshot currently changed files before Claude modifies anything
       const preFixFiles = await getChangedFiles(workDir).catch(() => []);
       preFixFilesRef.current = new Set(preFixFiles);
@@ -307,32 +302,40 @@ ${fix.body}`;
 
         let resultText = "";
         await new Promise<void>((resolve) => {
-          spawnAgent(
+          spawnClaude(
             {
               prompt,
               workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
-              agent: effectiveAgent,
             },
-            (event: AgentStreamEvent) => {
+            (event: ClaudeStreamEvent) => {
               switch (event.type) {
                 case "started":
                   setRunning(sk, event.process_id);
                   break;
-                case "stdout_line": {
-                  const parsedLine = parseAgentStreamLine(event.line);
-                  if (parsedLine) {
-                    const text = parsedLine.assistantText ?? parsedLine.resultText;
-                    if (text) {
-                      appendOutput(sk, text);
-                      resultText += text;
+                case "stdout_line":
+                  try {
+                    const parsed = JSON.parse(event.line);
+                    if (parsed.type === "assistant" && parsed.message?.content) {
+                      for (const block of parsed.message.content) {
+                        if (block.type === "text") {
+                          appendOutput(sk, block.text);
+                          resultText += block.text;
+                        }
+                      }
+                    } else if (parsed.type === "result") {
+                      const output = parsed.result;
+                      if (output != null && output !== "") {
+                        const text = typeof output === "string" ? output : JSON.stringify(output);
+                        appendOutput(sk, text);
+                        resultText += text;
+                      }
                     }
-                  } else {
+                  } catch {
                     appendOutput(sk, event.line);
                   }
                   break;
-                }
                 case "stderr_line":
                   appendOutput(sk, `[stderr] ${event.line}`);
                   break;
@@ -359,7 +362,7 @@ ${fix.body}`;
           try {
             let msgText = "";
             await new Promise<void>((resolve) => {
-              spawnAgent(
+              spawnClaude(
                 {
                   prompt: `Generate a concise git commit message for fixing a PR review comment.
 
@@ -379,7 +382,7 @@ Keep it under 72 characters for the first line.`,
                   outputFormat: "text",
                   noSessionPersistence: true,
                 },
-                (event: AgentStreamEvent) => {
+                (event: ClaudeStreamEvent) => {
                   if (event.type === "stdout_line") {
                     msgText += event.line + "\n";
                   } else if (event.type === "completed" || event.type === "error") {

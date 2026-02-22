@@ -31,6 +31,8 @@ export function TaskList() {
     return statusColors[task.status] ?? "bg-zinc-400";
   };
 
+  const handleSelectTask = useCallback((task: Task) => setActiveTask(task), [setActiveTask]);
+
   const filtered = tasks.filter(t => !query || t.title.toLowerCase().includes(query.toLowerCase()));
 
   if (tasks.length === 0) {
@@ -38,8 +40,6 @@ export function TaskList() {
       <p className="text-sm text-muted-foreground italic px-1 py-2">No tasks yet</p>
     );
   }
-
-  const handleSelectTask = useCallback((task: Task) => setActiveTask(task), [setActiveTask]);
 
   return (
     <>

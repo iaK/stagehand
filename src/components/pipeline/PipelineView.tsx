@@ -59,6 +59,9 @@ export function PipelineView() {
   const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
 
+  // Track all tasks that have been viewed so their stages stay mounted (preserves PTY sessions)
+  const [mountedTaskStages, setMountedTaskStages] = useState<Map<string, StageTemplate[]>>(new Map());
+
   // Eject/Inject state
   const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
   const [injectDialogOpen, setInjectDialogOpen] = useState(false);
@@ -237,6 +240,17 @@ export function PipelineView() {
   useEffect(() => {
     setActiveView("pipeline");
   }, [activeTaskId]);
+
+  // Keep mounted task stages in sync — add/update stages for the active task
+  useEffect(() => {
+    if (activeTaskId && filteredStages.length > 0) {
+      setMountedTaskStages((prev) => {
+        const next = new Map(prev);
+        next.set(activeTaskId, filteredStages);
+        return next;
+      });
+    }
+  }, [activeTaskId, filteredStages]);
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {

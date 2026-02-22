@@ -16,6 +16,8 @@ import {
 } from "./StageTimeline";
 import { gitAdd, gitCommit } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
+import { spawnClaude } from "../../lib/claude";
+import type { ClaudeStreamEvent } from "../../lib/types";
 import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
@@ -95,6 +97,74 @@ export function StageView({ stage, taskId }: StageViewProps) {
       }
     } finally {
       setCommitting(false);
+    }
+  };
+
+  const handleCommitFix = async () => {
+    if (!activeProject || !task || !commitError || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    const workDir = getTaskWorkingDir(task, activeProject.path);
+    const { setRunning, setStopped, appendOutput, clearOutput } = useProcessStore.getState();
+    clearOutput(sk);
+    setRunning(sk, "fixing");
+    setCommitError(null);
+
+    const prompt = `The following git commit failed with an error. Fix whatever is preventing the commit from succeeding.
+
+Task: ${task.title}
+
+Commit message attempted: "${commitMessage}"
+
+${pendingCommit.diffStat ? `Changes being committed:\n${pendingCommit.diffStat}\n\n` : ""}Git error:
+${commitError}
+
+Investigate the error (read files, run checks) and fix the issue. Do NOT run git add, git commit, or any git staging/committing commands — the user will commit after reviewing your fixes.`;
+
+    try {
+      await new Promise<void>((resolve) => {
+        spawnClaude(
+          {
+            prompt,
+            workingDirectory: workDir,
+            noSessionPersistence: true,
+            outputFormat: "stream-json",
+          },
+          (event: ClaudeStreamEvent) => {
+            switch (event.type) {
+              case "started":
+                setRunning(sk, event.process_id);
+                break;
+              case "stdout_line":
+                try {
+                  const parsed = JSON.parse(event.line);
+                  if (parsed.type === "assistant" && parsed.message?.content) {
+                    for (const block of parsed.message.content) {
+                      if (block.type === "text") appendOutput(sk, block.text);
+                    }
+                  } else if (parsed.type === "result") {
+                    const output = parsed.result;
+                    if (output != null && output !== "") {
+                      appendOutput(sk, typeof output === "string" ? output : JSON.stringify(output));
+                    }
+                  }
+                } catch {
+                  appendOutput(sk, event.line);
+                }
+                break;
+              case "stderr_line":
+                appendOutput(sk, `[stderr] ${event.line}`);
+                break;
+              case "completed":
+              case "error":
+                setStopped(sk);
+                resolve();
+                break;
+            }
+          },
+        ).catch(() => { setStopped(sk); resolve(); });
+      });
+    } finally {
+      // Re-check git status so the commit workflow reflects what the agent changed
+      generatePendingCommit(task, stage, activeProject.path, activeProject.id).catch(() => {});
     }
   };
 
@@ -541,6 +611,8 @@ export function StageView({ stage, taskId }: StageViewProps) {
                   onApprove={() => handleApprove()}
                   approving={approving}
                   commitPrepTimedOut={commitPrepTimedOut}
+                  onAskAgentToFix={handleCommitFix}
+                  agentFixRunning={isRunning}
                 />
               )}
 

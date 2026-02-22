@@ -17,6 +17,8 @@ interface CommitWorkflowProps {
   onApprove: () => void;
   approving: boolean;
   commitPrepTimedOut: boolean;
+  onAskAgentToFix?: () => void;
+  agentFixRunning?: boolean;
 }
 
 export function CommitWorkflow({
@@ -32,6 +34,8 @@ export function CommitWorkflow({
   onApprove,
   approving,
   commitPrepTimedOut,
+  onAskAgentToFix,
+  agentFixRunning,
 }: CommitWorkflowProps) {
   if (pendingCommit?.stageId === stageId) {
     return (
@@ -64,15 +68,35 @@ export function CommitWorkflow({
           </Alert>
         )}
 
-        <Button
-          onClick={onCommit}
-          disabled={committing || !commitMessage.trim()}
-          size="sm"
-          variant="success"
-        >
-          {committing && <Loader2 className="w-4 h-4 animate-spin" />}
-          {committing ? "Committing..." : "Commit & Continue"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {agentFixRunning ? (
+            <Button size="sm" variant="outline" disabled>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Agent fixing...
+            </Button>
+          ) : (
+            <>
+              <Button
+                onClick={onCommit}
+                disabled={committing || !commitMessage.trim()}
+                size="sm"
+                variant="success"
+              >
+                {committing && <Loader2 className="w-4 h-4 animate-spin" />}
+                {committing ? "Committing..." : "Commit & Continue"}
+              </Button>
+              {commitError && onAskAgentToFix && (
+                <Button
+                  onClick={onAskAgentToFix}
+                  size="sm"
+                  variant="outline"
+                >
+                  Ask agent to fix
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     );
   }

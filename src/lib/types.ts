@@ -23,7 +23,6 @@ export interface StageTemplate {
   persona_name: string | null;
   persona_system_prompt: string | null;
   persona_model: string | null;
-  agent: 'claude' | 'codex' | 'gemini' | 'amp' | 'opencode' | null;
   preparation_prompt: string | null;
   allowed_tools: string | null; // JSON array of tool names
   requires_user_input: number; // boolean: stage needs user input before running (shows input box)
@@ -204,9 +203,9 @@ export interface LinearIssue {
   branchName: string | undefined;
 }
 
-// === Agent Stream Events ===
+// === Claude Stream Events ===
 
-export type AgentStreamEvent =
+export type ClaudeStreamEvent =
   | { type: "started"; process_id: string; session_id: string | null }
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
@@ -215,7 +214,7 @@ export type AgentStreamEvent =
 
 // === Spawn Args ===
 
-export interface SpawnAgentArgs {
+export interface SpawnClaudeArgs {
   prompt: string;
   workingDirectory?: string;
   sessionId?: string;
@@ -227,8 +226,6 @@ export interface SpawnAgentArgs {
   allowedTools?: string[];
   maxTurns?: number;
   mcpConfig?: string;
-  agent?: string;
-  personaModel?: string;
 }
 
 // === PTY Types ===
@@ -244,5 +241,4 @@ export interface SpawnPtyArgs {
   appendSystemPrompt?: string;
   cols?: number;
   rows?: number;
-  agent?: string;
 }
