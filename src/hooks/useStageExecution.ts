@@ -13,13 +13,11 @@ import {
   gitBranchExists,
   gitPush,
   gitDefaultBranch,
-  gitCheckoutBranch,
   ghCreatePr,
   gitWorktreeAdd,
   gitWorktreeRemove,
-  gitDeleteBranch,
 } from "../lib/git";
-import { getTaskWorkingDir } from "../lib/worktree";
+import { getTaskWorkingDir, cleanupTaskWorktree } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
 import { logger } from "../lib/logger";
@@ -677,38 +675,10 @@ export function useStageExecution() {
 
         // Clean up worktree on completion. Note: merge stages handle their
         // own completion and cleanup in MergeStageView and never reach here.
-        if (task.worktree_path) {
+        {
           const project = useProjectStore.getState().activeProject;
           if (project) {
-            try {
-              await gitWorktreeRemove(project.path, task.worktree_path);
-            } catch {
-              // Non-critical — worktree cleanup is best-effort
-            }
-            if (task.branch_name) {
-              try {
-                await gitDeleteBranch(project.path, task.branch_name);
-              } catch {
-                // Non-critical — branch cleanup is best-effort
-              }
-            }
-          }
-        } else if (task.ejected && task.branch_name) {
-          // Defensive: handle ejected case (shouldn't normally reach here
-          // since stages are blocked while ejected)
-          const project = useProjectStore.getState().activeProject;
-          if (project) {
-            try {
-              const defaultBranch = await gitDefaultBranch(project.path);
-              await gitCheckoutBranch(project.path, defaultBranch ?? "main");
-            } catch {
-              // Non-critical
-            }
-            try {
-              await gitDeleteBranch(project.path, task.branch_name);
-            } catch {
-              // Non-critical
-            }
+            await cleanupTaskWorktree(project.path, task, { deleteBranch: true });
           }
         }
       }
