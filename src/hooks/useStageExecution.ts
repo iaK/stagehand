@@ -4,7 +4,7 @@ import { useTaskStore } from "../stores/taskStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { useGitHubStore } from "../stores/githubStore";
 import { invoke } from "@tauri-apps/api/core";
-import { spawnClaude, killProcess, listProcessesDetailed } from "../lib/claude";
+import { spawnAgent, killProcess, listProcessesDetailed } from "../lib/agent";
 import { renderPrompt } from "../lib/prompt";
 import {
   hasUncommittedChanges,
@@ -37,7 +37,7 @@ import type {
   StageTemplate,
   StageExecution,
   GateRule,
-  ClaudeStreamEvent,
+  AgentStreamEvent,
 } from "../lib/types";
 
 export function useStageExecution() {
@@ -190,7 +190,7 @@ export function useStageExecution() {
         });
 
         // Add the new execution to the store immediately so that killCurrent
-        // and the health check can find it even before spawnClaude fires events,
+        // and the health check can find it even before spawnAgent fires events,
         // without triggering a full loadExecutions reload (which involves IPC
         // calls and creates new object references that cascade re-renders).
         {
@@ -226,7 +226,7 @@ export function useStageExecution() {
         // Capture task.id so completion handler uses the correct task even if activeTask changes
         const taskId = task.id;
 
-        const onEvent = (event: ClaudeStreamEvent) => {
+        const onEvent = (event: AgentStreamEvent) => {
           switch (event.type) {
             case "started":
               // If kill was requested while spawning, kill immediately and don't re-enable
@@ -404,7 +404,7 @@ export function useStageExecution() {
           // Non-critical — continue without conventions
         }
 
-        await spawnClaude(
+        await spawnAgent(
           {
             prompt,
             agent: effectiveAgent,

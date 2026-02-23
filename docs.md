@@ -318,7 +318,7 @@ spawn claude CLI
 ### Stream Event Types
 
 ```typescript
-type ClaudeStreamEvent =
+type AgentStreamEvent =
   | { type: "started"; process_id: string; session_id: string | null }
   | { type: "stdout_line"; line: string }
   | { type: "stderr_line"; line: string }
@@ -364,7 +364,7 @@ stagehand/
 │   │   ├── db.ts                         # SQLite connections and schema initialization
 │   │   ├── repositories.ts              # CRUD functions for all entities
 │   │   ├── seed.ts                       # Default stage template definitions
-│   │   ├── claude.ts                     # Frontend bindings for Claude process commands
+│   │   ├── agent.ts                      # Frontend bindings for agent process commands
 │   │   └── prompt.ts                     # Template variable substitution engine
 │   ├── stores/
 │   │   ├── projectStore.ts              # Project list and active project state
@@ -404,7 +404,7 @@ stagehand/
     └── src/
         ├── main.rs                      # Rust entry point
         ├── lib.rs                       # Tauri app setup, plugin registration, commands
-        ├── events.rs                    # ClaudeStreamEvent enum (serde-tagged)
+        ├── events.rs                    # AgentStreamEvent enum (serde-tagged)
         ├── process_manager.rs           # Arc<Mutex<HashMap>> process registry
         └── commands/
             ├── mod.rs
