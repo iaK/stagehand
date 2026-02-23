@@ -34,10 +34,22 @@ export interface StageTemplate {
 export type InputSource = "user" | "previous_stage" | "both";
 export type OutputFormat = "text" | "options" | "checklist" | "structured" | "research" | "findings" | "plan" | "pr_preparation" | "pr_review" | "merge" | "task_splitting" | "interactive_terminal" | "auto";
 
+/** A pipeline position: a task_stages row joined with its stage template. */
+export interface TaskStageInstance extends StageTemplate {
+  /** task_stages.id — the unique pipeline position */
+  task_stage_id: string;
+  /** The underlying stage_template_id */
+  stage_template_id: string;
+  /** Per-instance overrides (null = use template default) */
+  agent_override: string | null;
+  model_override: string | null;
+}
+
 export interface Task {
   id: string;
   project_id: string;
   title: string;
+  /** After migration v18 this stores task_stage_id (not stage_template_id). */
   current_stage_id: string | null;
   status: TaskStatus;
   branch_name: string | null;
@@ -57,7 +69,7 @@ export type CompletionStrategy = "pr" | "merge";
 export interface StageExecution {
   id: string;
   task_id: string;
-  stage_template_id: string;
+  task_stage_id: string | null;
   attempt_number: number;
   status: ExecutionStatus;
   input_prompt: string;

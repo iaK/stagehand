@@ -31,7 +31,7 @@ export function useProcessHealthCheck(stageId: string | null, taskId?: string) {
     if (!stageIsRunning) {
       const executions = useTaskStore.getState().executions;
       const hasRunning = executions.some(
-        (e) => e.stage_template_id === stageId && e.status === "running",
+        (e) => e.task_stage_id === stageId && e.status === "running",
       );
       if (!hasRunning) return;
     }
@@ -40,7 +40,7 @@ export function useProcessHealthCheck(stageId: string | null, taskId?: string) {
       // Read fresh executions at check time (non-reactive)
       const currentExecs = useTaskStore.getState().executions;
       const stillRunning = currentExecs.some(
-        (e) => e.stage_template_id === stageId && e.status === "running",
+        (e) => e.task_stage_id === stageId && e.status === "running",
       );
       if (!stillRunning) return;
 
@@ -63,7 +63,7 @@ export function useProcessHealthCheck(stageId: string | null, taskId?: string) {
         if (!processId) {
           // Post-reload: processStore has no info, check by execution ID
           const runningExec = useTaskStore.getState().executions.find(
-            (e) => e.stage_template_id === stageId && e.status === "running",
+            (e) => e.task_stage_id === stageId && e.status === "running",
           );
           if (!runningExec) return;
 
@@ -122,7 +122,7 @@ async function markStageCrashed(
 ) {
   const executions = await repo.listStageExecutions(projectId, effectTaskId);
   for (const exec of executions) {
-    if (exec.stage_template_id === stageId && exec.status === "running") {
+    if (exec.task_stage_id === stageId && exec.status === "running") {
       await repo.updateStageExecution(projectId, exec.id, {
         status: "failed",
         error_message: message,

@@ -30,7 +30,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { Loader2 } from "lucide-react";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import type { MergeState } from "../../stores/processStore";
-import type { StageTemplate, AgentStreamEvent } from "../../lib/types";
+import type { TaskStageInstance, AgentStreamEvent } from "../../lib/types";
 
 /**
  * MergeStageView intentionally bypasses the standard useStageExecution hook and
@@ -40,7 +40,7 @@ import type { StageTemplate, AgentStreamEvent } from "../../lib/types";
  * logging, analytics), check whether they should also apply here.
  */
 interface MergeStageViewProps {
-  stage: StageTemplate;
+  stage: TaskStageInstance;
 }
 
 export function MergeStageView({ stage }: MergeStageViewProps) {
@@ -50,7 +50,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const updateTask = useTaskStore((s) => s.updateTask);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
 
-  const sk = activeTask ? stageKey(activeTask.id, stage.id) : "";
+  const sk = activeTask ? stageKey(activeTask.id, stage.task_stage_id) : "";
   const mergeStage = useProcessStore((s) => s.mergeStages[sk]);
   const updateMergeState = useProcessStore((s) => s.updateMergeState);
 
@@ -87,7 +87,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
-    .filter((e) => e.stage_template_id === stage.id)
+    .filter((e) => e.task_stage_id === stage.task_stage_id)
     .sort((a, b) => b.attempt_number - a.attempt_number)[0] ?? null;
 
   const isApproved = latestExecution?.status === "approved";
@@ -165,7 +165,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     setError(null);
 
     // Hoist executionId so the catch block can mark it as failed
-    const prevAttempts = executions.filter((e) => e.stage_template_id === stage.id);
+    const prevAttempts = executions.filter((e) => e.task_stage_id === stage.task_stage_id);
     const attemptNumber = prevAttempts.length + 1;
     const executionId = crypto.randomUUID();
 
@@ -174,7 +174,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
       await repo.createStageExecution(activeProject.id, {
         id: executionId,
         task_id: activeTask.id,
-        stage_template_id: stage.id,
+        task_stage_id: stage.task_stage_id,
         attempt_number: attemptNumber,
         status: "running",
         input_prompt: "",
@@ -266,7 +266,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
     // Resolve effective agent: per-stage override → project default → "claude"
     const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-    const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+    const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
 
     const prompt = `A git merge operation failed with the following error. Fix whatever is preventing the merge from succeeding.
 

@@ -71,7 +71,7 @@ export async function initProjectSchema(db: Database): Promise<void> {
     CREATE TABLE IF NOT EXISTS stage_executions (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      stage_template_id TEXT NOT NULL,
+      task_stage_id TEXT,
       attempt_number INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'pending',
       input_prompt TEXT NOT NULL DEFAULT '',
@@ -84,7 +84,7 @@ export async function initProjectSchema(db: Database): Promise<void> {
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT,
       FOREIGN KEY (task_id) REFERENCES tasks(id),
-      FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id)
+      FOREIGN KEY (task_stage_id) REFERENCES task_stages(id)
     )
   `);
 
@@ -101,9 +101,10 @@ export async function initProjectSchema(db: Database): Promise<void> {
       task_id TEXT NOT NULL,
       stage_template_id TEXT NOT NULL,
       sort_order INTEGER NOT NULL,
+      agent_override TEXT DEFAULT NULL,
+      model_override TEXT DEFAULT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id),
-      FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id),
-      UNIQUE(task_id, stage_template_id)
+      FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id)
     )
   `);
 

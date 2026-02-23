@@ -23,9 +23,8 @@ import {
   updateStageExecution,
   getExecutionsForStage,
   getPreviousStageExecution,
-  getTaskStages,
+  getTaskStageInstances,
   setTaskStages,
-  getFilteredStageTemplates,
   listPrReviewFixes,
   upsertPrReviewFix,
   updatePrReviewFix,
@@ -33,6 +32,18 @@ import {
   getProjectTaskSummary,
 } from "../repositories";
 import { makeStageTemplate, makeStageExecution } from "../../test/fixtures";
+import type { TaskStageInstance } from "../types";
+
+function makeTaskStageInstance(overrides?: Partial<TaskStageInstance>): TaskStageInstance {
+  const template = makeStageTemplate(overrides);
+  return {
+    ...template,
+    task_stage_id: overrides?.task_stage_id ?? `ts-${template.id}`,
+    stage_template_id: template.id,
+    agent_override: overrides?.agent_override ?? null,
+    model_override: overrides?.model_override ?? null,
+  };
+}
 
 // Create stable mock db instances that persist across the module
 const appDbMock = {
@@ -338,12 +349,12 @@ describe("updateStageExecution", () => {
 });
 
 describe("getExecutionsForStage", () => {
-  it("queries by task_id and stage_template_id", async () => {
+  it("queries by task_id and task_stage_id", async () => {
     getProjectMock("p1").select.mockResolvedValueOnce([]);
-    await getExecutionsForStage("p1", "t1", "s1");
+    await getExecutionsForStage("p1", "t1", "ts1");
     expect(getProjectMock("p1").select).toHaveBeenCalledWith(
-      "SELECT * FROM stage_executions WHERE task_id = $1 AND stage_template_id = $2 ORDER BY attempt_number ASC",
-      ["t1", "s1"],
+      "SELECT * FROM stage_executions WHERE task_id = $1 AND task_stage_id = $2 ORDER BY attempt_number ASC",
+      ["t1", "ts1"],
     );
   });
 });
@@ -354,34 +365,36 @@ describe("getPreviousStageExecution", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when no previous template exists", async () => {
-    const templates = [makeStageTemplate({ sort_order: 2 })];
-    const result = await getPreviousStageExecution("p1", "t1", 2, templates);
+  it("returns null when no previous instance exists", async () => {
+    const instances = [makeTaskStageInstance({ sort_order: 2, task_stage_id: "ts-2" })];
+    const result = await getPreviousStageExecution("p1", "t1", 2, instances);
     expect(result).toBeNull();
   });
 
-  it("returns approved execution from previous template", async () => {
-    const templates = [
-      makeStageTemplate({ id: "s1", sort_order: 0 }),
-      makeStageTemplate({ id: "s2", sort_order: 1 }),
+  it("returns approved execution from previous instance", async () => {
+    const instances = [
+      makeTaskStageInstance({ id: "s1", sort_order: 0, task_stage_id: "ts-s1" }),
+      makeTaskStageInstance({ id: "s2", sort_order: 1, task_stage_id: "ts-s2" }),
     ];
-    const exec = makeStageExecution({ stage_template_id: "s1", status: "approved" });
+    const exec = makeStageExecution({ task_stage_id: "ts-s1", status: "approved" });
     getProjectMock("p1").select.mockResolvedValueOnce([exec]);
-    const result = await getPreviousStageExecution("p1", "t1", 1, templates);
+    const result = await getPreviousStageExecution("p1", "t1", 1, instances);
     expect(result).toEqual(exec);
   });
 });
 
 // ─── Task Stages ─────────────────────────────────────────────────────────────
 
-describe("getTaskStages", () => {
-  it("returns ordered stage template ids", async () => {
+describe("getTaskStageInstances", () => {
+  it("returns ordered task stage instances", async () => {
     getProjectMock("p1").select.mockResolvedValueOnce([
-      { stage_template_id: "s1" },
-      { stage_template_id: "s3" },
+      { task_stage_id: "ts1", stage_template_id: "s1", sort_order: 1000, id: "s1", name: "Research" },
+      { task_stage_id: "ts2", stage_template_id: "s3", sort_order: 2000, id: "s3", name: "Planning" },
     ]);
-    const result = await getTaskStages("p1", "t1");
-    expect(result).toEqual(["s1", "s3"]);
+    const result = await getTaskStageInstances("p1", "t1");
+    expect(result).toHaveLength(2);
+    expect(result[0].task_stage_id).toBe("ts1");
+    expect(result[1].task_stage_id).toBe("ts2");
   });
 });
 
@@ -402,31 +415,6 @@ describe("setTaskStages", () => {
       (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO task_stages"),
     );
     expect(insertCalls).toHaveLength(2);
-  });
-});
-
-describe("getFilteredStageTemplates", () => {
-  it("returns all templates when no task stages configured", async () => {
-    getProjectMock("p1").select.mockResolvedValueOnce([]);
-    const templates = [
-      makeStageTemplate({ id: "s1" }),
-      makeStageTemplate({ id: "s2" }),
-    ];
-    const result = await getFilteredStageTemplates("p1", "t1", templates);
-    expect(result).toEqual(templates);
-  });
-
-  it("filters templates when task stages configured", async () => {
-    getProjectMock("p1").select.mockResolvedValueOnce([
-      { stage_template_id: "s1" },
-    ]);
-    const templates = [
-      makeStageTemplate({ id: "s1" }),
-      makeStageTemplate({ id: "s2" }),
-    ];
-    const result = await getFilteredStageTemplates("p1", "t1", templates);
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("s1");
   });
 });
 

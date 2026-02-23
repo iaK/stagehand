@@ -69,7 +69,7 @@ export function makeStageExecution(
   return {
     id: crypto.randomUUID(),
     task_id: "task-1",
-    stage_template_id: "stage-1",
+    task_stage_id: null,
     attempt_number: 1,
     status: "approved",
     input_prompt: "test prompt",

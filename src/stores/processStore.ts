@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { STREAM_OUTPUT_MAX_LINES } from "../lib/constants";
-import type { StageTemplate } from "../lib/types";
+import type { TaskStageInstance } from "../lib/types";
 
 /** Composite key for per-task, per-stage process tracking. */
 export function stageKey(taskId: string, stageId: string): string {
@@ -10,7 +10,7 @@ export function stageKey(taskId: string, stageId: string): string {
 export interface ActivePtySession {
   taskId: string;
   stageId: string;
-  stage: StageTemplate;
+  stage: TaskStageInstance;
 }
 
 export interface StageProcessState {
@@ -83,7 +83,7 @@ interface ProcessStore {
   getMergeState: (key: string) => MergeStageState;
   updateMergeState: (key: string, patch: Partial<MergeStageState>) => void;
   clearMergeState: (key: string) => void;
-  registerPtySession: (key: string, taskId: string, stageId: string, stage: StageTemplate) => void;
+  registerPtySession: (key: string, taskId: string, stageId: string, stage: TaskStageInstance) => void;
   unregisterPtySession: (key: string) => void;
 }
 

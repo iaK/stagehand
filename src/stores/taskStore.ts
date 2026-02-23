@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Task, StageTemplate, StageExecution } from "../lib/types";
+import type { Task, StageTemplate, StageExecution, TaskStageInstance } from "../lib/types";
 import * as repo from "../lib/repositories";
 import { listProcessesDetailed, type ProcessInfo } from "../lib/claude";
 import { useProcessStore, stageKey } from "./processStore";
@@ -29,7 +29,7 @@ interface TaskStore {
   stageTemplates: StageTemplate[];
   executions: StageExecution[];
   loading: boolean;
-  taskStages: Record<string, string[]>; // taskId → stageTemplateId[]
+  taskStages: Record<string, TaskStageInstance[]>; // taskId → instances
   taskExecStatuses: Record<string, string>; // taskId → latest execution status
 
   loadTasks: (projectId: string) => Promise<void>;
@@ -37,7 +37,8 @@ interface TaskStore {
   loadExecutions: (projectId: string, taskId: string) => Promise<void>;
   loadTaskStages: (projectId: string, taskId: string) => Promise<void>;
   setTaskStages: (projectId: string, taskId: string, stages: { stageTemplateId: string; sortOrder: number }[]) => Promise<void>;
-  getActiveTaskStageTemplates: () => StageTemplate[];
+  insertTaskStage: (projectId: string, taskId: string, templateId: string, sortOrder: number, agent?: string | null, model?: string | null) => Promise<void>;
+  getActiveTaskStageInstances: () => TaskStageInstance[];
   setActiveTask: (task: Task | null) => void;
   consumeInitialInput: (taskId: string) => string | undefined;
   addTask: (
@@ -114,7 +115,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
       for (const exec of executions) {
         if (exec.status === "running") {
-          const sk = stageKey(exec.task_id, exec.stage_template_id);
+          const sk = stageKey(exec.task_id, exec.task_stage_id ?? exec.task_id);
           const stageState = useProcessStore.getState().stages[sk];
           // Skip if processStore thinks this is actively running (current session spawn)
           if (stageState?.isRunning) continue;
@@ -149,27 +150,47 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   loadTaskStages: async (projectId, taskId) => {
-    const stageIds = await repo.getTaskStages(projectId, taskId);
+    const instances = await repo.getTaskStageInstances(projectId, taskId);
     set((state) => ({
-      taskStages: { ...state.taskStages, [taskId]: stageIds },
+      taskStages: { ...state.taskStages, [taskId]: instances },
     }));
   },
 
   setTaskStages: async (projectId, taskId, stages) => {
     await repo.setTaskStages(projectId, taskId, stages);
-    const stageIds = stages.map((s) => s.stageTemplateId);
+    const instances = await repo.getTaskStageInstances(projectId, taskId);
     set((state) => ({
-      taskStages: { ...state.taskStages, [taskId]: stageIds },
+      taskStages: { ...state.taskStages, [taskId]: instances },
     }));
   },
 
-  getActiveTaskStageTemplates: () => {
+  insertTaskStage: async (projectId, taskId, templateId, sortOrder, agent, model) => {
+    await repo.insertTaskStage(projectId, taskId, templateId, sortOrder, agent, model);
+    const instances = await repo.getTaskStageInstances(projectId, taskId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: instances },
+    }));
+  },
+
+  getActiveTaskStageInstances: () => {
     const { activeTask, stageTemplates, taskStages } = get();
-    if (!activeTask) return stageTemplates;
-    const selectedIds = taskStages[activeTask.id];
-    if (!selectedIds || selectedIds.length === 0) return stageTemplates;
-    const idSet = new Set(selectedIds);
-    return stageTemplates.filter((t) => idSet.has(t.id));
+    if (!activeTask) return [];
+    const instances = taskStages[activeTask.id];
+    if (!instances || instances.length === 0) {
+      // Before stage selection: return the research stage as a synthetic instance
+      const research = stageTemplates.find((t) => t.sort_order === 0);
+      if (research) {
+        return [{
+          ...research,
+          task_stage_id: research.id,
+          stage_template_id: research.id,
+          agent_override: null,
+          model_override: null,
+        }];
+      }
+      return [];
+    }
+    return instances;
   },
 
   setActiveTask: (task) => {
@@ -197,12 +218,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   addTask: async (projectId, title, initialInput, branchName) => {
-    const templates = get().stageTemplates;
-    const firstStage = templates.length > 0 ? templates[0].id : "";
     const task = await repo.createTask(
       projectId,
       title,
-      firstStage,
+      null,
       branchName,
     );
     const tasks = await repo.listTasks(projectId);
@@ -267,16 +286,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   createSubtasks: async (projectId, parentTaskId, subtasks) => {
-    const templates = get().stageTemplates;
-    const firstStage = templates.length > 0 ? templates[0] : null;
-    if (!firstStage) throw new Error("No stage templates available");
-
     const created: Task[] = [];
     for (const sub of subtasks) {
       const task = await repo.createTask(
         projectId,
         sub.title,
-        firstStage.id,
+        null,
         undefined,
         undefined,
         parentTaskId,

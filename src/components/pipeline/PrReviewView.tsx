@@ -8,19 +8,20 @@ import { LiveStreamBubble } from "./StageTimeline";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { StageTemplate, Task } from "../../lib/types";
+import type { TaskStageInstance, Task } from "../../lib/types";
 
 interface PrReviewViewProps {
-  stage: StageTemplate;
+  stage: TaskStageInstance;
   task: Task;
 }
 
 export function PrReviewView({ stage, task }: PrReviewViewProps) {
-  const sk = stageKey(task.id, stage.id);
+  const sid = stage.task_stage_id;
+  const sk = stageKey(task.id, sid);
   const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const { killCurrent } = useStageExecution();
-  useProcessHealthCheck(stage.id);
+  useProcessHealthCheck(sid);
   const prReview = usePrReview(stage, task);
 
   const [commitMessage, setCommitMessage] = useState("");
@@ -31,13 +32,13 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
 
   // Sync editable commit message when pending commit appears
   useEffect(() => {
-    if (pendingCommit?.stageId === stage.id) {
+    if (pendingCommit?.stageId === sid) {
       setCommitMessage(pendingCommit.message);
     }
-  }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
+  }, [pendingCommit?.stageId, pendingCommit?.message, sid]);
 
   const handleCommit = async () => {
-    if (!pendingCommit || pendingCommit.stageId !== stage.id || !pendingCommit.fixId) return;
+    if (!pendingCommit || pendingCommit.stageId !== sid || !pendingCommit.fixId) return;
     setCommitting(true);
     setCommitError(null);
     try {
@@ -82,7 +83,7 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
               <LiveStreamBubble
                 stageKey={sk}
                 label="Fixing review comment..."
-                onStop={() => killCurrent(task.id, stage.id)}
+                onStop={() => killCurrent(task.id, sid)}
               />
             </div>
           )}
@@ -101,7 +102,7 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
           />
 
           {/* Commit dialog for individual fixes */}
-          {pendingCommit?.stageId === stage.id && pendingCommit.fixId && (
+          {pendingCommit?.stageId === sid && pendingCommit.fixId && (
             <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

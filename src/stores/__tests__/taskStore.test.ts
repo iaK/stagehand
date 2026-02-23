@@ -1,6 +1,18 @@
 import { vi } from "vitest";
 import { useTaskStore } from "../taskStore";
 import { makeTask, makeStageTemplate } from "../../test/fixtures";
+import type { TaskStageInstance } from "../../lib/types";
+
+function makeTaskStageInstance(overrides?: Partial<TaskStageInstance>): TaskStageInstance {
+  const template = makeStageTemplate(overrides);
+  return {
+    ...template,
+    task_stage_id: overrides?.task_stage_id ?? `ts-${template.id}`,
+    stage_template_id: template.id,
+    agent_override: overrides?.agent_override ?? null,
+    model_override: overrides?.model_override ?? null,
+  };
+}
 
 // Mock the repositories module
 vi.mock("../../lib/repositories", () => ({
@@ -10,7 +22,7 @@ vi.mock("../../lib/repositories", () => ({
   listStageTemplates: vi.fn(),
   listStageExecutions: vi.fn(),
   getLatestExecutionStatusPerTask: vi.fn().mockResolvedValue({}),
-  getTaskStages: vi.fn(),
+  getTaskStageInstances: vi.fn(),
   setTaskStages: vi.fn(),
   updateStageExecution: vi.fn(),
 }));
@@ -119,8 +131,8 @@ describe("taskStore", () => {
     });
   });
 
-  describe("getActiveTaskStageTemplates", () => {
-    it("returns all templates when no task stages configured", () => {
+  describe("getActiveTaskStageInstances", () => {
+    it("returns synthetic research instance when no task stages configured", () => {
       const templates = [
         makeStageTemplate({ id: "s1", sort_order: 0 }),
         makeStageTemplate({ id: "s2", sort_order: 1 }),
@@ -128,25 +140,31 @@ describe("taskStore", () => {
       const task = makeTask({ id: "t1" });
       useTaskStore.setState({ stageTemplates: templates, activeTask: task, taskStages: {} });
 
-      expect(useTaskStore.getState().getActiveTaskStageTemplates()).toEqual(templates);
+      const result = useTaskStore.getState().getActiveTaskStageInstances();
+      expect(result).toHaveLength(1);
+      expect(result[0].task_stage_id).toBe("s1");
     });
 
-    it("filters templates when task stages are configured", () => {
+    it("returns instances when task stages are configured", () => {
       const templates = [
         makeStageTemplate({ id: "s1", sort_order: 0, name: "Research" }),
         makeStageTemplate({ id: "s2", sort_order: 1, name: "Planning" }),
         makeStageTemplate({ id: "s3", sort_order: 2, name: "Implementation" }),
       ];
+      const instances: TaskStageInstance[] = [
+        makeTaskStageInstance({ id: "s1", sort_order: 1000, name: "Research", task_stage_id: "ts-s1" }),
+        makeTaskStageInstance({ id: "s3", sort_order: 2000, name: "Implementation", task_stage_id: "ts-s3" }),
+      ];
       const task = makeTask({ id: "t1" });
       useTaskStore.setState({
         stageTemplates: templates,
         activeTask: task,
-        taskStages: { t1: ["s1", "s3"] },
+        taskStages: { t1: instances },
       });
 
-      const result = useTaskStore.getState().getActiveTaskStageTemplates();
+      const result = useTaskStore.getState().getActiveTaskStageInstances();
       expect(result).toHaveLength(2);
-      expect(result.map((t) => t.name)).toEqual(["Research", "Implementation"]);
+      expect(result.map((t: TaskStageInstance) => t.name)).toEqual(["Research", "Implementation"]);
     });
   });
 });

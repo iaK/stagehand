@@ -69,7 +69,6 @@ const statusConfig: Record<string, { label: string; variant: "success" | "info" 
 
 export function TaskOverview() {
   const activeTask = useTaskStore((s) => s.activeTask);
-  const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const executions = useTaskStore((s) => s.executions);
   const activeProject = useProjectStore((s) => s.activeProject);
   const defaultBranch = useGitHubStore((s) => s.defaultBranch);
@@ -118,20 +117,22 @@ export function TaskOverview() {
     };
   }, [executions]);
 
+  const taskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances)();
   const perStageUsage = useMemo(() => {
     if (!tokenTotals) return [];
     const byStage = new Map<string, StageExecution>();
     for (const exec of executions) {
       if (exec.total_cost_usd == null) continue;
-      const existing = byStage.get(exec.stage_template_id);
+      const key = exec.task_stage_id ?? exec.task_id;
+      const existing = byStage.get(key);
       if (!existing || exec.attempt_number > existing.attempt_number) {
-        byStage.set(exec.stage_template_id, exec);
+        byStage.set(key, exec);
       }
     }
-    return stageTemplates
-      .filter((t) => byStage.has(t.id))
-      .map((t) => ({ stage: t, execution: byStage.get(t.id)! }));
-  }, [executions, stageTemplates, tokenTotals]);
+    return taskStageInstances
+      .filter((t) => byStage.has(t.task_stage_id))
+      .map((t) => ({ stage: t, execution: byStage.get(t.task_stage_id)! }));
+  }, [executions, taskStageInstances, tokenTotals]);
 
   useEffect(() => {
     if (!activeTask || !activeProject) {
@@ -191,7 +192,7 @@ export function TaskOverview() {
 
   const status = statusConfig[activeTask.status] ?? statusConfig.pending;
   const currentStage = activeTask.current_stage_id
-    ? stageTemplates.find((s) => s.id === activeTask.current_stage_id)
+    ? taskStageInstances.find((s) => s.task_stage_id === activeTask.current_stage_id)
     : null;
 
   return (

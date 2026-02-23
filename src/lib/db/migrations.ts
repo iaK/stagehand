@@ -42,6 +42,7 @@ const MIGRATIONS: Migration[] = [
   { version: 15, name: "drop_task_description", fn: migrateDropTaskDescription },
   { version: 16, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
   { version: 17, name: "strip_json_from_prompts", fn: migrateStripJsonFromPrompts },
+  { version: 18, name: "task_stage_instances", fn: migrateTaskStageInstances },
 ];
 
 /**
@@ -824,4 +825,99 @@ async function migrateStripJsonFromPrompts(db: Database): Promise<void> {
       );
     }
   }
+}
+
+async function migrateTaskStageInstances(db: Database): Promise<void> {
+  // 1. Add override columns to task_stages
+  await db.execute(`ALTER TABLE task_stages ADD COLUMN agent_override TEXT DEFAULT NULL`).catch(() => {});
+  await db.execute(`ALTER TABLE task_stages ADD COLUMN model_override TEXT DEFAULT NULL`).catch(() => {});
+
+  // 2. Add task_stage_id column to stage_executions
+  await db.execute(`ALTER TABLE stage_executions ADD COLUMN task_stage_id TEXT DEFAULT NULL`).catch(() => {});
+
+  // 3. Backfill stage_executions.task_stage_id from task_stages
+  await db.execute(`
+    UPDATE stage_executions SET task_stage_id = (
+      SELECT ts.id FROM task_stages ts
+      WHERE ts.task_id = stage_executions.task_id
+        AND ts.stage_template_id = stage_executions.stage_template_id
+    )
+  `);
+
+  // 4. Recreate task_stages without UNIQUE constraint
+  await db.execute(`
+    CREATE TABLE task_stages_new (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      stage_template_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      agent_override TEXT DEFAULT NULL,
+      model_override TEXT DEFAULT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id),
+      FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id)
+    )
+  `);
+  await db.execute(`INSERT INTO task_stages_new SELECT id, task_id, stage_template_id, sort_order, agent_override, model_override FROM task_stages`);
+  await db.execute(`DROP TABLE task_stages`);
+  await db.execute(`ALTER TABLE task_stages_new RENAME TO task_stages`);
+
+  // 5. Backfill tasks.current_stage_id to point to task_stage_id
+  await db.execute(`
+    UPDATE tasks SET current_stage_id = (
+      SELECT ts.id FROM task_stages ts
+      WHERE ts.task_id = tasks.id AND ts.stage_template_id = tasks.current_stage_id
+    )
+    WHERE current_stage_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM task_stages ts
+        WHERE ts.task_id = tasks.id AND ts.stage_template_id = tasks.current_stage_id
+      )
+  `);
+
+  // 6. Update sort_order values to use gaps of 1000
+  await db.execute(`UPDATE task_stages SET sort_order = sort_order * 1000`);
+
+  // 7. Recreate stage_executions without stage_template_id
+  await db.execute(`
+    CREATE TABLE stage_executions_new (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      task_stage_id TEXT,
+      attempt_number INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'pending',
+      input_prompt TEXT NOT NULL DEFAULT '',
+      user_input TEXT,
+      raw_output TEXT,
+      parsed_output TEXT,
+      user_decision TEXT,
+      session_id TEXT,
+      error_message TEXT,
+      thinking_output TEXT,
+      stage_result TEXT,
+      stage_summary TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      cache_creation_input_tokens INTEGER,
+      cache_read_input_tokens INTEGER,
+      total_cost_usd REAL,
+      duration_ms INTEGER,
+      num_turns INTEGER,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
+      FOREIGN KEY (task_id) REFERENCES tasks(id),
+      FOREIGN KEY (task_stage_id) REFERENCES task_stages(id)
+    )
+  `);
+  await db.execute(`
+    INSERT INTO stage_executions_new SELECT
+      id, task_id, task_stage_id, attempt_number, status, input_prompt,
+      user_input, raw_output, parsed_output, user_decision, session_id,
+      error_message, thinking_output, stage_result, stage_summary,
+      input_tokens, output_tokens, cache_creation_input_tokens,
+      cache_read_input_tokens, total_cost_usd, duration_ms, num_turns,
+      started_at, completed_at
+    FROM stage_executions
+  `);
+  await db.execute(`DROP TABLE stage_executions`);
+  await db.execute(`ALTER TABLE stage_executions_new RENAME TO stage_executions`);
 }
