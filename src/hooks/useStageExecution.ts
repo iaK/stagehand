@@ -18,6 +18,7 @@ import {
   gitWorktreeRemove,
 } from "../lib/git";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../lib/worktree";
+import { gitDiffShortStatBranch } from "../lib/git";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
 import { logger } from "../lib/logger";
@@ -672,6 +673,24 @@ export function useStageExecution() {
         await updateTask(projectId, task.id, {
           status: "completed",
         });
+
+        // Persist diff stats before cleanup so they survive after merge
+        {
+          const project = useProjectStore.getState().activeProject;
+          const defaultBranch = useGitHubStore.getState().defaultBranch;
+          if (project && defaultBranch) {
+            try {
+              const workDir = getTaskWorkingDir(task, project.path);
+              const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+              await repo.updateTask(projectId, task.id, {
+                diff_insertions: stats.insertions,
+                diff_deletions: stats.deletions,
+              });
+            } catch {
+              // Non-critical — stats may already be persisted from earlier
+            }
+          }
+        }
 
         // Clean up worktree on completion. Note: merge stages handle their
         // own completion and cleanup in MergeStageView and never reach here.

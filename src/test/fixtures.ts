@@ -30,6 +30,8 @@ export function makeTask(overrides?: Partial<Task>): Task {
     parent_task_id: null,
     ejected: 0,
     archived: 0,
+    diff_insertions: null,
+    diff_deletions: null,
     created_at: "2025-01-01T00:00:00.000Z",
     updated_at: "2025-01-01T00:00:00.000Z",
     ...overrides,

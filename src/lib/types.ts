@@ -46,6 +46,8 @@ export interface Task {
   parent_task_id: string | null;
   ejected: number;
   archived: number;
+  diff_insertions: number | null;
+  diff_deletions: number | null;
   created_at: string;
   updated_at: string;
 }

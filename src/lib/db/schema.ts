@@ -209,6 +209,10 @@ export async function initProjectSchema(db: Database): Promise<void> {
     await db.execute("DROP TABLE IF EXISTS _pr_review_fixes_v2").catch(() => {});
   }
 
+  // Add diff stats columns for persisting +/- lines after merge
+  await db.execute(`ALTER TABLE tasks ADD COLUMN diff_insertions INTEGER`).catch(() => {});
+  await db.execute(`ALTER TABLE tasks ADD COLUMN diff_deletions INTEGER`).catch(() => {});
+
   // Run version-tracked migrations
   await runPendingMigrations(db);
 }

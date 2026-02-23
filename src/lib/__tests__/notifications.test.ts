@@ -204,7 +204,7 @@ describe("registerNotificationClickHandler", () => {
   it("navigates to correct project and task when extra contains both", async () => {
     // Set up store state
     const mockProject: Project = { id: "proj-1", name: "Test Project", path: "/test", archived: 0, created_at: "", updated_at: "" };
-    const mockTask: Task = { id: "task-1", title: "Test Task", status: "pending", project_id: "proj-1", current_stage_id: null, branch_name: null, worktree_path: null, pr_url: null, parent_task_id: null, ejected: 0, archived: 0, created_at: "", updated_at: "" };
+    const mockTask: Task = { id: "task-1", title: "Test Task", status: "pending", project_id: "proj-1", current_stage_id: null, branch_name: null, worktree_path: null, pr_url: null, parent_task_id: null, ejected: 0, archived: 0, diff_insertions: null, diff_deletions: null, created_at: "", updated_at: "" };
 
     useProjectStore.setState({ projects: [mockProject] });
 

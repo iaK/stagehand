@@ -13,6 +13,7 @@ import {
   gitDiffStat,
   gitAdd,
   gitCommit,
+  gitDiffShortStatBranch,
 } from "../../lib/git";
 import { logger } from "../../lib/logger";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
@@ -195,6 +196,21 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         started_at: new Date().toISOString(),
       });
 
+      // Persist diff stats before merge so they survive after cleanup
+      try {
+        const defaultBranch = useGitHubStore.getState().defaultBranch;
+        if (defaultBranch) {
+          const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+          const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+          await repo.updateTask(activeProject.id, activeTask.id, {
+            diff_insertions: stats.insertions,
+            diff_deletions: stats.deletions,
+          });
+        }
+      } catch {
+        // Non-critical — stats may already be persisted from earlier
+      }
+
       await performMerge({
         projectPath: activeProject.path,
         branchName: activeTask.branch_name,
@@ -338,6 +354,21 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
 
   const handleSkip = async () => {
     if (!activeProject || !activeTask) return;
+
+    // Persist diff stats before cleanup so they survive
+    try {
+      const defaultBranch = useGitHubStore.getState().defaultBranch;
+      if (defaultBranch) {
+        const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+        const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+        await repo.updateTask(activeProject.id, activeTask.id, {
+          diff_insertions: stats.insertions,
+          diff_deletions: stats.deletions,
+        });
+      }
+    } catch {
+      // Non-critical
+    }
 
     await updateTask(activeProject.id, activeTask.id, {
       status: "completed",

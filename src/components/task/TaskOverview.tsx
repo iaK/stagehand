@@ -171,6 +171,14 @@ export function TaskOverview() {
     gitDiffShortStatBranch(workDir, defaultBranch)
       .then((stats) => {
         if (!cancelled) setDiffStats(stats);
+        // Persist diff stats so they survive after merge/cleanup
+        if (activeProject && activeTask &&
+            (activeTask.diff_insertions !== stats.insertions || activeTask.diff_deletions !== stats.deletions)) {
+          repo.updateTask(activeProject.id, activeTask.id, {
+            diff_insertions: stats.insertions,
+            diff_deletions: stats.deletions,
+          }).catch(() => {});
+        }
       })
       .catch(() => {
         if (!cancelled) setDiffStats(null);
@@ -295,12 +303,12 @@ export function TaskOverview() {
             </a>
           )}
         </InfoCard>
-        {diffStats && (
+        {(diffStats || activeTask.diff_insertions != null) && (
           <InfoCard label="Lines Changed">
             <span className="text-sm font-medium font-mono">
-              <span className="text-green-600">+{diffStats.insertions}</span>
+              <span className="text-green-600">+{diffStats?.insertions ?? activeTask.diff_insertions}</span>
               {" / "}
-              <span className="text-red-600">-{diffStats.deletions}</span>
+              <span className="text-red-600">-{diffStats?.deletions ?? activeTask.diff_deletions}</span>
             </span>
           </InfoCard>
         )}

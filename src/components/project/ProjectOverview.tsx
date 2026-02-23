@@ -75,6 +75,13 @@ export function ProjectOverview() {
             const workDir = getTaskWorkingDir(task, activeProject.path);
             const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
             results[task.id] = { insertions: stats.insertions, deletions: stats.deletions };
+            // Persist diff stats so they survive after merge/cleanup
+            if (task.diff_insertions !== stats.insertions || task.diff_deletions !== stats.deletions) {
+              repo.updateTask(activeProject.id, task.id, {
+                diff_insertions: stats.insertions,
+                diff_deletions: stats.deletions,
+              }).catch(() => {});
+            }
           } catch {
             // Worktree may be gone — skip
           }
@@ -212,8 +219,8 @@ export function ProjectOverview() {
                   updatedAt={task.updated_at}
                   dotClass={pipelineColors[taskExecStatuses[task.id]] ?? "bg-zinc-400"}
                   status={taskExecStatuses[task.id]}
-                  insertions={taskDiffStats[task.id]?.insertions}
-                  deletions={taskDiffStats[task.id]?.deletions}
+                  insertions={taskDiffStats[task.id]?.insertions ?? task.diff_insertions ?? undefined}
+                  deletions={taskDiffStats[task.id]?.deletions ?? task.diff_deletions ?? undefined}
                   onClick={() => setActiveTask(task)}
                 />
               ))}
@@ -240,6 +247,8 @@ export function ProjectOverview() {
                     title={task.title}
                     updatedAt={task.updated_at}
                     dotClass="bg-zinc-400"
+                    insertions={task.diff_insertions ?? undefined}
+                    deletions={task.diff_deletions ?? undefined}
                     muted
                     disabled
                   />

@@ -420,6 +420,8 @@ export async function createTask(
     parent_task_id: parentTaskId ?? null,
     ejected: 0,
     archived: 0,
+    diff_insertions: null,
+    diff_deletions: null,
     created_at: now,
     updated_at: now,
   };
@@ -451,7 +453,7 @@ export async function getChildTasks(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected" | "diff_insertions" | "diff_deletions">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];

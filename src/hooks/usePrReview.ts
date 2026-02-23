@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
+import { useGitHubStore } from "../stores/githubStore";
 import { useProcessStore, stageKey } from "../stores/processStore";
 import { spawnAgent } from "../lib/agent";
 import { parseAgentStreamLine } from "../lib/agentParsers";
@@ -17,6 +18,7 @@ import {
   getChangedFiles,
   gitAddFiles,
   gitCommit,
+  gitDiffShortStatBranch,
 } from "../lib/git";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../lib/worktree";
 import * as repo from "../lib/repositories";
@@ -130,6 +132,21 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
           stage_summary: `PR ${label}`,
           completed_at: new Date().toISOString(),
         });
+
+        // Persist diff stats before cleanup so they survive after merge
+        try {
+          const defaultBranch = useGitHubStore.getState().defaultBranch;
+          if (defaultBranch) {
+            const workDir = getTaskWorkingDir(task, activeProject.path);
+            const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+            await repo.updateTask(activeProject.id, task.id, {
+              diff_insertions: stats.insertions,
+              diff_deletions: stats.deletions,
+            });
+          }
+        } catch {
+          // Non-critical — stats may already be persisted from earlier
+        }
 
         // Clean up worktree; delete branch only after merge (not close — a closed PR may be reopened)
         await cleanupTaskWorktree(activeProject.path, task, { deleteBranch: !!prState.merged });
