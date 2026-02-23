@@ -13,8 +13,15 @@ import {
  * Merge the task branch into the target branch.
  *
  * Operates entirely locally — does not fetch from or push to any remote.
- * Uses a temporary detached worktree so the project root's checkout is not
- * disturbed during the merge itself.
+ *
+ * When the target branch is checked out in the project root and the working
+ * tree is clean, we perform a normal `git merge` directly — this is the
+ * safest path and avoids any `reset --hard` that could lose content.
+ *
+ * When the target branch is NOT checked out (or the tree is dirty) we fall
+ * back to an isolated detached-worktree merge and update the branch ref
+ * via `update-ref`.  The working tree is intentionally left as-is so we
+ * never discard uncommitted changes.
  *
  * Returns the SHA of the resulting merge commit.
  */
@@ -25,17 +32,30 @@ export async function performMerge(params: {
 }): Promise<string> {
   const { projectPath, branchName, targetBranch } = params;
 
-  // Always merge from the local target branch — this preserves any
-  // unpushed commits the user has made in the main repo.
-  const startPoint = targetBranch;
+  // Check if the target branch is checked out in the project root and clean.
+  let targetIsCheckedOut = false;
+  let workingTreeClean = false;
+  try {
+    const current = (await gitCurrentBranch(projectPath)).trim();
+    targetIsCheckedOut = current === targetBranch;
+    if (targetIsCheckedOut) {
+      workingTreeClean = !(await hasUncommittedChanges(projectPath));
+    }
+  } catch { /* ignore */ }
 
-  // Use a temporary worktree to perform the merge so we don't
-  // disturb the project root's checkout or any other worktrees.
+  // ── Fast path: target branch is checked out and clean ──────────────
+  // Perform a normal merge directly in the project root.  No detached
+  // worktree, no update-ref, no reset — just a plain merge.
+  if (targetIsCheckedOut && workingTreeClean) {
+    await gitMerge(projectPath, branchName);
+    return gitRevParse(projectPath, "HEAD");
+  }
+
+  // ── Fallback: isolated merge in a temporary detached worktree ──────
   const mergeWorktreePath = `${projectPath}/.stagehand-worktrees/_merge-${targetBranch.replace(/\//g, "--")}-${Date.now()}`;
 
-  await gitWorktreeAddDetached(projectPath, mergeWorktreePath, startPoint);
+  await gitWorktreeAddDetached(projectPath, mergeWorktreePath, targetBranch);
 
-  // Merge the task branch into the detached HEAD
   try {
     await gitMerge(mergeWorktreePath, branchName);
   } catch (mergeErr) {
@@ -44,29 +64,17 @@ export async function performMerge(params: {
     throw mergeErr;
   }
 
-  // Capture the merge commit SHA before any cleanup
+  // Capture the merge commit SHA before cleanup
   const mergeSha = await gitRevParse(mergeWorktreePath, "HEAD");
 
-  // Check if target branch is checked out and clean BEFORE updating the ref,
-  // so we know whether it's safe to reset the working tree afterward.
-  let shouldResetWorkingTree = false;
-  try {
-    const current = (await gitCurrentBranch(projectPath)).trim();
-    if (current === targetBranch) {
-      shouldResetWorkingTree = !(await hasUncommittedChanges(projectPath));
-    }
-  } catch { /* ignore */ }
-
-  // Update the local target branch ref to the merge commit
+  // Point the target branch ref to the merge commit.
+  // This is an atomic pointer update — it does NOT touch the working tree.
   await runGit(projectPath, "update-ref", `refs/heads/${targetBranch}`, mergeSha);
 
-  // If the target branch is checked out in the project root and was clean,
-  // sync the working tree to match the new ref.
-  if (shouldResetWorkingTree) {
-    try {
-      await runGit(projectPath, "reset", "--hard");
-    } catch { /* non-critical */ }
-  }
+  // Intentionally do NOT run `git reset --hard` here.  If the user has
+  // the target branch checked out with uncommitted work we must not
+  // discard it.  The ref update is enough — the next time they run
+  // `git status` they'll see the updated branch.
 
   // Clean up the temporary merge worktree
   try { await gitWorktreeRemove(projectPath, mergeWorktreePath); } catch { /* ignore */ }

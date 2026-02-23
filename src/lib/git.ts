@@ -218,9 +218,12 @@ export async function gitWorktreeAdd(
   worktreePath: string,
   branchName: string,
   createBranch: boolean,
+  startPoint?: string,
 ): Promise<string> {
   if (createBranch) {
-    return runGit(workingDir, "worktree", "add", worktreePath, "-b", branchName);
+    const args = ["worktree", "add", worktreePath, "-b", branchName];
+    if (startPoint) args.push(startPoint);
+    return runGit(workingDir, ...args);
   }
   return runGit(workingDir, "worktree", "add", worktreePath, branchName);
 }

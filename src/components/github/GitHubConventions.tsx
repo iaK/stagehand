@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as repo from "../../lib/repositories";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { sendNotification } from "../../lib/notifications";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useGitHubStore } from "../../stores/githubStore";
 import type { CompletionStrategy } from "../../lib/types";
 
 interface GitHubConventionsProps {
@@ -39,23 +41,26 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
   const [branchNaming, setBranchNaming] = useState("");
   const [prTemplate, setPrTemplate] = useState("");
   const [extraRules, setExtraRules] = useState("");
+  const [defaultBranchOverride, setDefaultBranchOverride] = useState("");
   const [completionStrategy, setCompletionStrategy] = useState<CompletionStrategy>("pr");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [cf, bn, pr, er, cs] = await Promise.all([
+      const [cf, bn, pr, er, cs, db] = await Promise.all([
         repo.getProjectSetting(projectId, "conv_commit_format"),
         repo.getProjectSetting(projectId, "conv_branch_naming"),
         repo.getProjectSetting(projectId, "conv_pr_template"),
         repo.getProjectSetting(projectId, "conv_extra_rules"),
         repo.getProjectSetting(projectId, "default_completion_strategy"),
+        repo.getProjectSetting(projectId, "github_default_branch"),
       ]);
       setCommitFormat(cf ?? "");
       setBranchNaming(bn ?? "");
       setPrTemplate(pr ?? "");
       setExtraRules(er ?? "");
+      setDefaultBranchOverride(db ?? "");
       setCompletionStrategy((cs as CompletionStrategy) ?? "pr");
       setLoading(false);
     })();
@@ -100,6 +105,11 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
       await repo.setProjectSetting(projectId, "github_commit_rules", parts.join("\n\n---\n\n"));
     } else {
       await repo.deleteProjectSetting(projectId, "github_commit_rules");
+    }
+
+    // Persist the default branch override if the user specified one
+    if (defaultBranchOverride.trim()) {
+      await useGitHubStore.getState().setDefaultBranch(defaultBranchOverride.trim(), projectId);
     }
 
     setSaving(false);
@@ -157,6 +167,19 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
                 </div>
               </label>
             </RadioGroup>
+          </div>
+
+          <div>
+            <Label className="text-sm font-semibold">Default Branch</Label>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              The target branch for merges and PRs (e.g. main, develop). Used when creating worktrees and as the default merge target.
+            </p>
+            <Input
+              value={defaultBranchOverride}
+              onChange={(e) => setDefaultBranchOverride(e.target.value)}
+              className="font-mono"
+              placeholder="main"
+            />
           </div>
 
           <Separator />

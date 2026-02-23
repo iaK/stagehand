@@ -1,20 +1,28 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { TextOutput } from "./TextOutput";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import * as repo from "../../lib/repositories";
 import { logger } from "../../lib/logger";
 import { useProjectStore } from "../../stores/projectStore";
+import { useTaskStore } from "../../stores/taskStore";
+import { useGitHubStore } from "../../stores/githubStore";
+import { gitDefaultBranch } from "../../lib/git";
+import { generateFallbackBranchName } from "../../hooks/useStageExecution";
+import { loadConventions } from "../../lib/conventions";
+import { quickAgentCall } from "../../lib/agentHelper";
 import type { ResearchQuestion, StageTemplate, StageSuggestion, CompletionStrategy } from "../../lib/types";
 
 interface ResearchOutputProps {
   output: string;
-  onApprove: () => void;
-  onApproveWithStages?: (selectedStageIds: string[]) => void;
+  onApprove: (decision?: string, branchName?: string, baseBranch?: string) => void;
+  onApproveWithStages?: (selectedStageIds: string[], branchName?: string, baseBranch?: string) => void;
   onSubmitAnswers: (answers: string) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
@@ -44,7 +52,7 @@ export function ResearchOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={onApprove} disabled={approving} className="mt-4">
+          <Button variant="success" onClick={() => onApprove()} disabled={approving} className="mt-4">
             {approving && <Loader2 className="w-4 h-4 animate-spin" />}
             {approving ? "Approving..." : "Approve & Continue"}
           </Button>
@@ -77,19 +85,45 @@ export function ResearchOutput({
       )}
 
       {!hasQuestions && !isApproved && !hasStageSelection && (
-        <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-          <AlertDescription className="text-emerald-800 dark:text-emerald-300">
-            <p className="text-sm font-medium mb-3">
-              Research complete — no further questions.
-            </p>
-            <Button variant="success" onClick={onApprove} disabled={approving}>
-              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {approving ? "Approving..." : "Approve & Continue"}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <SimpleApproveWithBranch onApprove={onApprove} approving={approving} />
       )}
     </div>
+  );
+}
+
+/** Simple approve view (no stage selection) with branch/base branch fields. */
+function SimpleApproveWithBranch({
+  onApprove,
+  approving,
+}: {
+  onApprove: (decision?: string, branchName?: string, baseBranch?: string) => void;
+  approving?: boolean;
+}) {
+  const { branchName, setBranchName, baseBranch, setBaseBranch, loading } = useBranchFields();
+
+  return (
+    <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+      <AlertDescription className="text-emerald-800 dark:text-emerald-300">
+        <p className="text-sm font-medium mb-3">
+          Research complete — no further questions.
+        </p>
+        <BranchFields
+          branchName={branchName}
+          setBranchName={setBranchName}
+          baseBranch={baseBranch}
+          setBaseBranch={setBaseBranch}
+          loading={loading}
+        />
+        <Button
+          variant="success"
+          onClick={() => onApprove(undefined, branchName, baseBranch)}
+          disabled={approving || !branchName.trim()}
+        >
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : "Approve & Continue"}
+        </Button>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -104,7 +138,7 @@ function StageSelectionPanel({
 }: {
   stageTemplates: StageTemplate[];
   suggestedStages: StageSuggestion[];
-  onApprove: (selectedStageIds: string[]) => void;
+  onApprove: (selectedStageIds: string[], branchName?: string, baseBranch?: string) => void;
   approving?: boolean;
 }) {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -116,6 +150,8 @@ function StageSelectionPanel({
       repo.getCompletionStrategy(activeProject.id).then(setCompletionStrategy);
     }
   }, [activeProject]);
+
+  const { branchName, setBranchName, baseBranch, setBaseBranch, loading } = useBranchFields();
 
   // Map AI suggestions to templates by normalized name
   const suggestionMap = useMemo(() => {
@@ -177,8 +213,6 @@ function StageSelectionPanel({
       if (checked[t.id]) selectedIds.push(t.id);
     }
     // Include terminal stages based on strategy
-    // PR flow: include pr_preparation and pr_review stages
-    // Merge flow: include merge stages
     for (const t of terminalStages) {
       const isPrRelated = t.output_format === "pr_preparation" || t.output_format === "pr_review";
       const isMergeRelated = t.output_format === "merge";
@@ -188,7 +222,7 @@ function StageSelectionPanel({
         selectedIds.push(t.id);
       }
     }
-    onApprove(selectedIds);
+    onApprove(selectedIds, branchName, baseBranch);
   };
 
   const selectedCount = Object.values(checked).filter(Boolean).length;
@@ -201,6 +235,14 @@ function StageSelectionPanel({
       <p className="text-xs text-muted-foreground">
         The AI suggested stages based on the task. Toggle stages as needed before continuing.
       </p>
+
+      <BranchFields
+        branchName={branchName}
+        setBranchName={setBranchName}
+        baseBranch={baseBranch}
+        setBaseBranch={setBaseBranch}
+        loading={loading}
+      />
 
       <div className="space-y-1.5">
         {/* Research: always included */}
@@ -267,10 +309,112 @@ function StageSelectionPanel({
         })}
       </div>
 
-      <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving}>
+      <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving || !branchName.trim()}>
         {approving && <Loader2 className="w-4 h-4 animate-spin" />}
         {approving ? "Approving..." : "Approve & Continue"}
       </Button>
+    </div>
+  );
+}
+
+/** Shared hook for branch name + base branch state with agent pre-fill. */
+function useBranchFields() {
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const task = useTaskStore((s) => s.activeTask);
+  const storeDefaultBranch = useGitHubStore((s) => s.defaultBranch);
+
+  const fallback = task ? generateFallbackBranchName(task.title) : "feature/branch";
+  const [branchName, setBranchName] = useState(task?.branch_name ?? fallback);
+  const [baseBranch, setBaseBranch] = useState(storeDefaultBranch ?? "main");
+  const [loading, setLoading] = useState(true);
+  const agentCalledRef = useRef(false);
+
+  // Resolve base branch from git if store doesn't have one
+  useEffect(() => {
+    if (storeDefaultBranch) {
+      setBaseBranch(storeDefaultBranch);
+    } else if (activeProject) {
+      gitDefaultBranch(activeProject.path).then((b) => {
+        if (b) setBaseBranch(b);
+      });
+    }
+  }, [storeDefaultBranch, activeProject?.path]);
+
+  // Pre-fill branch name via lightweight agent (if conventions exist)
+  useEffect(() => {
+    if (!activeProject || !task || agentCalledRef.current) return;
+    // If the task already has a branch name (e.g. from a previous run), use it
+    if (task.branch_name) {
+      setBranchName(task.branch_name);
+      setLoading(false);
+      return;
+    }
+    agentCalledRef.current = true;
+
+    (async () => {
+      try {
+        const conventions = await loadConventions(activeProject.id);
+        if (conventions.branchNaming) {
+          const result = await quickAgentCall({
+            prompt: `Generate a git branch name for the following task. Follow the branch naming convention below. Return ONLY the branch name, nothing else.
+
+Task: ${task.title}
+
+Branch naming convention:
+${conventions.branchNaming}`,
+            workingDirectory: activeProject.path,
+            timeoutMs: 15_000,
+          });
+          if (result && /^[a-zA-Z0-9/_.-]+$/.test(result.trim())) {
+            setBranchName(result.trim());
+          }
+        }
+      } catch {
+        // Fall back to hardcoded — already set
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [activeProject?.id, task?.id]);
+
+  return { branchName, setBranchName, baseBranch, setBaseBranch, loading };
+}
+
+/** Editable branch name and base branch fields. */
+function BranchFields({
+  branchName,
+  setBranchName,
+  baseBranch,
+  setBaseBranch,
+  loading,
+}: {
+  branchName: string;
+  setBranchName: (v: string) => void;
+  baseBranch: string;
+  setBaseBranch: (v: string) => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 my-3">
+      <div>
+        <Label className="text-xs font-medium text-foreground">Branch Name</Label>
+        <Input
+          value={branchName}
+          onChange={(e) => setBranchName(e.target.value)}
+          className="mt-1 font-mono text-sm h-8"
+          placeholder={loading ? "Generating..." : "feature/branch-name"}
+          disabled={loading}
+        />
+      </div>
+      <div>
+        <Label className="text-xs font-medium text-foreground">Base Branch</Label>
+        <Input
+          value={baseBranch}
+          onChange={(e) => setBaseBranch(e.target.value)}
+          className="mt-1 font-mono text-sm h-8"
+          placeholder="main"
+        />
+      </div>
     </div>
   );
 }

@@ -14,8 +14,8 @@ import { Loader2 } from "lucide-react";
 interface StageOutputProps {
   execution: StageExecution;
   stage: StageTemplate;
-  onApprove: (decision?: string) => void;
-  onApproveWithStages?: (selectedStageIds: string[]) => void;
+  onApprove: (decision?: string, branchName?: string, baseBranch?: string) => void;
+  onApproveWithStages?: (selectedStageIds: string[], branchName?: string, baseBranch?: string) => void;
   onSubmitAnswers?: (answers: string) => void;
   onSplitTask?: (tasks: { title: string; initialInput?: string }[]) => void;
   isApproved: boolean;
@@ -142,7 +142,7 @@ export function StageOutput({
       return (
         <ResearchOutput
           output={output}
-          onApprove={() => onApprove()}
+          onApprove={(decision, branchName, baseBranch) => onApprove(decision, branchName, baseBranch)}
           onApproveWithStages={onApproveWithStages}
           onSubmitAnswers={onSubmitAnswers ?? (() => {})}
           isApproved={isApproved}

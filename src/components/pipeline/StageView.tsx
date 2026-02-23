@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
-import { useStageExecution, generatePendingCommit } from "../../hooks/useStageExecution";
+import { useStageExecution, generatePendingCommit, createWorktreeForTask } from "../../hooks/useStageExecution";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
 import { formatHasOwnActionButton } from "../../lib/outputDetection";
@@ -271,7 +271,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     }
   };
 
-  const handleApprove = async (decision?: string) => {
+  const handleApprove = async (decision?: string, branchName?: string, baseBranch?: string) => {
     if (!activeProject || !task) return;
     setApproving(true);
     setStageError(null);
@@ -281,7 +281,19 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     }
     useProcessStore.getState().clearPendingCommit();
     try {
-      await approveStage(task, stage, decision);
+      // Create worktree when approving research (branch info provided)
+      let effectiveTask = task;
+      if (branchName && baseBranch && !task.worktree_path) {
+        try {
+          effectiveTask = await createWorktreeForTask(
+            activeProject.id, activeProject.path, task, branchName, baseBranch,
+          );
+        } catch (err) {
+          // Worktree creation is non-critical — continue in project root
+          logger.warn("Worktree creation failed, continuing in project root:", err);
+        }
+      }
+      await approveStage(effectiveTask, stage, decision);
       sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: task.id });
     } catch (err) {
       logger.error("Failed to approve stage:", err);
@@ -311,13 +323,26 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     await redoStage(task, stage, answers);
   };
 
-  const handleApproveWithStages = async (selectedStageIds: string[]) => {
+  const handleApproveWithStages = async (selectedStageIds: string[], branchName?: string, baseBranch?: string) => {
     if (!task || !activeProject) return;
     setApproving(true);
     // Clear commit-related state so it doesn't leak into the next stage
     useProcessStore.getState().clearPendingCommit();
     useProcessStore.getState().setNoChangesToCommit(null);
     try {
+      // Create worktree with the user-confirmed branch name
+      let effectiveTask = task;
+      if (branchName && baseBranch && !task.worktree_path) {
+        try {
+          effectiveTask = await createWorktreeForTask(
+            activeProject.id, activeProject.path, task, branchName, baseBranch,
+          );
+        } catch (err) {
+          // Worktree creation is non-critical — continue in project root
+          logger.warn("Worktree creation failed, continuing in project root:", err);
+        }
+      }
+
       let ids = [...selectedStageIds];
       const hasPrCreator = stageTemplates.some(
         (t) => ids.includes(t.id) && t.output_format === "pr_preparation",
@@ -336,8 +361,8 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
         })
         .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
 
-      await setTaskStages(activeProject.id, task.id, stages);
-      await approveStage(task, stage);
+      await setTaskStages(activeProject.id, effectiveTask.id, stages);
+      await approveStage(effectiveTask, stage);
     } catch (err) {
       logger.error("Failed to approve with stages:", err);
       setStageError(err instanceof Error ? err.message : String(err));

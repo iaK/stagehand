@@ -30,6 +30,8 @@ import {
   validateGate,
   shouldAutoStartStage,
 } from "../lib/stageUtils";
+import { loadConventions } from "../lib/conventions";
+import { quickAgentCall } from "../lib/agentHelper";
 import type {
   Task,
   StageTemplate,
@@ -58,48 +60,8 @@ export function useStageExecution() {
         return;
       }
 
-      // Create worktree on first stage execution if task has no worktree yet
-      if (stage.sort_order === 0 && !task.worktree_path) {
-        try {
-          const gitRepo = await isGitRepo(activeProject.path);
-          if (gitRepo) {
-            // Use existing branch name or generate one
-            let branchName = task.branch_name;
-            if (!branchName) {
-              // Simple slug generation from task title
-              const slug = task.title
-                .toLowerCase()
-                .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
-                .replace(/[^a-z0-9]+/g, "-")
-                .replace(/^-|-$/g, "")
-                .slice(0, 50);
-              branchName = `feature/${slug}`;
-            }
-
-            const worktreePath = `${activeProject.path}/.stagehand-worktrees/${branchName.replace(/\//g, "--")}`;
-
-            const exists = await gitBranchExists(activeProject.path, branchName);
-
-            // Clean up stale worktree if directory already exists
-            try {
-              await gitWorktreeRemove(activeProject.path, worktreePath);
-            } catch {
-              // Worktree may not exist — that's fine
-            }
-
-            await gitWorktreeAdd(activeProject.path, worktreePath, branchName, !exists);
-
-            // Update local task reference — defer the DB/store update to
-            // batch with the status: "in_progress" write below so we only
-            // trigger one listTasks reload instead of two.
-            task = { ...task, branch_name: branchName, worktree_path: worktreePath };
-          }
-        } catch (err) {
-          // Worktree creation is non-critical — continue with stage execution in project root
-          const errMsg = err instanceof Error ? err.message : String(err);
-          appendOutput(stageKey(task.id, stage.id), `[Warning] Worktree creation failed, running in project root: ${errMsg}`);
-        }
-      }
+      // Note: worktree creation is deferred until research approval (see createWorktreeForTask).
+      // Research runs read-only in the project root.
 
       // Clear task_stages when re-running the research stage (triggers stage selection)
       if (stage.output_format === "research") {
@@ -223,12 +185,8 @@ export function useStageExecution() {
         };
 
         await repo.createStageExecution(activeProject.id, execution);
-        // Batch worktree fields (if set during this run) with the status
-        // update so we only trigger a single listTasks reload.
         await updateTask(activeProject.id, task.id, {
           status: "in_progress",
-          ...(task.branch_name ? { branch_name: task.branch_name } : {}),
-          ...(task.worktree_path ? { worktree_path: task.worktree_path } : {}),
         });
 
         // Add the new execution to the store immediately so that killCurrent
@@ -431,6 +389,19 @@ export function useStageExecution() {
         } catch (err) {
           // Graceful degradation — MCP server unavailable, prompt context still works
           logger.warn("MCP server config failed, continuing without MCP:", err);
+        }
+
+        // Inject project conventions into system prompt (if configured)
+        try {
+          const conventions = await loadConventions(activeProject.id);
+          if (conventions.fullRules) {
+            const conventionsBlock = `## Project Conventions\n${conventions.fullRules}`;
+            systemPrompt = systemPrompt
+              ? `${systemPrompt}\n\n${conventionsBlock}`
+              : conventionsBlock;
+          }
+        } catch {
+          // Non-critical — continue without conventions
         }
 
         await spawnClaude(
@@ -861,6 +832,54 @@ export function useStageExecution() {
   return { runStage, approveStage, redoStage, killCurrent };
 }
 
+/** Generate a fallback branch name slug from a task title. */
+export function generateFallbackBranchName(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/^\[[\w-]+\]\s*/, "") // remove [ENG-123] prefix
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50);
+  return `feature/${slug}`;
+}
+
+/**
+ * Create a worktree for a task using the provided branch name and base branch.
+ * Called after research approval when the user has confirmed the branch name.
+ * Updates the task in the DB/store with branch_name and worktree_path.
+ */
+export async function createWorktreeForTask(
+  projectId: string,
+  projectPath: string,
+  task: Task,
+  branchName: string,
+  baseBranch: string,
+): Promise<Task> {
+  const gitRepo = await isGitRepo(projectPath);
+  if (!gitRepo) return task;
+
+  const worktreePath = `${projectPath}/.stagehand-worktrees/${branchName.replace(/\//g, "--")}`;
+  const exists = await gitBranchExists(projectPath, branchName);
+
+  // Clean up stale worktree if directory already exists
+  try {
+    await gitWorktreeRemove(projectPath, worktreePath);
+  } catch {
+    // Worktree may not exist — that's fine
+  }
+
+  const startPoint = exists ? undefined : baseBranch;
+  await gitWorktreeAdd(projectPath, worktreePath, branchName, !exists, startPoint);
+
+  // Update task in DB and store
+  await useTaskStore.getState().updateTask(projectId, task.id, {
+    branch_name: branchName,
+    worktree_path: worktreePath,
+  });
+
+  return { ...task, branch_name: branchName, worktree_path: worktreePath };
+}
+
 /** Generate a pending commit for a stage that just finished. Returns early if no changes. */
 export async function generatePendingCommit(
   task: Task,
@@ -892,9 +911,34 @@ export async function generatePendingCommit(
     }
 
     const diffStat = await gitDiffStat(workDir).catch(() => "");
-    const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const prefix = await repo.getCommitPrefix(projectId).catch(() => "feat");
-    const commitMsg = `${prefix}: ${slug}`;
+
+    // Try agent-powered commit message if conventions are configured
+    let commitMsg: string | null = null;
+    try {
+      const conventions = await loadConventions(projectId);
+      if (conventions.commitFormat) {
+        commitMsg = await quickAgentCall({
+          prompt: `Generate a git commit message for the following changes. Follow the commit message format convention below. Return ONLY the commit message, nothing else.
+
+Task: ${task.title}
+Stage: ${stage.name}
+${diffStat ? `\nChanged files:\n${diffStat}` : ""}
+
+Commit message format convention:
+${conventions.commitFormat}`,
+          workingDirectory: workDir,
+          timeoutMs: 15_000,
+        });
+      }
+    } catch {
+      // Fall back to hardcoded
+    }
+
+    if (!commitMsg) {
+      const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const prefix = await repo.getCommitPrefix(projectId).catch(() => "feat");
+      commitMsg = `${prefix}: ${slug}`;
+    }
 
     store.setPendingCommit({
       stageId: stage.id,
