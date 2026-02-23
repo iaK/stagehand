@@ -10,7 +10,7 @@ vi.mock("../constants", async (importOriginal) => {
   };
 });
 
-import { verifyApiKey, fetchMyIssues, fetchIssueDetail } from "../linear";
+import { verifyApiKey, fetchMyIssues, fetchIssueDetail, fetchTeams, fetchProjects } from "../linear";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -112,6 +112,77 @@ describe("verifyApiKey", () => {
 
 });
 
+describe("fetchTeams", () => {
+  it("returns teams from viewer", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            teams: {
+              nodes: [
+                { id: "team-1", name: "Engineering", key: "ENG" },
+                { id: "team-2", name: "Design", key: "DES" },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    const teams = await fetchTeams("lin_api_test");
+    expect(teams).toEqual([
+      { id: "team-1", name: "Engineering", key: "ENG" },
+      { id: "team-2", name: "Design", key: "DES" },
+    ]);
+  });
+});
+
+describe("fetchProjects", () => {
+  it("returns projects for a team", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          team: {
+            projects: {
+              nodes: [
+                { id: "proj-1", name: "Project Alpha" },
+                { id: "proj-2", name: "Project Beta" },
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    const projects = await fetchProjects("lin_api_test", "team-1");
+    expect(projects).toEqual([
+      { id: "proj-1", name: "Project Alpha" },
+      { id: "proj-2", name: "Project Beta" },
+    ]);
+  });
+
+  it("uses parameterized variables for teamId", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          team: {
+            projects: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await fetchProjects("lin_api_test", "team-1");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.variables).toEqual({ teamId: "team-1" });
+    expect(body.query).toContain("$teamId: String!");
+  });
+});
+
 describe("fetchMyIssues", () => {
   it("maps response correctly", async () => {
     mockFetch.mockResolvedValue({
@@ -163,6 +234,62 @@ describe("fetchMyIssues", () => {
     expect(issues[1].description).toBeUndefined();
     expect(issues[1].status).toBe("Unknown");
     expect(issues[1].branchName).toBeUndefined();
+  });
+
+  it("includes team filter when teamId is provided", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            assignedIssues: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await fetchMyIssues("lin_api_test", { teamId: "team-1" });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.query).toContain('team: { id: { eq: "team-1" } }');
+  });
+
+  it("includes project filter when projectId is provided", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            assignedIssues: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await fetchMyIssues("lin_api_test", { teamId: "team-1", projectId: "proj-1" });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.query).toContain('team: { id: { eq: "team-1" } }');
+    expect(body.query).toContain('project: { id: { eq: "proj-1" } }');
+  });
+
+  it("omits team/project filters when no options provided", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            assignedIssues: { nodes: [] },
+          },
+        },
+      }),
+    });
+
+    await fetchMyIssues("lin_api_test");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.query).not.toContain("team:");
+    expect(body.query).not.toContain("project:");
   });
 });
 

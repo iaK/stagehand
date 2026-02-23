@@ -68,6 +68,60 @@ export async function verifyApiKey(
   }
 }
 
+// === Teams & Projects ===
+
+export interface LinearTeam {
+  id: string;
+  name: string;
+  key: string;
+}
+
+export interface LinearProject {
+  id: string;
+  name: string;
+}
+
+interface TeamsResponse {
+  viewer: {
+    teams: {
+      nodes: Array<{ id: string; name: string; key: string }>;
+    };
+  };
+}
+
+export async function fetchTeams(apiKey: string): Promise<LinearTeam[]> {
+  const data = await gql<TeamsResponse>(
+    apiKey,
+    `{ viewer { teams { nodes { id name key } } } }`,
+  );
+  return data.viewer.teams.nodes;
+}
+
+interface ProjectsResponse {
+  team: {
+    projects: {
+      nodes: Array<{ id: string; name: string }>;
+    };
+  };
+}
+
+export async function fetchProjects(apiKey: string, teamId: string): Promise<LinearProject[]> {
+  const data = await gql<ProjectsResponse>(
+    apiKey,
+    `query ($teamId: String!) {
+      team(id: $teamId) {
+        projects(first: 100) {
+          nodes { id name }
+        }
+      }
+    }`,
+    { teamId },
+  );
+  return data.team.projects.nodes;
+}
+
+// === Issues ===
+
 interface AssignedIssuesResponse {
   viewer: {
     assignedIssues: {
@@ -85,15 +139,31 @@ interface AssignedIssuesResponse {
   };
 }
 
+export interface FetchIssuesOptions {
+  teamId?: string;
+  projectId?: string;
+}
+
 export async function fetchMyIssues(
   apiKey: string,
+  options?: FetchIssuesOptions,
 ): Promise<LinearIssue[]> {
+  // Build filter dynamically
+  const filterParts: string[] = [`state: { type: { nin: ["completed", "canceled"] } }`];
+  if (options?.teamId) {
+    filterParts.push(`team: { id: { eq: "${options.teamId}" } }`);
+  }
+  if (options?.projectId) {
+    filterParts.push(`project: { id: { eq: "${options.projectId}" } }`);
+  }
+  const filter = `{ ${filterParts.join(", ")} }`;
+
   const data = await gql<AssignedIssuesResponse>(
     apiKey,
     `{
       viewer {
         assignedIssues(
-          filter: { state: { type: { nin: ["completed", "canceled"] } } }
+          filter: ${filter}
           first: ${LINEAR_PAGE_SIZE}
         ) {
           nodes {
