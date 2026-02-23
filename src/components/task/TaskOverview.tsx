@@ -305,11 +305,11 @@ export function TaskOverview() {
         </InfoCard>
         {(diffStats || activeTask.diff_insertions != null) && (
           <InfoCard label="Lines Changed">
-            <span className="text-sm font-medium font-mono">
+            <p className="text-sm font-medium font-mono mt-0.5">
               <span className="text-green-600">+{diffStats?.insertions ?? activeTask.diff_insertions}</span>
               {" / "}
               <span className="text-red-600">-{diffStats?.deletions ?? activeTask.diff_deletions}</span>
-            </span>
+            </p>
           </InfoCard>
         )}
       </div>

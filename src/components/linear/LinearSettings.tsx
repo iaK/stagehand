@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLinearStore } from "../../stores/linearStore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendNotification } from "../../lib/notifications";
 
 interface LinearSettingsProps {
@@ -31,30 +30,11 @@ export function LinearSettings({ projectId, onClose }: LinearSettingsProps) {
 }
 
 export function LinearSettingsContent({ projectId }: { projectId: string }) {
-  const {
-    apiKey, userName, orgName, loading, error,
-    teams, projects, selectedTeamId, selectedProjectId,
-    teamsLoading, projectsLoading,
-    saveApiKey, disconnect, clearError,
-    fetchTeams, fetchProjects, selectTeam, selectProject,
-  } = useLinearStore();
+  const { apiKey, userName, orgName, loading, error, saveApiKey, disconnect, clearError } =
+    useLinearStore();
   const [keyInput, setKeyInput] = useState("");
 
   const connected = !!apiKey && !!userName;
-
-  // Load teams when connected
-  useEffect(() => {
-    if (connected && teams.length === 0) {
-      fetchTeams();
-    }
-  }, [connected, teams.length, fetchTeams]);
-
-  // Load projects when team is selected
-  useEffect(() => {
-    if (connected && selectedTeamId) {
-      fetchProjects(selectedTeamId);
-    }
-  }, [connected, selectedTeamId, fetchProjects]);
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,28 +51,6 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
     sendNotification("Linear disconnected", undefined, "info", { projectId });
   };
 
-  const handleTeamChange = async (value: string) => {
-    if (value === "__none__") {
-      await selectTeam(projectId, null, null);
-    } else {
-      const team = teams.find((t) => t.id === value);
-      if (team) {
-        await selectTeam(projectId, team.id, team.name);
-      }
-    }
-  };
-
-  const handleProjectChange = async (value: string) => {
-    if (value === "__none__") {
-      await selectProject(projectId, null, null);
-    } else {
-      const proj = projects.find((p) => p.id === value);
-      if (proj) {
-        await selectProject(projectId, proj.id, proj.name);
-      }
-    }
-  };
-
   if (connected) {
     return (
       <div>
@@ -105,53 +63,6 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
             )}
           </span>
         </div>
-
-        <div className="space-y-3 mb-4">
-          <div>
-            <Label className="text-xs text-muted-foreground">Team</Label>
-            <Select
-              value={selectedTeamId ?? "__none__"}
-              onValueChange={handleTeamChange}
-              disabled={teamsLoading}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder={teamsLoading ? "Loading teams..." : "All teams"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">All teams</SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.key} — {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedTeamId && (
-            <div>
-              <Label className="text-xs text-muted-foreground">Project (optional)</Label>
-              <Select
-                value={selectedProjectId ?? "__none__"}
-                onValueChange={handleProjectChange}
-                disabled={projectsLoading}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder={projectsLoading ? "Loading projects..." : "All projects"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">All projects</SelectItem>
-                  {projects.map((proj) => (
-                    <SelectItem key={proj.id} value={proj.id}>
-                      {proj.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-
         <div className="flex justify-end">
           <Button variant="destructive" onClick={handleDisconnect}>
             Disconnect

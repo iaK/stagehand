@@ -10,7 +10,7 @@ vi.mock("../constants", async (importOriginal) => {
   };
 });
 
-import { verifyApiKey, fetchMyIssues, fetchIssueDetail, fetchTeams, fetchProjects } from "../linear";
+import { verifyApiKey, fetchMyIssues, fetchIssueDetail } from "../linear";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -112,80 +112,7 @@ describe("verifyApiKey", () => {
 
 });
 
-describe("fetchTeams", () => {
-  it("returns teams from viewer", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            teams: {
-              nodes: [
-                { id: "team-1", name: "Engineering", key: "ENG" },
-                { id: "team-2", name: "Design", key: "DES" },
-              ],
-            },
-          },
-        },
-      }),
-    });
-
-    const teams = await fetchTeams("lin_api_test");
-    expect(teams).toEqual([
-      { id: "team-1", name: "Engineering", key: "ENG" },
-      { id: "team-2", name: "Design", key: "DES" },
-    ]);
-  });
-});
-
-describe("fetchProjects", () => {
-  it("returns projects for a team", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          team: {
-            projects: {
-              nodes: [
-                { id: "proj-1", name: "Project Alpha" },
-                { id: "proj-2", name: "Project Beta" },
-              ],
-            },
-          },
-        },
-      }),
-    });
-
-    const projects = await fetchProjects("lin_api_test", "team-1");
-    expect(projects).toEqual([
-      { id: "proj-1", name: "Project Alpha" },
-      { id: "proj-2", name: "Project Beta" },
-    ]);
-  });
-
-  it("uses parameterized variables for teamId", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          team: {
-            projects: { nodes: [] },
-          },
-        },
-      }),
-    });
-
-    await fetchProjects("lin_api_test", "team-1");
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.variables).toEqual({ teamId: "team-1" });
-    expect(body.query).toContain("$teamId: String!");
-  });
-});
-
 describe("fetchMyIssues", () => {
-  const mockPageInfo = { hasNextPage: false, endCursor: null };
-
   it("maps response correctly", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
@@ -215,16 +142,15 @@ describe("fetchMyIssues", () => {
                   branchName: null,
                 },
               ],
-              pageInfo: mockPageInfo,
             },
           },
         },
       }),
     });
 
-    const result = await fetchMyIssues("lin_api_test");
-    expect(result.issues).toHaveLength(2);
-    expect(result.issues[0]).toEqual({
+    const issues = await fetchMyIssues("lin_api_test");
+    expect(issues).toHaveLength(2);
+    expect(issues[0]).toEqual({
       id: "issue-1",
       identifier: "ENG-123",
       title: "Fix bug",
@@ -234,102 +160,9 @@ describe("fetchMyIssues", () => {
       url: "https://linear.app/issue/ENG-123",
       branchName: "feature/fix-bug",
     });
-    expect(result.issues[1].description).toBeUndefined();
-    expect(result.issues[1].status).toBe("Unknown");
-    expect(result.issues[1].branchName).toBeUndefined();
-    expect(result.hasNextPage).toBe(false);
-    expect(result.endCursor).toBeNull();
-  });
-
-  it("uses parameterized GraphQL variables for filters", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            assignedIssues: { nodes: [], pageInfo: mockPageInfo },
-          },
-        },
-      }),
-    });
-
-    await fetchMyIssues("lin_api_test", { teamId: "team-1", projectId: "proj-1" });
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.query).toContain("$filter: IssueFilter");
-    expect(body.query).toContain("$first: Int!");
-    expect(body.variables.filter).toEqual({
-      state: { type: { nin: ["completed", "canceled"] } },
-      team: { id: { eq: "team-1" } },
-      project: { id: { eq: "proj-1" } },
-    });
-    // Ensure IDs are NOT interpolated into the query string
-    expect(body.query).not.toContain("team-1");
-    expect(body.query).not.toContain("proj-1");
-  });
-
-  it("omits team/project from filter variables when no options provided", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            assignedIssues: { nodes: [], pageInfo: mockPageInfo },
-          },
-        },
-      }),
-    });
-
-    await fetchMyIssues("lin_api_test");
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.variables.filter).toEqual({
-      state: { type: { nin: ["completed", "canceled"] } },
-    });
-    expect(body.variables.filter.team).toBeUndefined();
-    expect(body.variables.filter.project).toBeUndefined();
-  });
-
-  it("passes after cursor for pagination", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            assignedIssues: {
-              nodes: [],
-              pageInfo: { hasNextPage: false, endCursor: null },
-            },
-          },
-        },
-      }),
-    });
-
-    await fetchMyIssues("lin_api_test", { after: "cursor-abc" });
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.variables.after).toBe("cursor-abc");
-    expect(body.query).toContain("$after: String");
-  });
-
-  it("returns pagination info", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            assignedIssues: {
-              nodes: [],
-              pageInfo: { hasNextPage: true, endCursor: "cursor-xyz" },
-            },
-          },
-        },
-      }),
-    });
-
-    const result = await fetchMyIssues("lin_api_test");
-    expect(result.hasNextPage).toBe(true);
-    expect(result.endCursor).toBe("cursor-xyz");
+    expect(issues[1].description).toBeUndefined();
+    expect(issues[1].status).toBe("Unknown");
+    expect(issues[1].branchName).toBeUndefined();
   });
 });
 

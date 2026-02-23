@@ -67,6 +67,83 @@ impl TempContext {
     }
 }
 
+/// Patch a JSON Schema so it conforms to OpenAI's strict structured-output rules:
+///   1. Every object must have `"additionalProperties": false`.
+///   2. Every property defined in `properties` must appear in `required`.
+///      Properties that were previously optional are made nullable instead
+///      (type becomes `["<original>", "null"]`).
+///
+/// This lets the canonical stage templates stay agent-agnostic while Codex
+/// gets a compliant schema at the boundary.
+fn patch_schema_for_openai(value: &mut serde_json::Value) {
+    if let Some(obj) = value.as_object_mut() {
+        if obj.get("type").and_then(|v| v.as_str()) == Some("object") {
+            // 1. additionalProperties: false
+            obj.entry("additionalProperties")
+                .or_insert(serde_json::Value::Bool(false));
+
+            // 2. Ensure every key in `properties` is in `required`.
+            //    For newly-required keys, make the property nullable so the
+            //    model can still omit the value by sending null.
+            if let Some(props) = obj.get("properties").and_then(|p| p.as_object()).cloned() {
+                let all_keys: Vec<String> = props.keys().cloned().collect();
+
+                let existing_required: std::collections::HashSet<String> = obj
+                    .get("required")
+                    .and_then(|r| r.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Make previously-optional properties nullable
+                if let Some(props_mut) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                    for key in &all_keys {
+                        if !existing_required.contains(key) {
+                            if let Some(prop) = props_mut.get_mut(key).and_then(|p| p.as_object_mut()) {
+                                if let Some(ty) = prop.get("type").cloned() {
+                                    if ty.is_string() {
+                                        prop.insert(
+                                            "type".to_string(),
+                                            serde_json::json!([ty.as_str().unwrap(), "null"]),
+                                        );
+                                    }
+                                    // If already an array type, append "null" if missing
+                                    else if let Some(arr) = ty.as_array() {
+                                        if !arr.iter().any(|v| v.as_str() == Some("null")) {
+                                            let mut new_arr = arr.clone();
+                                            new_arr.push(serde_json::json!("null"));
+                                            prop.insert("type".to_string(), serde_json::Value::Array(new_arr));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Set required to ALL keys
+                let required_arr: Vec<serde_json::Value> = all_keys
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect();
+                obj.insert("required".to_string(), serde_json::Value::Array(required_arr));
+            }
+        }
+
+        // Recurse into all sub-values
+        for (_, v) in obj.iter_mut() {
+            patch_schema_for_openai(v);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for v in arr.iter_mut() {
+            patch_schema_for_openai(v);
+        }
+    }
+}
+
 /// Convert Claude-format MCP config JSON to Codex `.codex/config.toml` format.
 ///
 /// Input (Claude format):
@@ -76,8 +153,7 @@ impl TempContext {
 ///
 /// Output (Codex TOML):
 /// ```toml
-/// [[mcp_servers]]
-/// name = "name"
+/// [mcp_servers.name]
 /// command = "node"
 /// args = ["path"]
 /// env = { K = "V" }
@@ -93,8 +169,8 @@ fn convert_mcp_json_to_codex_toml(mcp_json: &str) -> Result<String, String> {
 
     let mut toml = String::new();
     for (name, config) in servers {
-        toml.push_str("[[mcp_servers]]\n");
-        toml.push_str(&format!("name = {:?}\n", name));
+        // Codex expects [mcp_servers.<name>] tables, NOT [[mcp_servers]] arrays.
+        toml.push_str(&format!("[mcp_servers.{:?}]\n", name));
 
         if let Some(command) = config.get("command").and_then(|v| v.as_str()) {
             toml.push_str(&format!("command = {:?}\n", command));
@@ -205,8 +281,13 @@ pub async fn spawn_agent(
         cmd.arg(flag);
     }
 
-    // Prompt
-    cmd.arg("-p").arg(&args.prompt);
+    // Prompt — Codex takes the prompt as a positional argument;
+    // other agents use the `-p` flag.
+    if agent == Agent::Codex {
+        cmd.arg(&args.prompt);
+    } else {
+        cmd.arg("-p").arg(&args.prompt);
+    }
 
     // Output format
     match agent {
@@ -279,8 +360,16 @@ pub async fn spawn_agent(
                 cmd.arg("--json-schema").arg(schema);
             }
             Agent::Codex => {
-                // Codex uses --output-schema <file_path>
-                let path = temp_ctx.write_temp_file("output_schema.json", schema)?;
+                // Codex (OpenAI) requires additionalProperties:false on every
+                // object in the schema.  Patch it before writing the temp file.
+                let patched = {
+                    let mut v: serde_json::Value = serde_json::from_str(schema)
+                        .map_err(|e| format!("Invalid JSON schema: {}", e))?;
+                    patch_schema_for_openai(&mut v);
+                    serde_json::to_string(&v)
+                        .map_err(|e| format!("Failed to serialize patched schema: {}", e))?
+                };
+                let path = temp_ctx.write_temp_file("output_schema.json", &patched)?;
                 cmd.arg("--output-schema").arg(&path);
             }
             _ => {

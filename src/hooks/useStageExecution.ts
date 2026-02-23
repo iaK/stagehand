@@ -247,6 +247,8 @@ export function useStageExecution() {
               // Try to parse stream-json events
               try {
                 const parsed = JSON.parse(event.line);
+
+                // === Claude event format ===
                 if (parsed.type === "assistant" && parsed.message?.content) {
                   for (const block of parsed.message.content) {
                     if (block.type === "text") {
@@ -285,6 +287,27 @@ export function useStageExecution() {
                     resultText += parsed.delta.text;
                     thinkingText += parsed.delta.text;
                   }
+                }
+
+                // === Codex event format ===
+                else if (parsed.type === "item.completed" && parsed.item) {
+                  const item = parsed.item;
+                  if (item.type === "agent_message" && item.text) {
+                    // Agent message — this is the primary output (may be structured JSON)
+                    resultText = item.text;
+                    appendOutput(sk, item.text);
+                  } else if (item.type === "reasoning" && item.text) {
+                    thinkingText += item.text + "\n";
+                  } else if (item.type === "mcp_tool_call") {
+                    appendOutput(sk, `[MCP] ${item.server}/${item.tool}`);
+                  } else if (item.type === "command_execution" && item.status === "completed") {
+                    appendOutput(sk, `[cmd] ${item.command} → exit ${item.exit_code}`);
+                  }
+                } else if (parsed.type === "turn.completed" && parsed.usage) {
+                  usageData = {
+                    input_tokens: parsed.usage.input_tokens,
+                    output_tokens: parsed.usage.output_tokens,
+                  };
                 }
               } catch {
                 // Not JSON, just append as-is

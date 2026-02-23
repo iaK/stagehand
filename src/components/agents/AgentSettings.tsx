@@ -43,7 +43,7 @@ export function AgentSettingsContent({ projectId }: AgentSettingsContentProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {AVAILABLE_AGENTS.map((a) => (
+              {AVAILABLE_AGENTS.filter((a) => !a.hidden).map((a) => (
                 <SelectItem key={a.value} value={a.value}>
                   <span className="font-medium">{a.label}</span>
                   <span className="text-muted-foreground ml-2 text-xs">{a.description}</span>

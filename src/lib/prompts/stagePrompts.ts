@@ -231,7 +231,7 @@ Selected approach:
 {{user_decision}}
 {{/if}}
 
-Review the completed stages in your system prompt for research findings and context. Use the get_stage_output MCP tool if you need full details from any prior stage.
+IMPORTANT: A thorough research stage has already been completed for this task. You MUST retrieve and use that research before planning. Start by calling the get_stage_output MCP tool for the Research stage to get the full findings — it contains codebase analysis, relevant files, and context that you should build your plan on. Do NOT re-do research that has already been done. Trust the research output and focus your effort on creating a concrete plan from it.
 
 {{#if user_input}}
 Developer's answers to your questions:

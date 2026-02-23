@@ -13,8 +13,10 @@ export function extractJson(text: string): string | null {
     // continue
   }
 
-  // Second try: find JSON in stream-json result lines
-  // With --json-schema, output is in structured_output; otherwise in result
+  // Second try: find JSON in stream-json / JSONL result lines
+  // Claude: look for "result" events (structured_output or result field)
+  // Codex:  look for the last "item.completed" with type "agent_message"
+  let lastCodexMessage: string | null = null;
   for (const line of text.split("\n")) {
     try {
       const event = JSON.parse(line);
@@ -29,8 +31,24 @@ export function extractJson(text: string): string | null {
           }
         }
       }
+      // Codex: agent_message items contain the structured output
+      if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item?.text) {
+        lastCodexMessage = event.item.text;
+      }
     } catch {
       // continue
+    }
+  }
+  // Return the last Codex agent_message if found (the final one is the structured response)
+  if (lastCodexMessage) {
+    try {
+      const parsed = JSON.parse(lastCodexMessage);
+      if (typeof parsed === "object" && parsed !== null) {
+        return lastCodexMessage;
+      }
+    } catch {
+      // Not valid JSON — still return it as-is
+      return lastCodexMessage;
     }
   }
 

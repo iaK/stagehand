@@ -144,7 +144,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__default__">Project Default</SelectItem>
-            {AVAILABLE_AGENTS.map((a) => (
+            {AVAILABLE_AGENTS.filter((a) => !a.hidden).map((a) => (
               <SelectItem key={a.value} value={a.value}>
                 {a.label}
               </SelectItem>
@@ -153,7 +153,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
         </Select>
         {editingTemplate.agent && editingTemplate.agent !== "claude" && (
           <div className="mt-2 space-y-1">
-            {editingTemplate.output_schema && (
+            {editingTemplate.output_schema && !AVAILABLE_AGENTS.find((a) => a.value === editingTemplate.agent)?.supportsJsonSchema && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 This agent does not support JSON schema — structured output enforcement will be skipped.
               </p>
