@@ -68,6 +68,60 @@ export async function verifyApiKey(
   }
 }
 
+// === Teams & Projects ===
+
+export interface LinearTeam {
+  id: string;
+  name: string;
+  key: string;
+}
+
+export interface LinearProject {
+  id: string;
+  name: string;
+}
+
+interface TeamsResponse {
+  viewer: {
+    teams: {
+      nodes: Array<{ id: string; name: string; key: string }>;
+    };
+  };
+}
+
+export async function fetchTeams(apiKey: string): Promise<LinearTeam[]> {
+  const data = await gql<TeamsResponse>(
+    apiKey,
+    `{ viewer { teams { nodes { id name key } } } }`,
+  );
+  return data.viewer.teams.nodes;
+}
+
+interface ProjectsResponse {
+  team: {
+    projects: {
+      nodes: Array<{ id: string; name: string }>;
+    };
+  };
+}
+
+export async function fetchProjects(apiKey: string, teamId: string): Promise<LinearProject[]> {
+  const data = await gql<ProjectsResponse>(
+    apiKey,
+    `query ($teamId: String!) {
+      team(id: $teamId) {
+        projects(first: 100) {
+          nodes { id name }
+        }
+      }
+    }`,
+    { teamId },
+  );
+  return data.team.projects.nodes;
+}
+
+// === Issues ===
+
 interface AssignedIssuesResponse {
   viewer: {
     assignedIssues: {
@@ -81,20 +135,57 @@ interface AssignedIssuesResponse {
         state: { name: string } | null;
         branchName: string | null;
       }>;
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
     };
   };
 }
 
+export interface FetchIssuesOptions {
+  teamId?: string;
+  projectId?: string;
+  after?: string;
+}
+
+export interface FetchIssuesResult {
+  issues: LinearIssue[];
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
 export async function fetchMyIssues(
   apiKey: string,
-): Promise<LinearIssue[]> {
+  options?: FetchIssuesOptions,
+): Promise<FetchIssuesResult> {
+  // Build filter object for GraphQL variables
+  const filter: Record<string, unknown> = {
+    state: { type: { nin: ["completed", "canceled"] } },
+  };
+  if (options?.teamId) {
+    filter.team = { id: { eq: options.teamId } };
+  }
+  if (options?.projectId) {
+    filter.project = { id: { eq: options.projectId } };
+  }
+
+  const variables: Record<string, unknown> = {
+    filter,
+    first: LINEAR_PAGE_SIZE,
+  };
+  if (options?.after) {
+    variables.after = options.after;
+  }
+
   const data = await gql<AssignedIssuesResponse>(
     apiKey,
-    `{
+    `query ($filter: IssueFilter, $first: Int!, $after: String) {
       viewer {
         assignedIssues(
-          filter: { state: { type: { nin: ["completed", "canceled"] } } }
-          first: ${LINEAR_PAGE_SIZE}
+          filter: $filter
+          first: $first
+          after: $after
         ) {
           nodes {
             id
@@ -106,12 +197,17 @@ export async function fetchMyIssues(
             state { name }
             branchName
           }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
         }
       }
     }`,
+    variables,
   );
 
-  return data.viewer.assignedIssues.nodes.map((issue) => ({
+  const issues = data.viewer.assignedIssues.nodes.map((issue) => ({
     id: issue.id,
     identifier: issue.identifier,
     title: issue.title,
@@ -121,6 +217,12 @@ export async function fetchMyIssues(
     url: issue.url,
     branchName: issue.branchName ?? undefined,
   }));
+
+  return {
+    issues,
+    hasNextPage: data.viewer.assignedIssues.pageInfo.hasNextPage,
+    endCursor: data.viewer.assignedIssues.pageInfo.endCursor,
+  };
 }
 
 interface IssueDetailResponse {

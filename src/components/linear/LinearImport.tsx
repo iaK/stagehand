@@ -26,7 +26,7 @@ const priorityLabels: Record<number, { label: string; color: string }> = {
 };
 
 export function LinearImport({ projectId, onClose }: LinearImportProps) {
-  const { issues, loading, error, fetchIssues } = useLinearStore();
+  const { issues, loading, error, fetchIssues, hasNextPage, loadingMore, fetchMoreIssues } = useLinearStore();
   const addTask = useTaskStore((s) => s.addTask);
   const [filter, setFilter] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
@@ -153,6 +153,18 @@ export function LinearImport({ projectId, onClose }: LinearImportProps) {
                 </button>
               );
             })}
+          {!loading && hasNextPage && (
+            <div className="flex justify-center py-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchMoreIssues}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          )}
         </div>
 
         <Separator />
