@@ -408,6 +408,45 @@ Your "reasoning" should explain WHY this task benefits from splitting and how th
 
 Respond with a JSON object matching the required schema.`;
 
+export const SECOND_OPINION_PROMPT = `{{#if prior_attempt_output}}You are revising an implementation plan based on the developer's selected concerns.
+
+Task: {{task_description}}
+
+Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan if needed.
+
+## Selected Concerns to Address
+
+The developer selected these concerns to address:
+
+{{prior_attempt_output}}
+
+Revise the plan to address ONLY these specific concerns. Do not make other changes. For each concern, explain what you changed and why.
+
+Output the revised plan as clear markdown.
+{{else}}You are an independent reviewer performing a critical analysis of an implementation plan. Your job is to find problems BEFORE implementation begins.
+
+Task: {{task_description}}
+
+Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan.
+
+## Review Dimensions
+
+Analyze the plan against each of these:
+
+1. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
+2. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
+3. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
+4. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
+5. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
+
+Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
+
+If the plan is solid and you find no issues, return an empty findings array. IMPORTANT: In this case, set the "summary" field to the FULL original plan text verbatim — this is critical because the summary is passed as input to the next stage, so it must contain the complete plan, not just an assessment.
+
+Do NOT modify the plan. Only identify and report concerns.
+
+Respond with a JSON object matching the output schema.{{/if}}`;
+
 export const PR_PREPARATION_PROMPT = `Prepare a pull request for the following completed task.
 
 Task: {{task_description}}
