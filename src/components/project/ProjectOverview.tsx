@@ -13,6 +13,8 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { pipelineColors } from "../../lib/taskStatus";
 import { ChevronDown } from "lucide-react";
 import { formatRelativeTime, formatTokenCount, formatDuration, formatCost } from "../../lib/format";
+import { gitDiffShortStatBranch } from "../../lib/git";
+import { getTaskWorkingDir } from "../../lib/worktree";
 
 export function ProjectOverview() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -32,8 +34,11 @@ export function ProjectOverview() {
   const linearUserName = useLinearStore((s) => s.userName);
   const linearOrgName = useLinearStore((s) => s.orgName);
 
+  const defaultBranch = useGitHubStore((s) => s.defaultBranch);
+
   const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [taskDiffStats, setTaskDiffStats] = useState<Record<string, { insertions: number; deletions: number }>>({});
 
   useEffect(() => {
     if (activeProject) {
@@ -50,6 +55,35 @@ export function ProjectOverview() {
       setArchivedOpen(true);
     }
   }, [tasks.length, archivedTasks.length]);
+
+  useEffect(() => {
+    if (!activeProject || !defaultBranch || tasks.length === 0) {
+      setTaskDiffStats({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchAll = async () => {
+      const results: Record<string, { insertions: number; deletions: number }> = {};
+      await Promise.all(
+        tasks.map(async (task) => {
+          if (!task.branch_name) return;
+          try {
+            const workDir = getTaskWorkingDir(task, activeProject.path);
+            const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+            results[task.id] = { insertions: stats.insertions, deletions: stats.deletions };
+          } catch {
+            // Worktree may be gone — skip
+          }
+        }),
+      );
+      if (!cancelled) setTaskDiffStats(results);
+    };
+
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [activeProject?.path, defaultBranch, tasks]);
 
   if (!activeProject) return null;
 
@@ -175,6 +209,8 @@ export function ProjectOverview() {
                   updatedAt={task.updated_at}
                   dotClass={pipelineColors[taskExecStatuses[task.id]] ?? "bg-zinc-400"}
                   status={taskExecStatuses[task.id]}
+                  insertions={taskDiffStats[task.id]?.insertions}
+                  deletions={taskDiffStats[task.id]?.deletions}
                   onClick={() => setActiveTask(task)}
                 />
               ))}
@@ -280,6 +316,8 @@ function TaskRow({
   updatedAt,
   dotClass,
   status,
+  insertions,
+  deletions,
   muted,
   disabled,
   onClick,
@@ -288,6 +326,8 @@ function TaskRow({
   updatedAt: string;
   dotClass: string;
   status?: string;
+  insertions?: number;
+  deletions?: number;
   muted?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -300,7 +340,14 @@ function TaskRow({
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
       <span className="text-sm truncate">{title}</span>
-      <span className="text-xs text-muted-foreground shrink-0 ml-auto">
+      {insertions != null && (
+        <span className="text-xs font-mono shrink-0">
+          <span className="text-green-600">+{insertions}</span>
+          {" "}
+          <span className="text-red-600">-{deletions}</span>
+        </span>
+      )}
+      <span className={`text-xs text-muted-foreground shrink-0 ${insertions == null ? "ml-auto" : ""}`}>
         {formatRelativeTime(updatedAt)}
       </span>
       {status && (

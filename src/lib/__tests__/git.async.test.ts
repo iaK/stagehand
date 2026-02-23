@@ -3,6 +3,7 @@ import {
   gitStatus,
   gitDiff,
   gitDiffStat,
+  gitDiffShortStatBranch,
   gitAdd,
   gitAddFiles,
   getChangedFiles,
@@ -54,6 +55,34 @@ describe("gitDiffStat", () => {
     mockInvoke("run_git_command", () => " 1 file changed");
     const result = await gitDiffStat("/repo");
     expect(result).toBe(" 1 file changed");
+  });
+});
+
+// ─── gitDiffShortStatBranch ──────────────────────────────────────────────────
+
+describe("gitDiffShortStatBranch", () => {
+  it("parses full shortstat output", async () => {
+    mockInvoke("run_git_command", () => " 3 files changed, 50 insertions(+), 10 deletions(-)");
+    const result = await gitDiffShortStatBranch("/repo", "main");
+    expect(result).toEqual({ filesChanged: 3, insertions: 50, deletions: 10 });
+  });
+
+  it("handles insertions only", async () => {
+    mockInvoke("run_git_command", () => " 1 file changed, 20 insertions(+)");
+    const result = await gitDiffShortStatBranch("/repo", "main");
+    expect(result).toEqual({ filesChanged: 1, insertions: 20, deletions: 0 });
+  });
+
+  it("handles deletions only", async () => {
+    mockInvoke("run_git_command", () => " 2 files changed, 5 deletions(-)");
+    const result = await gitDiffShortStatBranch("/repo", "main");
+    expect(result).toEqual({ filesChanged: 2, insertions: 0, deletions: 5 });
+  });
+
+  it("handles empty output (no changes)", async () => {
+    mockInvoke("run_git_command", () => "");
+    const result = await gitDiffShortStatBranch("/repo", "main");
+    expect(result).toEqual({ filesChanged: 0, insertions: 0, deletions: 0 });
   });
 });
 

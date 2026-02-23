@@ -475,6 +475,21 @@ export async function gitDiffStatBranch(workingDir: string, base: string): Promi
   return runGit(workingDir, "diff", "--stat", `${base}...HEAD`);
 }
 
+export async function gitDiffShortStatBranch(
+  workingDir: string,
+  base: string,
+): Promise<{ filesChanged: number; insertions: number; deletions: number }> {
+  const raw = await runGit(workingDir, "diff", "--shortstat", `${base}...HEAD`);
+  const files = raw.match(/(\d+) file/);
+  const ins = raw.match(/(\d+) insertion/);
+  const del = raw.match(/(\d+) deletion/);
+  return {
+    filesChanged: files ? parseInt(files[1], 10) : 0,
+    insertions: ins ? parseInt(ins[1], 10) : 0,
+    deletions: del ? parseInt(del[1], 10) : 0,
+  };
+}
+
 /**
  * Eject a task's branch from its worktree to the main repo checkout.
  * Removes the worktree, then checks out the branch in the main repo.

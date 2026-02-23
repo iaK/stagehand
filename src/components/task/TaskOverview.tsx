@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
+import { gitLog, gitLogBranchDiff, gitListBranches, gitDiffShortStatBranch, type GitCommit } from "../../lib/git";
 import { sendNotification } from "../../lib/notifications";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
@@ -85,6 +85,7 @@ export function TaskOverview() {
   const [branches, setBranches] = useState<string[]>([]);
   const [childTasks, setChildTasks] = useState<Task[]>([]);
   const [parentTask, setParentTask] = useState<Task | null>(null);
+  const [diffStats, setDiffStats] = useState<{ insertions: number; deletions: number } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(false);
 
@@ -154,6 +155,26 @@ export function TaskOverview() {
         setCommitsLoading(false);
       }
     });
+
+    return () => { cancelled = true; };
+  }, [activeTask?.id, activeProject?.path, defaultBranch]);
+
+  useEffect(() => {
+    if (!activeTask || !activeProject || !defaultBranch) {
+      setDiffStats(null);
+      return;
+    }
+
+    let cancelled = false;
+    const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+
+    gitDiffShortStatBranch(workDir, defaultBranch)
+      .then((stats) => {
+        if (!cancelled) setDiffStats(stats);
+      })
+      .catch(() => {
+        if (!cancelled) setDiffStats(null);
+      });
 
     return () => { cancelled = true; };
   }, [activeTask?.id, activeProject?.path, defaultBranch]);
@@ -274,6 +295,15 @@ export function TaskOverview() {
             </a>
           )}
         </InfoCard>
+        {diffStats && (
+          <InfoCard label="Lines Changed">
+            <span className="text-sm font-medium font-mono">
+              <span className="text-green-600">+{diffStats.insertions}</span>
+              {" / "}
+              <span className="text-red-600">-{diffStats.deletions}</span>
+            </span>
+          </InfoCard>
+        )}
       </div>
 
       {activeTask.status === "completed" && (
