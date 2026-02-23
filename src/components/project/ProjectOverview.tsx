@@ -56,6 +56,8 @@ export function ProjectOverview() {
     }
   }, [tasks.length, archivedTasks.length]);
 
+  const taskIds = tasks.map((t) => t.id).join(",");
+
   useEffect(() => {
     if (!activeProject || !defaultBranch || tasks.length === 0) {
       setTaskDiffStats({});
@@ -83,7 +85,8 @@ export function ProjectOverview() {
 
     fetchAll();
     return () => { cancelled = true; };
-  }, [activeProject?.path, defaultBranch, tasks]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProject?.path, defaultBranch, taskIds]);
 
   if (!activeProject) return null;
 
@@ -341,10 +344,10 @@ function TaskRow({
       <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
       <span className="text-sm truncate">{title}</span>
       {insertions != null && (
-        <span className="text-xs font-mono shrink-0">
-          <span className="text-green-600">+{insertions}</span>
+        <span className="ml-auto text-xs font-mono shrink-0">
+          <span className="text-green-600 dark:text-green-400">+{insertions}</span>
           {" "}
-          <span className="text-red-600">-{deletions}</span>
+          <span className="text-red-600 dark:text-red-400">-{deletions}</span>
         </span>
       )}
       <span className={`text-xs text-muted-foreground shrink-0 ${insertions == null ? "ml-auto" : ""}`}>
