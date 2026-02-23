@@ -226,9 +226,6 @@ export type AgentStreamEvent =
   | { type: "completed"; process_id: string; exit_code: number | null }
   | { type: "error"; process_id: string; message: string };
 
-/** @deprecated Use AgentStreamEvent instead */
-export type ClaudeStreamEvent = AgentStreamEvent;
-
 // === Spawn Args ===
 
 export interface SpawnAgentArgs {
@@ -246,9 +243,6 @@ export interface SpawnAgentArgs {
   maxTurns?: number;
   mcpConfig?: string;
 }
-
-/** @deprecated Use SpawnAgentArgs instead */
-export type SpawnClaudeArgs = SpawnAgentArgs;
 
 // === PTY Types ===
 

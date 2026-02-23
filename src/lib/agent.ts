@@ -14,9 +14,6 @@ export async function spawnAgent(
   });
 }
 
-/** @deprecated Use spawnAgent instead */
-export const spawnClaude = spawnAgent;
-
 export async function killProcess(processId: string): Promise<void> {
   return invoke("kill_process", { processId });
 }
@@ -37,9 +34,6 @@ export async function listProcessesDetailed(): Promise<ProcessInfo[]> {
 export async function checkAgentAvailable(agent?: string): Promise<string> {
   return invoke<string>("check_agent_available", { agent: agent ?? null });
 }
-
-/** @deprecated Use checkAgentAvailable instead */
-export const checkClaudeAvailable = () => checkAgentAvailable();
 
 // === PTY (Interactive Terminal) ===
 

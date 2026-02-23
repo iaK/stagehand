@@ -1,5 +1,5 @@
-import { spawnClaude } from "./claude";
-import type { ClaudeStreamEvent } from "./types";
+import { spawnAgent } from "./agent";
+import type { AgentStreamEvent } from "./types";
 
 /**
  * Fire a lightweight, tool-less agent call and return its text output.
@@ -32,7 +32,7 @@ export async function quickAgentCall(params: {
       }
     };
 
-    spawnClaude(
+    spawnAgent(
       {
         prompt,
         workingDirectory,
@@ -41,7 +41,7 @@ export async function quickAgentCall(params: {
         allowedTools: [],
         outputFormat: "stream-json",
       },
-      (event: ClaudeStreamEvent) => {
+      (event: AgentStreamEvent) => {
         switch (event.type) {
           case "stdout_line":
             try {
