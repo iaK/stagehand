@@ -376,14 +376,22 @@ Keep it under 72 characters for the first line.`,
                   workingDirectory: workDir,
                   maxTurns: 1,
                   allowedTools: [],
-                  outputFormat: "text",
+                  outputFormat: "stream-json",
                   noSessionPersistence: true,
                 },
                 (event: AgentStreamEvent) => {
-                  if (event.type === "stdout_line") {
-                    msgText += event.line + "\n";
-                  } else if (event.type === "completed" || event.type === "error") {
-                    resolve();
+                  switch (event.type) {
+                    case "stdout_line": {
+                      const parsed = parseAgentStreamLine(event.line);
+                      if (parsed?.text) {
+                        msgText += parsed.text;
+                      }
+                      break;
+                    }
+                    case "completed":
+                    case "error":
+                      resolve();
+                      break;
                   }
                 },
               ).catch(() => resolve());
