@@ -184,6 +184,8 @@ describe("fetchProjects", () => {
 });
 
 describe("fetchMyIssues", () => {
+  const mockPageInfo = { hasNextPage: false, endCursor: null };
+
   it("maps response correctly", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
@@ -213,15 +215,16 @@ describe("fetchMyIssues", () => {
                   branchName: null,
                 },
               ],
+              pageInfo: mockPageInfo,
             },
           },
         },
       }),
     });
 
-    const issues = await fetchMyIssues("lin_api_test");
-    expect(issues).toHaveLength(2);
-    expect(issues[0]).toEqual({
+    const result = await fetchMyIssues("lin_api_test");
+    expect(result.issues).toHaveLength(2);
+    expect(result.issues[0]).toEqual({
       id: "issue-1",
       identifier: "ENG-123",
       title: "Fix bug",
@@ -231,36 +234,20 @@ describe("fetchMyIssues", () => {
       url: "https://linear.app/issue/ENG-123",
       branchName: "feature/fix-bug",
     });
-    expect(issues[1].description).toBeUndefined();
-    expect(issues[1].status).toBe("Unknown");
-    expect(issues[1].branchName).toBeUndefined();
+    expect(result.issues[1].description).toBeUndefined();
+    expect(result.issues[1].status).toBe("Unknown");
+    expect(result.issues[1].branchName).toBeUndefined();
+    expect(result.hasNextPage).toBe(false);
+    expect(result.endCursor).toBeNull();
   });
 
-  it("includes team filter when teamId is provided", async () => {
+  it("uses parameterized GraphQL variables for filters", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
         data: {
           viewer: {
-            assignedIssues: { nodes: [] },
-          },
-        },
-      }),
-    });
-
-    await fetchMyIssues("lin_api_test", { teamId: "team-1" });
-
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.query).toContain('team: { id: { eq: "team-1" } }');
-  });
-
-  it("includes project filter when projectId is provided", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: {
-          viewer: {
-            assignedIssues: { nodes: [] },
+            assignedIssues: { nodes: [], pageInfo: mockPageInfo },
           },
         },
       }),
@@ -269,17 +256,25 @@ describe("fetchMyIssues", () => {
     await fetchMyIssues("lin_api_test", { teamId: "team-1", projectId: "proj-1" });
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.query).toContain('team: { id: { eq: "team-1" } }');
-    expect(body.query).toContain('project: { id: { eq: "proj-1" } }');
+    expect(body.query).toContain("$filter: IssueFilter");
+    expect(body.query).toContain("$first: Int!");
+    expect(body.variables.filter).toEqual({
+      state: { type: { nin: ["completed", "canceled"] } },
+      team: { id: { eq: "team-1" } },
+      project: { id: { eq: "proj-1" } },
+    });
+    // Ensure IDs are NOT interpolated into the query string
+    expect(body.query).not.toContain("team-1");
+    expect(body.query).not.toContain("proj-1");
   });
 
-  it("omits team/project filters when no options provided", async () => {
+  it("omits team/project from filter variables when no options provided", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
         data: {
           viewer: {
-            assignedIssues: { nodes: [] },
+            assignedIssues: { nodes: [], pageInfo: mockPageInfo },
           },
         },
       }),
@@ -288,8 +283,53 @@ describe("fetchMyIssues", () => {
     await fetchMyIssues("lin_api_test");
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.query).not.toContain("team:");
-    expect(body.query).not.toContain("project:");
+    expect(body.variables.filter).toEqual({
+      state: { type: { nin: ["completed", "canceled"] } },
+    });
+    expect(body.variables.filter.team).toBeUndefined();
+    expect(body.variables.filter.project).toBeUndefined();
+  });
+
+  it("passes after cursor for pagination", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            assignedIssues: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      }),
+    });
+
+    await fetchMyIssues("lin_api_test", { after: "cursor-abc" });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.variables.after).toBe("cursor-abc");
+    expect(body.query).toContain("$after: String");
+  });
+
+  it("returns pagination info", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            assignedIssues: {
+              nodes: [],
+              pageInfo: { hasNextPage: true, endCursor: "cursor-xyz" },
+            },
+          },
+        },
+      }),
+    });
+
+    const result = await fetchMyIssues("lin_api_test");
+    expect(result.hasNextPage).toBe(true);
+    expect(result.endCursor).toBe("cursor-xyz");
   });
 });
 

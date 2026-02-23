@@ -135,6 +135,10 @@ interface AssignedIssuesResponse {
         state: { name: string } | null;
         branchName: string | null;
       }>;
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
     };
   };
 }
@@ -142,29 +146,46 @@ interface AssignedIssuesResponse {
 export interface FetchIssuesOptions {
   teamId?: string;
   projectId?: string;
+  after?: string;
+}
+
+export interface FetchIssuesResult {
+  issues: LinearIssue[];
+  hasNextPage: boolean;
+  endCursor: string | null;
 }
 
 export async function fetchMyIssues(
   apiKey: string,
   options?: FetchIssuesOptions,
-): Promise<LinearIssue[]> {
-  // Build filter dynamically
-  const filterParts: string[] = [`state: { type: { nin: ["completed", "canceled"] } }`];
+): Promise<FetchIssuesResult> {
+  // Build filter object for GraphQL variables
+  const filter: Record<string, unknown> = {
+    state: { type: { nin: ["completed", "canceled"] } },
+  };
   if (options?.teamId) {
-    filterParts.push(`team: { id: { eq: "${options.teamId}" } }`);
+    filter.team = { id: { eq: options.teamId } };
   }
   if (options?.projectId) {
-    filterParts.push(`project: { id: { eq: "${options.projectId}" } }`);
+    filter.project = { id: { eq: options.projectId } };
   }
-  const filter = `{ ${filterParts.join(", ")} }`;
+
+  const variables: Record<string, unknown> = {
+    filter,
+    first: LINEAR_PAGE_SIZE,
+  };
+  if (options?.after) {
+    variables.after = options.after;
+  }
 
   const data = await gql<AssignedIssuesResponse>(
     apiKey,
-    `{
+    `query ($filter: IssueFilter, $first: Int!, $after: String) {
       viewer {
         assignedIssues(
-          filter: ${filter}
-          first: ${LINEAR_PAGE_SIZE}
+          filter: $filter
+          first: $first
+          after: $after
         ) {
           nodes {
             id
@@ -176,12 +197,17 @@ export async function fetchMyIssues(
             state { name }
             branchName
           }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
         }
       }
     }`,
+    variables,
   );
 
-  return data.viewer.assignedIssues.nodes.map((issue) => ({
+  const issues = data.viewer.assignedIssues.nodes.map((issue) => ({
     id: issue.id,
     identifier: issue.identifier,
     title: issue.title,
@@ -191,6 +217,12 @@ export async function fetchMyIssues(
     url: issue.url,
     branchName: issue.branchName ?? undefined,
   }));
+
+  return {
+    issues,
+    hasNextPage: data.viewer.assignedIssues.pageInfo.hasNextPage,
+    endCursor: data.viewer.assignedIssues.pageInfo.endCursor,
+  };
 }
 
 interface IssueDetailResponse {

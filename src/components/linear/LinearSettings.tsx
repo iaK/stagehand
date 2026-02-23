@@ -71,10 +71,14 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
     sendNotification("Linear disconnected", undefined, "info", { projectId });
   };
 
-  const handleTeamChange = async (teamId: string) => {
-    const team = teams.find((t) => t.id === teamId);
-    if (team) {
-      await selectTeam(projectId, team.id, team.name);
+  const handleTeamChange = async (value: string) => {
+    if (value === "__none__") {
+      await selectTeam(projectId, null, null);
+    } else {
+      const team = teams.find((t) => t.id === value);
+      if (team) {
+        await selectTeam(projectId, team.id, team.name);
+      }
     }
   };
 
@@ -106,14 +110,15 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
           <div>
             <Label className="text-xs text-muted-foreground">Team</Label>
             <Select
-              value={selectedTeamId ?? undefined}
+              value={selectedTeamId ?? "__none__"}
               onValueChange={handleTeamChange}
               disabled={teamsLoading}
             >
               <SelectTrigger className="mt-1">
-                <SelectValue placeholder={teamsLoading ? "Loading teams..." : "Select a team"} />
+                <SelectValue placeholder={teamsLoading ? "Loading teams..." : "All teams"} />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__none__">All teams</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.key} — {team.name}

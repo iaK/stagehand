@@ -37,6 +37,10 @@ const initialState = {
   selectedProjectName: null,
   teamsLoading: false,
   projectsLoading: false,
+  hasNextPage: false,
+  endCursor: null,
+  loadingMore: false,
+  fetchVersion: 0,
 };
 
 describe("linearStore", () => {
@@ -258,6 +262,27 @@ describe("linearStore", () => {
       expect(state.selectedProjectName).toBeNull();
       expect(state.projects).toEqual([]);
     });
+
+    it("clears team selection when null (All teams)", async () => {
+      useLinearStore.setState({
+        selectedTeamId: "team-1",
+        selectedTeamName: "Engineering",
+        selectedProjectId: "proj-1",
+        selectedProjectName: "Alpha",
+      });
+
+      await useLinearStore.getState().selectTeam("p1", null, null);
+
+      expect(repo.deleteProjectSetting).toHaveBeenCalledWith("p1", "linear_team_id");
+      expect(repo.deleteProjectSetting).toHaveBeenCalledWith("p1", "linear_team_name");
+      expect(repo.deleteProjectSetting).toHaveBeenCalledWith("p1", "linear_project_id");
+      expect(repo.deleteProjectSetting).toHaveBeenCalledWith("p1", "linear_project_name");
+
+      const state = useLinearStore.getState();
+      expect(state.selectedTeamId).toBeNull();
+      expect(state.selectedTeamName).toBeNull();
+      expect(state.selectedProjectId).toBeNull();
+    });
   });
 
   describe("selectProject", () => {
@@ -282,21 +307,23 @@ describe("linearStore", () => {
   });
 
   describe("fetchIssues", () => {
-    it("fetches and stores issues with filters", async () => {
+    it("fetches and stores issues with filters and pagination info", async () => {
       const issues = [{ id: "i1", identifier: "ENG-1", title: "Bug", description: undefined, status: "Todo", priority: 1, url: "url", branchName: undefined }];
       useLinearStore.setState({ apiKey: "key", selectedTeamId: "team-1", selectedProjectId: "proj-1" });
-      vi.mocked(linear.fetchMyIssues).mockResolvedValue(issues);
+      vi.mocked(linear.fetchMyIssues).mockResolvedValue({ issues, hasNextPage: true, endCursor: "cursor-1" });
 
       await useLinearStore.getState().fetchIssues();
 
       expect(linear.fetchMyIssues).toHaveBeenCalledWith("key", { teamId: "team-1", projectId: "proj-1" });
       expect(useLinearStore.getState().issues).toEqual(issues);
+      expect(useLinearStore.getState().hasNextPage).toBe(true);
+      expect(useLinearStore.getState().endCursor).toBe("cursor-1");
       expect(useLinearStore.getState().loading).toBe(false);
     });
 
     it("passes undefined filters when no team/project selected", async () => {
       useLinearStore.setState({ apiKey: "key" });
-      vi.mocked(linear.fetchMyIssues).mockResolvedValue([]);
+      vi.mocked(linear.fetchMyIssues).mockResolvedValue({ issues: [], hasNextPage: false, endCursor: null });
 
       await useLinearStore.getState().fetchIssues();
 
@@ -319,6 +346,45 @@ describe("linearStore", () => {
 
       expect(useLinearStore.getState().error).toBe("Failed");
       expect(useLinearStore.getState().loading).toBe(false);
+    });
+
+    it("discards stale response when fetchVersion changes", async () => {
+      useLinearStore.setState({ apiKey: "key" });
+      const issues = [{ id: "i1", identifier: "ENG-1", title: "Bug", description: undefined, status: "Todo", priority: 1, url: "url", branchName: undefined }];
+      vi.mocked(linear.fetchMyIssues).mockImplementation(async () => {
+        // Simulate a concurrent fetchIssues call that bumps the version
+        useLinearStore.setState({ fetchVersion: 999 });
+        return { issues, hasNextPage: false, endCursor: null };
+      });
+
+      await useLinearStore.getState().fetchIssues();
+
+      // Stale response should be discarded — issues remain empty
+      expect(useLinearStore.getState().issues).toEqual([]);
+    });
+  });
+
+  describe("fetchMoreIssues", () => {
+    it("appends issues from next page", async () => {
+      const existing = [{ id: "i1", identifier: "ENG-1", title: "Bug", description: undefined, status: "Todo", priority: 1, url: "url", branchName: undefined }];
+      const nextPage = [{ id: "i2", identifier: "ENG-2", title: "Feature", description: undefined, status: "Todo", priority: 2, url: "url2", branchName: undefined }];
+      useLinearStore.setState({ apiKey: "key", issues: existing, hasNextPage: true, endCursor: "cursor-1", fetchVersion: 1 });
+      vi.mocked(linear.fetchMyIssues).mockResolvedValue({ issues: nextPage, hasNextPage: false, endCursor: null });
+
+      await useLinearStore.getState().fetchMoreIssues();
+
+      expect(linear.fetchMyIssues).toHaveBeenCalledWith("key", { teamId: undefined, projectId: undefined, after: "cursor-1" });
+      expect(useLinearStore.getState().issues).toEqual([...existing, ...nextPage]);
+      expect(useLinearStore.getState().hasNextPage).toBe(false);
+      expect(useLinearStore.getState().loadingMore).toBe(false);
+    });
+
+    it("does nothing when no next page", async () => {
+      useLinearStore.setState({ apiKey: "key", hasNextPage: false, endCursor: null });
+
+      await useLinearStore.getState().fetchMoreIssues();
+
+      expect(linear.fetchMyIssues).not.toHaveBeenCalled();
     });
   });
 

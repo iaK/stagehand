@@ -31,14 +31,22 @@ interface LinearStore {
   teamsLoading: boolean;
   projectsLoading: boolean;
 
+  // Pagination state
+  hasNextPage: boolean;
+  endCursor: string | null;
+  loadingMore: boolean;
+  /** Incremented on each filter change to discard stale responses */
+  fetchVersion: number;
+
   loadForProject: (projectId: string) => Promise<void>;
   saveApiKey: (projectId: string, key: string) => Promise<boolean>;
   disconnect: (projectId: string) => Promise<void>;
   fetchIssues: () => Promise<void>;
+  fetchMoreIssues: () => Promise<void>;
   fetchTeams: () => Promise<void>;
   fetchProjects: (teamId: string) => Promise<void>;
-  selectTeam: (projectId: string, teamId: string, teamName: string) => Promise<void>;
-  selectProject: (projectId: string, projectId2: string | null, projectName: string | null) => Promise<void>;
+  selectTeam: (projectId: string, teamId: string | null, teamName: string | null) => Promise<void>;
+  selectProject: (projectId: string, linearProjectId: string | null, projectName: string | null) => Promise<void>;
   reset: () => void;
   clearError: () => void;
 }
@@ -59,6 +67,10 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
   selectedProjectName: null,
   teamsLoading: false,
   projectsLoading: false,
+  hasNextPage: false,
+  endCursor: null,
+  loadingMore: false,
+  fetchVersion: 0,
 
   loadForProject: async (projectId: string) => {
     // Reset immediately to prevent stale data flash
@@ -152,6 +164,7 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
       teams: [], projects: [],
       selectedTeamId: null, selectedTeamName: null,
       selectedProjectId: null, selectedProjectName: null,
+      hasNextPage: false, endCursor: null, loadingMore: false,
     });
   },
 
@@ -185,7 +198,7 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
     }
   },
 
-  selectTeam: async (projectId: string, teamId: string, teamName: string) => {
+  selectTeam: async (projectId: string, teamId: string | null, teamName: string | null) => {
     // Clear project selection when team changes
     set({
       selectedTeamId: teamId,
@@ -194,8 +207,13 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
       selectedProjectName: null,
       projects: [],
     });
-    await repo.setProjectSetting(projectId, KEY_TEAM_ID, teamId);
-    await repo.setProjectSetting(projectId, KEY_TEAM_NAME, teamName);
+    if (teamId && teamName) {
+      await repo.setProjectSetting(projectId, KEY_TEAM_ID, teamId);
+      await repo.setProjectSetting(projectId, KEY_TEAM_NAME, teamName);
+    } else {
+      await repo.deleteProjectSetting(projectId, KEY_TEAM_ID);
+      await repo.deleteProjectSetting(projectId, KEY_TEAM_NAME);
+    }
     await repo.deleteProjectSetting(projectId, KEY_PROJECT_ID);
     await repo.deleteProjectSetting(projectId, KEY_PROJECT_NAME);
   },
@@ -217,17 +235,48 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
   fetchIssues: async () => {
     const { apiKey, selectedTeamId, selectedProjectId } = get();
     if (!apiKey) return;
-    set({ loading: true, error: null });
+    const version = get().fetchVersion + 1;
+    set({ loading: true, error: null, issues: [], hasNextPage: false, endCursor: null, fetchVersion: version });
     try {
-      const issues = await linear.fetchMyIssues(apiKey, {
+      const result = await linear.fetchMyIssues(apiKey, {
         teamId: selectedTeamId ?? undefined,
         projectId: selectedProjectId ?? undefined,
       });
-      set({ issues, loading: false });
+      // Discard stale response if filters changed while loading
+      if (get().fetchVersion !== version) return;
+      set({ issues: result.issues, hasNextPage: result.hasNextPage, endCursor: result.endCursor, loading: false });
     } catch (e) {
+      if (get().fetchVersion !== version) return;
       set({
         loading: false,
         error: e instanceof Error ? e.message : "Failed to fetch issues",
+      });
+    }
+  },
+
+  fetchMoreIssues: async () => {
+    const { apiKey, selectedTeamId, selectedProjectId, endCursor, hasNextPage, loadingMore, fetchVersion } = get();
+    if (!apiKey || !hasNextPage || !endCursor || loadingMore) return;
+    set({ loadingMore: true });
+    try {
+      const result = await linear.fetchMyIssues(apiKey, {
+        teamId: selectedTeamId ?? undefined,
+        projectId: selectedProjectId ?? undefined,
+        after: endCursor,
+      });
+      // Discard stale response if filters changed while loading
+      if (get().fetchVersion !== fetchVersion) return;
+      set((state) => ({
+        issues: [...state.issues, ...result.issues],
+        hasNextPage: result.hasNextPage,
+        endCursor: result.endCursor,
+        loadingMore: false,
+      }));
+    } catch (e) {
+      if (get().fetchVersion !== fetchVersion) return;
+      set({
+        loadingMore: false,
+        error: e instanceof Error ? e.message : "Failed to load more issues",
       });
     }
   },
@@ -249,6 +298,10 @@ export const useLinearStore = create<LinearStore>((set, get) => ({
       selectedProjectName: null,
       teamsLoading: false,
       projectsLoading: false,
+      hasNextPage: false,
+      endCursor: null,
+      loadingMore: false,
+      fetchVersion: 0,
     });
   },
 
