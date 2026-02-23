@@ -187,9 +187,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       // committedStages is keyed by bare stage.id; stale entries from the
       // previous task prevent both commit generation and the timeout fallback,
       // leaving the UI permanently stuck on "Preparing commit...".
-      useProcessStore.setState({ committedStages: {} });
+      useProcessStore.setState({ committedStages: {}, mergeStages: {} });
     }
-    set({ activeTask: task });
+    set({ activeTask: task, executions: [] });
   },
 
   consumeInitialInput: (taskId) => {

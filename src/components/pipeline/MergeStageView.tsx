@@ -87,7 +87,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
-    .filter((e) => e.stage_template_id === stage.id)
+    .filter((e) => e.stage_template_id === stage.id && e.task_id === activeTask?.id)
     .sort((a, b) => b.attempt_number - a.attempt_number)[0] ?? null;
 
   const isApproved = latestExecution?.status === "approved";
