@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { gitLog, gitLogBranchDiff, gitListBranches, gitWorktreeRemove, gitDeleteBranch, gitDefaultBranch, gitCheckoutBranch, type GitCommit } from "../../lib/git";
+import { gitLog, gitLogBranchDiff, gitListBranches, type GitCommit } from "../../lib/git";
 import { sendNotification } from "../../lib/notifications";
 import { useGitHubStore } from "../../stores/githubStore";
-import { getTaskWorkingDir } from "../../lib/worktree";
+import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { statusColors } from "../../lib/taskStatus";
 import { TaskCreate } from "./TaskCreate";
@@ -160,27 +160,7 @@ export function TaskOverview() {
 
   const confirmArchive = async () => {
     if (!activeProject || !activeTask) return;
-    if (activeTask.ejected) {
-      try {
-        const defBranch = await gitDefaultBranch(activeProject.path);
-        await gitCheckoutBranch(activeProject.path, defBranch ?? "main");
-      } catch {
-        // Non-critical — best effort
-      }
-    } else if (activeTask.worktree_path) {
-      try {
-        await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
-      } catch {
-        // Worktree may already be gone
-      }
-    }
-    if (activeTask.branch_name) {
-      try {
-        await gitDeleteBranch(activeProject.path, activeTask.branch_name);
-      } catch {
-        // Non-critical — branch may already be gone
-      }
-    }
+    await cleanupTaskWorktree(activeProject.path, activeTask, { deleteBranch: true });
     await updateTask(activeProject.id, activeTask.id, { archived: 1 });
     sendNotification("Task archived", activeTask.title, "success", { projectId: activeProject.id, taskId: activeTask.id });
     setArchiveDialogOpen(false);

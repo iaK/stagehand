@@ -10,14 +10,12 @@ import {
   gitFetch,
   gitHasRemote,
   gitIsMerged,
-  gitWorktreeRemove,
-  gitDeleteBranch,
   gitDiffStat,
   gitAdd,
   gitCommit,
 } from "../../lib/git";
 import { logger } from "../../lib/logger";
-import { getTaskWorkingDir } from "../../lib/worktree";
+import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { spawnAgent } from "../../lib/agent";
@@ -222,25 +220,12 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         status: "completed",
       });
 
-      // Clean up worktree first (must happen before branch deletion)
-      if (activeTask.worktree_path) {
-        try {
-          await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
-        } catch {
-          // Non-critical
-        }
-      }
-      // Only delete the branch after verifying it was fully merged
+      // Clean up worktree and delete branch only if fully merged
+      let shouldDeleteBranch = false;
       if (activeTask.branch_name) {
-        const merged = await gitIsMerged(activeProject.path, activeTask.branch_name, targetBranch);
-        if (merged) {
-          try {
-            await gitDeleteBranch(activeProject.path, activeTask.branch_name);
-          } catch {
-            // Non-critical
-          }
-        }
+        shouldDeleteBranch = await gitIsMerged(activeProject.path, activeTask.branch_name, targetBranch);
       }
+      await cleanupTaskWorktree(activeProject.path, activeTask, { deleteBranch: shouldDeleteBranch });
 
       await loadExecutions(activeProject.id, activeTask.id);
       setMergeState("success");
@@ -360,13 +345,7 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
 
     sendNotification("Merge skipped", "Task completed without merging");
 
-    if (activeTask.worktree_path) {
-      try {
-        await gitWorktreeRemove(activeProject.path, activeTask.worktree_path);
-      } catch {
-        // Non-critical
-      }
-    }
+    await cleanupTaskWorktree(activeProject.path, activeTask);
 
     await loadExecutions(activeProject.id, activeTask.id);
     setMergeState("success");
