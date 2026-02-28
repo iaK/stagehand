@@ -43,6 +43,7 @@ const MIGRATIONS: Migration[] = [
   { version: 16, name: "agent_agnostic_descriptions", fn: migrateAgentAgnosticDescriptions },
   { version: 17, name: "strip_json_from_prompts", fn: migrateStripJsonFromPrompts },
   { version: 18, name: "task_stage_instances", fn: migrateTaskStageInstances },
+  { version: 19, name: "task_lifecycle", fn: migrateTaskLifecycle },
 ];
 
 /**
@@ -946,4 +947,12 @@ async function migrateTaskStageInstances(db: Database): Promise<void> {
   `);
   await db.execute(`DROP TABLE stage_executions`);
   await db.execute(`ALTER TABLE stage_executions_new RENAME TO stage_executions`);
+}
+
+async function migrateTaskLifecycle(db: Database): Promise<void> {
+  // Add lifecycle column (idempotent via catch — also added in schema.ts)
+  await db.execute(`ALTER TABLE tasks ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'active'`).catch(() => {});
+
+  // Backfill: archived=1 → lifecycle='archived'
+  await db.execute(`UPDATE tasks SET lifecycle = 'archived' WHERE archived = 1 AND lifecycle = 'active'`);
 }

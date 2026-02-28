@@ -51,6 +51,8 @@ export interface TaskStageInstance extends StageTemplate {
   model_override: string | null;
 }
 
+export type TaskLifecycle = "active" | "paused" | "archived";
+
 export interface Task {
   id: string;
   project_id: string;
@@ -63,7 +65,7 @@ export interface Task {
   pr_url: string | null;
   parent_task_id: string | null;
   ejected: number;
-  archived: number;
+  lifecycle: TaskLifecycle;
   diff_insertions: number | null;
   diff_deletions: number | null;
   created_at: string;

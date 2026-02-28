@@ -199,7 +199,7 @@ export function TaskOverview() {
   const confirmArchive = async () => {
     if (!activeProject || !activeTask) return;
     await cleanupTaskWorktree(activeProject.path, activeTask, { deleteBranch: true });
-    await updateTask(activeProject.id, activeTask.id, { archived: 1 });
+    await updateTask(activeProject.id, activeTask.id, { lifecycle: "archived" });
     sendNotification("Task archived", activeTask.title, "success", { projectId: activeProject.id, taskId: activeTask.id });
     setArchiveDialogOpen(false);
     setActiveTask(null);

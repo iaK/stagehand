@@ -22,6 +22,7 @@ export function ProjectOverview() {
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
 
+  const pausedTasks = useProjectOverviewStore((s) => s.pausedTasks);
   const archivedTasks = useProjectOverviewStore((s) => s.archivedTasks);
   const tokenUsage = useProjectOverviewStore((s) => s.tokenUsage);
   const tokenUsageToday = useProjectOverviewStore((s) => s.tokenUsageToday);
@@ -37,6 +38,7 @@ export function ProjectOverview() {
   const defaultBranch = useGitHubStore((s) => s.defaultBranch);
 
   const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
+  const [pausedOpen, setPausedOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [taskDiffStats, setTaskDiffStats] = useState<Record<string, { insertions: number; deletions: number }>>({});
 
@@ -49,12 +51,15 @@ export function ProjectOverview() {
     }
   }, [activeProject?.id, loadProjectOverview]);
 
-  // Auto-expand archived if no active tasks
+  // Auto-expand paused/archived if no active tasks
   useEffect(() => {
-    if (tasks.length === 0 && archivedTasks.length > 0) {
+    if (tasks.length === 0 && pausedTasks.length > 0) {
+      setPausedOpen(true);
+    }
+    if (tasks.length === 0 && pausedTasks.length === 0 && archivedTasks.length > 0) {
       setArchivedOpen(true);
     }
-  }, [tasks.length, archivedTasks.length]);
+  }, [tasks.length, pausedTasks.length, archivedTasks.length]);
 
   const taskIds = tasks.map((t) => t.id).join(",");
 
@@ -115,8 +120,8 @@ export function ProjectOverview() {
           value={String(tasks.length)}
         />
         <StatCard
-          label="Archived Tasks"
-          value={loading ? undefined : String(archivedTasks.length)}
+          label="Paused Tasks"
+          value={loading ? undefined : String(pausedTasks.length)}
           loading={loading}
         />
         <StatCard
@@ -228,6 +233,35 @@ export function ProjectOverview() {
           )}
         </CardContent>
       </Card>
+
+      {/* Paused Tasks (Collapsible) */}
+      {pausedTasks.length > 0 && (
+        <Collapsible open={pausedOpen} onOpenChange={setPausedOpen}>
+          <Card>
+            <CardHeader className="pb-2">
+              <CollapsibleTrigger className="flex items-center gap-2 w-full text-left">
+                <CardTitle className="text-base">Paused Tasks ({pausedTasks.length})</CardTitle>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${pausedOpen ? "rotate-180" : ""}`} />
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-1">
+                {pausedTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    title={task.title}
+                    updatedAt={task.updated_at}
+                    dotClass="bg-yellow-500"
+                    insertions={task.diff_insertions ?? undefined}
+                    deletions={task.diff_deletions ?? undefined}
+                    onClick={() => setActiveTask(task)}
+                  />
+                ))}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
 
       {/* Archived Tasks (Collapsible) */}
       {archivedTasks.length > 0 && (
