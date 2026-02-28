@@ -668,6 +668,13 @@ export async function setTaskStages(
   const db = await getProjectDb(projectId);
   // Avoid withTransaction — tauri-plugin-sql uses a connection pool so
   // BEGIN/COMMIT can land on different connections, causing lock timeouts.
+  // Nullify FK references in stage_executions before deleting, otherwise
+  // the FK constraint (task_stage_id → task_stages.id) blocks the delete.
+  await db.execute(
+    `UPDATE stage_executions SET task_stage_id = NULL
+     WHERE task_id = $1 AND task_stage_id IN (SELECT id FROM task_stages WHERE task_id = $1)`,
+    [taskId],
+  );
   await db.execute("DELETE FROM task_stages WHERE task_id = $1", [taskId]);
   if (stages.length > 0) {
     const placeholders: string[] = [];

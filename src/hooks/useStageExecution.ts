@@ -59,15 +59,45 @@ export function useStageExecution() {
         return;
       }
 
+      // Ensure a real task_stages row exists. Old tasks (pre-dynamic-stages)
+      // or tasks created before the addTask fix may only have a synthetic
+      // instance where task_stage_id === stage_template_id (the template ID).
+      // Creating an execution with that bogus FK would violate the constraint.
+      if (stage.task_stage_id === stage.stage_template_id) {
+        const taskStageId = await repo.insertTaskStage(
+          activeProject.id, task.id, stage.stage_template_id, stage.sort_order,
+        );
+        stage = { ...stage, task_stage_id: taskStageId };
+        await updateTask(activeProject.id, task.id, { current_stage_id: taskStageId });
+        await useTaskStore.getState().loadTaskStages(activeProject.id, task.id);
+      }
+
       // Note: worktree creation is deferred until research approval (see createWorktreeForTask).
       // Research runs read-only in the project root.
 
-      // Clear task_stages when re-running the research stage (triggers stage selection)
+      // Clear non-research task_stages when re-running the research stage
+      // (triggers fresh stage selection), but preserve the research stage's own row.
       if (stage.output_format === "research") {
         const prevAttemptCheck = executions.filter((e) => e.task_stage_id === stage.task_stage_id);
         if (prevAttemptCheck.length > 0) {
-          await repo.setTaskStages(activeProject.id, task.id, []);
-          await useTaskStore.getState().loadTaskStages(activeProject.id, task.id);
+          await repo.setTaskStages(activeProject.id, task.id, [
+            { stageTemplateId: stage.stage_template_id, sortOrder: stage.sort_order },
+          ]);
+          // Re-read the preserved row so stage.task_stage_id is up to date
+          const freshInstances = await repo.getTaskStageInstances(activeProject.id, task.id);
+          const freshResearch = freshInstances.find((i) => i.stage_template_id === stage.stage_template_id);
+          if (freshResearch) {
+            stage = { ...stage, task_stage_id: freshResearch.task_stage_id };
+            // Update current_stage_id in DB first, then update taskStages and
+            // tasks in the store together to avoid a render where the IDs mismatch.
+            await repo.updateTask(activeProject.id, task.id, { current_stage_id: freshResearch.task_stage_id });
+            const freshTasks = await repo.listTasks(activeProject.id);
+            useTaskStore.setState((s) => ({
+              tasks: freshTasks,
+              activeTask: freshTasks.find((t) => t.id === task.id) ?? s.activeTask,
+              taskStages: { ...s.taskStages, [task.id]: freshInstances },
+            }));
+          }
         }
       }
 

@@ -201,12 +201,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (!activeTask) return [];
     const instances = taskStages[activeTask.id];
     if (!instances || instances.length === 0) {
-      // Before stage selection: return the research stage as a synthetic instance
+      // Before stage selection (or before loadTaskStages has populated the
+      // cache): return the research stage as a synthetic instance.  Use the
+      // task's current_stage_id when available so that isCurrentStage
+      // (task.current_stage_id === stage.task_stage_id) matches immediately,
+      // avoiding a flash of "Waiting for earlier stages to complete".
       const research = stageTemplates.find((t) => t.sort_order === 0);
       if (research) {
+        const syntheticId = activeTask.current_stage_id ?? research.id;
         return [{
           ...research,
-          task_stage_id: research.id,
+          task_stage_id: syntheticId,
           stage_template_id: research.id,
           agent_override: null,
           model_override: null,
@@ -242,17 +247,40 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   addTask: async (projectId, title, initialInput, branchName) => {
+    // Find the first stage template (sort_order 0) so we can create a real
+    // task_stage row and set current_stage_id at creation time.
+    const templates = get().stageTemplates;
+    const firstTemplate = templates.find((t) => t.sort_order === 0);
+
     const task = await repo.createTask(
       projectId,
       title,
       null,
       branchName,
     );
+
+    // Create the initial task_stage and point current_stage_id at it
+    if (firstTemplate) {
+      const taskStageId = await repo.insertTaskStage(
+        projectId, task.id, firstTemplate.id, firstTemplate.sort_order,
+      );
+      await repo.updateTask(projectId, task.id, { current_stage_id: taskStageId });
+      task.current_stage_id = taskStageId;
+    }
+
+    // Eagerly load task stages into the store so the UI doesn't flash
+    // "Waiting for earlier stages" before PipelineView's effect fires.
+    const instances = await repo.getTaskStageInstances(projectId, task.id);
+
     const tasks = await repo.listTasks(projectId);
     if (initialInput) setInitialInput(task.id, initialInput);
     // Only update store if this project is still active
     if (useProjectStore.getState().activeProject?.id !== projectId) return task;
-    set({ tasks, activeTask: task });
+    set((state) => ({
+      tasks,
+      activeTask: task,
+      taskStages: { ...state.taskStages, [task.id]: instances },
+    }));
     return task;
   },
 
@@ -324,6 +352,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   createSubtasks: async (projectId, parentTaskId, subtasks) => {
     const created: Task[] = [];
+    const templates = get().stageTemplates;
+    const firstTemplate = templates.find((t) => t.sort_order === 0);
     for (const sub of subtasks) {
       const task = await repo.createTask(
         projectId,
@@ -333,8 +363,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         undefined,
         parentTaskId,
       );
+      if (firstTemplate) {
+        const taskStageId = await repo.insertTaskStage(
+          projectId, task.id, firstTemplate.id, firstTemplate.sort_order,
+        );
+        await repo.updateTask(projectId, task.id, { current_stage_id: taskStageId });
+        task.current_stage_id = taskStageId;
+      }
       if (sub.initialInput) setInitialInput(task.id, sub.initialInput);
       created.push(task);
+
+      // Eagerly populate taskStages so the UI is ready if this subtask is selected
+      const instances = await repo.getTaskStageInstances(projectId, task.id);
+      set((state) => ({
+        taskStages: { ...state.taskStages, [task.id]: instances },
+      }));
     }
 
     // Refresh the task list so new subtasks appear in sidebar

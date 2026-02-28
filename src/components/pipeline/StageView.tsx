@@ -185,7 +185,8 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   );
 
   const stageStatus = latestExecution?.status ?? "pending";
-  const isCurrentStage = task?.current_stage_id === sid;
+  const isCurrentStage = task?.current_stage_id === sid
+    || (task?.current_stage_id == null && stage.sort_order === 0);
   const isApproved = stageStatus === "approved";
   const needsUserInput = !!stage.requires_user_input;
 
