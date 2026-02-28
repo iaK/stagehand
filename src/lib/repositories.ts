@@ -252,7 +252,7 @@ export async function deleteStageTemplate(
   const activeTasks = await db.select<{ cnt: number }[]>(
     `SELECT COUNT(*) as cnt FROM tasks t
      JOIN task_stages ts ON t.current_stage_id = ts.id
-     WHERE ts.stage_template_id = $1 AND t.status != 'completed' AND t.archived = 0`,
+     WHERE ts.stage_template_id = $1 AND t.status != 'completed' AND t.lifecycle = 'active'`,
     [templateId],
   );
   if (activeTasks[0]?.cnt > 0) {
@@ -341,7 +341,15 @@ export async function duplicateStageTemplate(
 export async function listTasks(projectId: string): Promise<Task[]> {
   const db = await getProjectDb(projectId);
   return db.select<Task[]>(
-    "SELECT * FROM tasks WHERE project_id = $1 AND archived = 0 ORDER BY created_at DESC",
+    "SELECT * FROM tasks WHERE project_id = $1 AND lifecycle = 'active' ORDER BY created_at DESC",
+    [projectId],
+  );
+}
+
+export async function listPausedTasks(projectId: string): Promise<Task[]> {
+  const db = await getProjectDb(projectId);
+  return db.select<Task[]>(
+    "SELECT * FROM tasks WHERE project_id = $1 AND lifecycle = 'paused' ORDER BY updated_at DESC",
     [projectId],
   );
 }
@@ -349,7 +357,7 @@ export async function listTasks(projectId: string): Promise<Task[]> {
 export async function listArchivedTasks(projectId: string): Promise<Task[]> {
   const db = await getProjectDb(projectId);
   return db.select<Task[]>(
-    "SELECT * FROM tasks WHERE project_id = $1 AND archived = 1 ORDER BY updated_at DESC",
+    "SELECT * FROM tasks WHERE project_id = $1 AND lifecycle = 'archived' ORDER BY updated_at DESC",
     [projectId],
   );
 }
@@ -421,7 +429,7 @@ export async function createTask(
     pr_url: null,
     parent_task_id: parentTaskId ?? null,
     ejected: 0,
-    archived: 0,
+    lifecycle: "active",
     diff_insertions: null,
     diff_deletions: null,
     created_at: now,
@@ -447,7 +455,7 @@ export async function getChildTasks(
 ): Promise<Task[]> {
   const db = await getProjectDb(projectId);
   return db.select<Task[]>(
-    "SELECT * FROM tasks WHERE parent_task_id = $1 AND archived = 0 ORDER BY created_at ASC",
+    "SELECT * FROM tasks WHERE parent_task_id = $1 AND lifecycle != 'archived' ORDER BY created_at ASC",
     [parentTaskId],
   );
 }
@@ -455,7 +463,7 @@ export async function getChildTasks(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "archived" | "branch_name" | "worktree_path" | "pr_url" | "ejected" | "diff_insertions" | "diff_deletions">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "ejected" | "diff_insertions" | "diff_deletions">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];
@@ -800,7 +808,7 @@ export async function getProjectTaskSummary(
 
   const [tasks, execRows] = await Promise.all([
     db.select<{ status: string }[]>(
-      "SELECT status FROM tasks WHERE project_id = $1 AND archived = 0",
+      "SELECT status FROM tasks WHERE project_id = $1 AND lifecycle = 'active'",
       [projectId],
     ),
     db.select<{ status: string }[]>(
@@ -809,7 +817,7 @@ export async function getProjectTaskSummary(
          SELECT task_id, MAX(started_at) as max_started
          FROM stage_executions GROUP BY task_id
        ) latest ON se.task_id = latest.task_id AND se.started_at = latest.max_started
-       INNER JOIN tasks t ON t.id = se.task_id AND t.project_id = $1 AND t.archived = 0`,
+       INNER JOIN tasks t ON t.id = se.task_id AND t.project_id = $1 AND t.lifecycle = 'active'`,
       [projectId],
     ),
   ]);

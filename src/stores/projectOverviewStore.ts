@@ -4,6 +4,7 @@ import * as repo from "../lib/repositories";
 import { useProjectStore } from "./projectStore";
 
 interface ProjectOverviewStore {
+  pausedTasks: Task[];
   archivedTasks: Task[];
   tokenUsage: TokenTotals | null;
   tokenUsageToday: TokenTotals | null;
@@ -15,6 +16,7 @@ interface ProjectOverviewStore {
 }
 
 export const useProjectOverviewStore = create<ProjectOverviewStore>((set) => ({
+  pausedTasks: [],
   archivedTasks: [],
   tokenUsage: null,
   tokenUsageToday: null,
@@ -22,7 +24,7 @@ export const useProjectOverviewStore = create<ProjectOverviewStore>((set) => ({
   error: null,
 
   loadProjectOverview: async (projectId) => {
-    set({ loading: true, error: null, archivedTasks: [], tokenUsage: null, tokenUsageToday: null });
+    set({ loading: true, error: null, pausedTasks: [], archivedTasks: [], tokenUsage: null, tokenUsageToday: null });
 
     try {
       // Compute today's midnight in local timezone, converted to ISO UTC
@@ -30,7 +32,8 @@ export const useProjectOverviewStore = create<ProjectOverviewStore>((set) => ({
       const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const todayMidnightIso = todayMidnight.toISOString();
 
-      const [archivedTasks, tokenUsage, tokenUsageToday] = await Promise.all([
+      const [pausedTasks, archivedTasks, tokenUsage, tokenUsageToday] = await Promise.all([
+        repo.listPausedTasks(projectId),
         repo.listArchivedTasks(projectId),
         repo.getProjectTokenUsage(projectId),
         repo.getProjectTokenUsageSince(projectId, todayMidnightIso),
@@ -39,11 +42,11 @@ export const useProjectOverviewStore = create<ProjectOverviewStore>((set) => ({
       // Guard against stale responses
       if (useProjectStore.getState().activeProject?.id !== projectId) return;
 
-      set({ archivedTasks, tokenUsage, tokenUsageToday, loading: false });
+      set({ pausedTasks, archivedTasks, tokenUsage, tokenUsageToday, loading: false });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : "Failed to load project overview" });
     }
   },
 
-  clear: () => set({ archivedTasks: [], tokenUsage: null, tokenUsageToday: null, loading: false, error: null }),
+  clear: () => set({ pausedTasks: [], archivedTasks: [], tokenUsage: null, tokenUsageToday: null, loading: false, error: null }),
 }));
