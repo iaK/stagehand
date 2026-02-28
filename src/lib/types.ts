@@ -27,6 +27,12 @@ export interface StageTemplate {
   allowed_tools: string | null; // JSON array of tool names
   requires_user_input: number; // boolean: stage needs user input before running (shows input box)
   agent: string | null; // AI agent override: 'claude' | 'codex' | 'gemini' | 'amp' | 'opencode' | null (use project default)
+  result_mode?: string; // 'replace' | 'append' — added via migration, has DB default
+  commits_changes?: number; // boolean — added via migration, has DB default
+  creates_pr?: number; // boolean — added via migration, has DB default
+  is_terminal?: number; // boolean — added via migration, has DB default
+  triggers_stage_selection?: number; // boolean — added via migration, has DB default
+  commit_prefix?: string | null; // added via migration
   created_at: string;
   updated_at: string;
 }

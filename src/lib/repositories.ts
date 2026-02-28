@@ -643,7 +643,14 @@ export async function getTaskStageInstances(
   return db.select<TaskStageInstance[]>(
     `SELECT ts.id as task_stage_id, ts.stage_template_id, ts.sort_order,
             ts.agent_override, ts.model_override,
-            st.*
+            st.id, st.project_id, st.name, st.description,
+            st.prompt_template, st.input_source, st.output_format,
+            st.output_schema, st.gate_rules, st.persona_name,
+            st.persona_system_prompt, st.persona_model, st.preparation_prompt,
+            st.allowed_tools, st.requires_user_input, st.agent, st.result_mode,
+            st.commits_changes, st.creates_pr, st.is_terminal,
+            st.triggers_stage_selection, st.commit_prefix,
+            st.created_at, st.updated_at
      FROM task_stages ts
      JOIN stage_templates st ON ts.stage_template_id = st.id
      WHERE ts.task_id = $1
@@ -665,6 +672,25 @@ export async function setTaskStages(
       await db.execute(
         "INSERT INTO task_stages (id, task_id, stage_template_id, sort_order) VALUES ($1, $2, $3, $4)",
         [crypto.randomUUID(), taskId, s.stageTemplateId, (i + 1) * 1000],
+      );
+    }
+  });
+}
+
+export async function renumberTaskStages(
+  projectId: string,
+  taskId: string,
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ id: string }[]>(
+    "SELECT id FROM task_stages WHERE task_id = $1 ORDER BY sort_order ASC",
+    [taskId],
+  );
+  await withTransaction(db, async () => {
+    for (let i = 0; i < rows.length; i++) {
+      await db.execute(
+        "UPDATE task_stages SET sort_order = $1 WHERE id = $2",
+        [(i + 1) * 1000, rows[i].id],
       );
     }
   });
@@ -793,12 +819,17 @@ export async function getApprovedStageOutputs(
 ): Promise<{ stage_name: string; stage_result: string; stage_summary: string }[]> {
   const db = await getProjectDb(projectId);
   return db.select<{ stage_name: string; stage_result: string; stage_summary: string }[]>(
-    `SELECT st.name AS stage_name, se.stage_result, se.stage_summary
-     FROM stage_executions se
-     JOIN task_stages ts ON se.task_stage_id = ts.id
-     JOIN stage_templates st ON ts.stage_template_id = st.id
-     WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
-     ORDER BY ts.sort_order ASC`,
+    `SELECT stage_name, stage_result, stage_summary FROM (
+       SELECT st.name AS stage_name, se.stage_result, se.stage_summary, ts.sort_order AS so
+       FROM stage_executions se
+       JOIN task_stages ts ON se.task_stage_id = ts.id
+       JOIN stage_templates st ON ts.stage_template_id = st.id
+       WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
+       UNION ALL
+       SELECT 'Research' AS stage_name, se.stage_result, se.stage_summary, -1 AS so
+       FROM stage_executions se
+       WHERE se.task_id = $1 AND se.task_stage_id IS NULL AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
+     ) ORDER BY so ASC`,
     [taskId],
   );
 }
@@ -809,12 +840,17 @@ export async function getApprovedStageSummaries(
 ): Promise<{ stage_name: string; stage_summary: string }[]> {
   const db = await getProjectDb(projectId);
   const rows = await db.select<{ stage_name: string; stage_summary: string }[]>(
-    `SELECT st.name AS stage_name, se.stage_summary
-     FROM stage_executions se
-     JOIN task_stages ts ON se.task_stage_id = ts.id
-     JOIN stage_templates st ON ts.stage_template_id = st.id
-     WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
-     ORDER BY ts.sort_order ASC`,
+    `SELECT stage_name, stage_summary FROM (
+       SELECT st.name AS stage_name, se.stage_summary, ts.sort_order AS so
+       FROM stage_executions se
+       JOIN task_stages ts ON se.task_stage_id = ts.id
+       JOIN stage_templates st ON ts.stage_template_id = st.id
+       WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
+       UNION ALL
+       SELECT 'Research' AS stage_name, se.stage_summary, -1 AS so
+       FROM stage_executions se
+       WHERE se.task_id = $1 AND se.task_stage_id IS NULL AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
+     ) ORDER BY so ASC`,
     [taskId],
   );
   return rows;

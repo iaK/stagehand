@@ -385,7 +385,7 @@ export function TaskOverview() {
                         </thead>
                         <tbody>
                           {perStageUsage.map(({ stage, execution }) => (
-                            <tr key={stage.id} className="border-b border-border/50">
+                            <tr key={stage.task_stage_id} className="border-b border-border/50">
                               <td className="py-1.5 pr-3">{stage.name}</td>
                               <td className="text-right py-1.5 px-3">
                                 {execution.total_cost_usd != null ? formatCost(execution.total_cost_usd) : "\u2014"}

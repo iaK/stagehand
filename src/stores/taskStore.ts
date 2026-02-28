@@ -38,6 +38,7 @@ interface TaskStore {
   loadTaskStages: (projectId: string, taskId: string) => Promise<void>;
   setTaskStages: (projectId: string, taskId: string, stages: { stageTemplateId: string; sortOrder: number }[]) => Promise<void>;
   insertTaskStage: (projectId: string, taskId: string, templateId: string, sortOrder: number, agent?: string | null, model?: string | null) => Promise<void>;
+  renumberTaskStages: (projectId: string, taskId: string) => Promise<void>;
   getActiveTaskStageInstances: () => TaskStageInstance[];
   setActiveTask: (task: Task | null) => void;
   consumeInitialInput: (taskId: string) => string | undefined;
@@ -113,9 +114,15 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         detailedProcesses.map((p) => p.stageExecutionId).filter(Boolean),
       );
 
+      // For research executions (task_stage_id is null), use the research template ID
+      // to match the synthetic TaskStageInstance created by getActiveTaskStageInstances().
+      const researchTemplateId = get().stageTemplates.find((t) => t.sort_order === 0)?.id;
+      const resolveStageId = (exec: StageExecution) =>
+        exec.task_stage_id ?? researchTemplateId ?? exec.task_id;
+
       for (const exec of executions) {
         if (exec.status === "running") {
-          const sk = stageKey(exec.task_id, exec.task_stage_id ?? exec.task_id);
+          const sk = stageKey(exec.task_id, resolveStageId(exec));
           const stageState = useProcessStore.getState().stages[sk];
           // Skip if processStore thinks this is actively running (current session spawn)
           if (stageState?.isRunning) continue;
@@ -166,6 +173,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   insertTaskStage: async (projectId, taskId, templateId, sortOrder, agent, model) => {
     await repo.insertTaskStage(projectId, taskId, templateId, sortOrder, agent, model);
+    const instances = await repo.getTaskStageInstances(projectId, taskId);
+    set((state) => ({
+      taskStages: { ...state.taskStages, [taskId]: instances },
+    }));
+  },
+
+  renumberTaskStages: async (projectId, taskId) => {
+    await repo.renumberTaskStages(projectId, taskId);
     const instances = await repo.getTaskStageInstances(projectId, taskId);
     set((state) => ({
       taskStages: { ...state.taskStages, [taskId]: instances },

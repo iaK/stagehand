@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const TERMINAL_FORMATS = new Set(["research", "pr_preparation", "pr_review", "merge", "task_splitting"]);
+const NON_INSERTABLE_FORMATS = new Set(["research", "pr_preparation", "pr_review", "merge", "task_splitting"]);
 
 interface InsertStageButtonProps {
   taskId: string;
@@ -28,12 +28,17 @@ export function InsertStageButton({
 }: InsertStageButtonProps) {
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const insertTaskStage = useTaskStore((s) => s.insertTaskStage);
+  const renumberTaskStages = useTaskStore((s) => s.renumberTaskStages);
   const [open, setOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [inserting, setInserting] = useState(false);
 
   const insertableTemplates = useMemo(
-    () => stageTemplates.filter((t) => !TERMINAL_FORMATS.has(t.output_format)),
+    () => stageTemplates.filter((t) =>
+      !NON_INSERTABLE_FORMATS.has(t.output_format) &&
+      !t.is_terminal &&
+      !t.triggers_stage_selection
+    ),
     [stageTemplates],
   );
 
@@ -42,12 +47,13 @@ export function InsertStageButton({
     setInserting(true);
     try {
       let sortOrder: number;
+      let needsRenumber = false;
       if (nextSortOrder !== null) {
         const gap = nextSortOrder - currentSortOrder;
         if (gap < 2) {
-          // Gap too small — place after current with a standard gap.
-          // The store reload will reflect accurate sort_orders.
-          sortOrder = currentSortOrder + 500;
+          // Gap exhausted — insert after current, then renumber all stages
+          sortOrder = currentSortOrder + 1;
+          needsRenumber = true;
         } else {
           sortOrder = Math.floor((currentSortOrder + nextSortOrder) / 2);
         }
@@ -56,6 +62,9 @@ export function InsertStageButton({
       }
 
       await insertTaskStage(projectId, taskId, selectedTemplateId, sortOrder);
+      if (needsRenumber) {
+        await renumberTaskStages(projectId, taskId);
+      }
       setOpen(false);
       setSelectedTemplateId("");
     } finally {

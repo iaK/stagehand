@@ -78,7 +78,6 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
   // Local-only state (OK to reset on navigation)
   const [targetBranch, setTargetBranch] = useState<string>("main");
-  const [hasRemote, setHasRemote] = useState<boolean>(true);
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
@@ -129,7 +128,6 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
 
         const workDir = getTaskWorkingDir(activeTask, activeProject.path);
         const remote = await gitHasRemote(activeProject.path);
-        if (!cancelled) setHasRemote(remote);
 
         const defaultBr = useGitHubStore.getState().defaultBranch
           ?? await gitDefaultBranch(activeProject.path)
