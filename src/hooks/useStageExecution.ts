@@ -61,9 +61,10 @@ export function useStageExecution() {
 
       // Ensure a real task_stages row exists. Old tasks (pre-dynamic-stages)
       // or tasks created before the addTask fix may only have a synthetic
-      // instance where task_stage_id === stage_template_id (the template ID).
+      // instance where task_stage_id === stage_template_id (the template ID)
+      // or is missing entirely (null/undefined).
       // Creating an execution with that bogus FK would violate the constraint.
-      if (stage.task_stage_id === stage.stage_template_id) {
+      if (!stage.task_stage_id || stage.task_stage_id === stage.stage_template_id) {
         const taskStageId = await repo.insertTaskStage(
           activeProject.id, task.id, stage.stage_template_id, stage.sort_order,
         );
@@ -601,11 +602,31 @@ export function useStageExecution() {
       if (!activeProject) return;
 
       // Find latest execution for this stage
-      const latest = await repo.getLatestExecution(
+      let latest = await repo.getLatestExecution(
         activeProject.id,
         task.id,
         stage.task_stage_id,
       );
+
+      // Recovery: if no execution found, there may be orphaned executions with
+      // NULL task_stage_id (from pre-migration or race conditions). Claim them.
+      if (!latest) {
+        const allExecs = await repo.listStageExecutions(activeProject.id, task.id);
+        const orphaned = allExecs.filter((e) => !e.task_stage_id);
+        if (orphaned.length > 0) {
+          for (const orphan of orphaned) {
+            await repo.updateStageExecution(activeProject.id, orphan.id, {
+              task_stage_id: stage.task_stage_id,
+            });
+          }
+          latest = await repo.getLatestExecution(
+            activeProject.id,
+            task.id,
+            stage.task_stage_id,
+          );
+        }
+      }
+
       if (!latest) return;
 
       // Validate gate rules
@@ -686,7 +707,7 @@ export function useStageExecution() {
   );
 
   const advanceFromStageInner = useCallback(
-    async (projectId: string, task: Task, stage: TaskStageInstance, taskStageInstances: TaskStageInstance[]) => {
+    async (projectId: string, task: Task, stage: TaskStageInstance, _taskStageInstances: TaskStageInstance[]) => {
       // Split tasks are terminal — don't advance to the next stage.
       // Query the DB directly instead of reading activeTask from the store,
       // because the user may have navigated to a different task.
@@ -698,7 +719,20 @@ export function useStageExecution() {
         return;
       }
 
-      const nextStage = taskStageInstances
+      // Always query the DB for the real task stages — the in-memory list
+      // passed in may be a synthetic single-stage placeholder if
+      // loadTaskStages hasn't populated the store yet, which would cause
+      // nextStage to be null and the task to be incorrectly marked complete.
+      const realStages = await repo.getTaskStageInstances(projectId, task.id);
+
+      // Also populate the store so the UI is consistent
+      if (useTaskStore.getState().activeTask?.id === task.id) {
+        useTaskStore.setState((state) => ({
+          taskStages: { ...state.taskStages, [task.id]: realStages },
+        }));
+      }
+
+      const nextStage = realStages
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 

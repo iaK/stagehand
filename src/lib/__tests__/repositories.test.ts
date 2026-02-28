@@ -399,22 +399,44 @@ describe("getTaskStageInstances", () => {
 });
 
 describe("setTaskStages", () => {
-  it("deletes existing and inserts new stages", async () => {
+  it("preserves reusable stage ids and repairs current_stage_id", async () => {
+    const db = getProjectMock("p1");
+    db.select
+      .mockResolvedValueOnce([
+        { id: "ts-research", stage_template_id: "s1", sort_order: 0 },
+        { id: "ts-planning", stage_template_id: "s2", sort_order: 1000 },
+      ])
+      .mockResolvedValueOnce([{ current_stage_id: "ts-planning" }]);
+
     await setTaskStages("p1", "t1", [
       { stageTemplateId: "s1", sortOrder: 0 },
-      { stageTemplateId: "s2", sortOrder: 1 },
+      { stageTemplateId: "s3", sortOrder: 1000 },
     ]);
-    const db = getProjectMock("p1");
-    // First call should be delete
+
     expect(db.execute).toHaveBeenCalledWith(
-      "DELETE FROM task_stages WHERE task_id = $1",
-      ["t1"],
+      expect.stringContaining("UPDATE stage_executions"),
+      ["t1", "ts-planning"],
     );
-    // Should have insert calls for each stage
-    const insertCalls = db.execute.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO task_stages"),
+
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining("DELETE FROM task_stages"),
+      ["t1", "ts-planning"],
     );
-    expect(insertCalls).toHaveLength(2);
+
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE task_stages"),
+      ["s1", 0, "ts-research"],
+    );
+
+    const insertCalls = db.execute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO task_stages"),
+    );
+    expect(insertCalls).toHaveLength(1);
+
+    expect(db.execute).toHaveBeenCalledWith(
+      "UPDATE tasks SET current_stage_id = $1, updated_at = $2 WHERE id = $3",
+      ["ts-research", expect.any(String), "t1"],
+    );
   });
 });
 

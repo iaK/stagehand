@@ -425,9 +425,13 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         taskId: task.id,
       });
 
-      // Advance to next stage
-      const taskStageInstances = useTaskStore.getState().getActiveTaskStageInstances();
-      const nextStage = taskStageInstances
+      // Advance to next stage using DB-backed instances so stale in-memory
+      // placeholders don't incorrectly mark the task as complete.
+      const realStages = await repo.getTaskStageInstances(activeProject.id, task.id);
+      useTaskStore.setState((state) => ({
+        taskStages: { ...state.taskStages, [task.id]: realStages },
+      }));
+      const nextStage = realStages
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 

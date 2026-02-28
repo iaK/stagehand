@@ -104,6 +104,19 @@ export async function runPendingMigrations(db: Database): Promise<void> {
 async function detectBaseline(db: Database): Promise<number> {
   // Check for features in reverse order (newest first) to find the highest applied migration
   try {
+    // v18: stage_executions migrated to task_stage_id (stage_template_id removed)
+    try {
+      const taskStageCol = await db.select<{ name: string }[]>(
+        "SELECT name FROM pragma_table_info('stage_executions') WHERE name = 'task_stage_id'",
+      );
+      const stageTemplateCol = await db.select<{ name: string }[]>(
+        "SELECT name FROM pragma_table_info('stage_executions') WHERE name = 'stage_template_id'",
+      );
+      if (taskStageCol.length > 0 && stageTemplateCol.length === 0) return 18;
+    } catch {
+      // pragma may not be available — continue
+    }
+
     // v16: agent column exists on stage_templates
     try {
       const agentCol = await db.select<{ name: string }[]>(
@@ -872,6 +885,17 @@ async function migrateTaskStageInstances(db: Database): Promise<void> {
       AND EXISTS (
         SELECT 1 FROM task_stages ts
         WHERE ts.task_id = tasks.id AND ts.stage_template_id = tasks.current_stage_id
+      )
+  `);
+
+  // Clear any unresolved legacy/current_stage_id values that don't map to a
+  // real task_stages row. This prevents non-null stale pointers.
+  await db.execute(`
+    UPDATE tasks SET current_stage_id = NULL
+    WHERE current_stage_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM task_stages ts
+        WHERE ts.id = tasks.current_stage_id AND ts.task_id = tasks.id
       )
   `);
 

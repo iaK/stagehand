@@ -570,6 +570,7 @@ export async function updateStageExecution(
     Pick<
       StageExecution,
       | "status"
+      | "task_stage_id"
       | "raw_output"
       | "parsed_output"
       | "user_decision"
@@ -668,25 +669,80 @@ export async function setTaskStages(
   const db = await getProjectDb(projectId);
   // Avoid withTransaction — tauri-plugin-sql uses a connection pool so
   // BEGIN/COMMIT can land on different connections, causing lock timeouts.
-  // Nullify FK references in stage_executions before deleting, otherwise
-  // the FK constraint (task_stage_id → task_stages.id) blocks the delete.
-  await db.execute(
-    `UPDATE stage_executions SET task_stage_id = NULL
-     WHERE task_id = $1 AND task_stage_id IN (SELECT id FROM task_stages WHERE task_id = $1)`,
+  const existing = await db.select<{ id: string; stage_template_id: string; sort_order: number }[]>(
+    "SELECT id, stage_template_id, sort_order FROM task_stages WHERE task_id = $1 ORDER BY sort_order ASC",
     [taskId],
   );
-  await db.execute("DELETE FROM task_stages WHERE task_id = $1", [taskId]);
-  if (stages.length > 0) {
-    const placeholders: string[] = [];
-    const values: unknown[] = [];
-    for (let i = 0; i < stages.length; i++) {
-      const base = i * 4;
-      placeholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
-      values.push(crypto.randomUUID(), taskId, stages[i].stageTemplateId, stages[i].sortOrder);
-    }
+  const taskRow = await db.select<{ current_stage_id: string | null }[]>(
+    "SELECT current_stage_id FROM tasks WHERE id = $1",
+    [taskId],
+  );
+  const currentStageId = taskRow[0]?.current_stage_id ?? null;
+
+  // Preserve existing IDs where possible (matched by template and occurrence).
+  const availableByTemplate = new Map<string, string[]>();
+  for (const row of existing) {
+    const queue = availableByTemplate.get(row.stage_template_id) ?? [];
+    queue.push(row.id);
+    availableByTemplate.set(row.stage_template_id, queue);
+  }
+
+  const planned = stages.map((s) => {
+    const queue = availableByTemplate.get(s.stageTemplateId) ?? [];
+    const reusedId = queue.length > 0 ? queue.shift()! : crypto.randomUUID();
+    availableByTemplate.set(s.stageTemplateId, queue);
+    return {
+      id: reusedId,
+      stageTemplateId: s.stageTemplateId,
+      sortOrder: s.sortOrder,
+      reused: existing.some((e) => e.id === reusedId),
+    };
+  });
+
+  const retainedIds = new Set(planned.filter((p) => p.reused).map((p) => p.id));
+  const removedIds = existing
+    .map((e) => e.id)
+    .filter((id) => !retainedIds.has(id));
+
+  if (removedIds.length > 0) {
+    const placeholders = removedIds.map((_, i) => `$${i + 2}`).join(", ");
     await db.execute(
-      `INSERT INTO task_stages (id, task_id, stage_template_id, sort_order) VALUES ${placeholders.join(", ")}`,
-      values,
+      `UPDATE stage_executions
+       SET task_stage_id = NULL
+       WHERE task_id = $1 AND task_stage_id IN (${placeholders})`,
+      [taskId, ...removedIds],
+    );
+    await db.execute(
+      `DELETE FROM task_stages
+       WHERE task_id = $1 AND id IN (${placeholders})`,
+      [taskId, ...removedIds],
+    );
+  }
+
+  for (const p of planned) {
+    if (p.reused) {
+      await db.execute(
+        `UPDATE task_stages
+         SET stage_template_id = $1, sort_order = $2
+         WHERE id = $3`,
+        [p.stageTemplateId, p.sortOrder, p.id],
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO task_stages (id, task_id, stage_template_id, sort_order)
+         VALUES ($1, $2, $3, $4)`,
+        [p.id, taskId, p.stageTemplateId, p.sortOrder],
+      );
+    }
+  }
+
+  // Repair current_stage_id if it now points to a deleted/nonexistent stage.
+  const plannedIds = new Set(planned.map((p) => p.id));
+  if (!currentStageId || !plannedIds.has(currentStageId)) {
+    const fallbackId = planned[0]?.id ?? null;
+    await db.execute(
+      "UPDATE tasks SET current_stage_id = $1, updated_at = $2 WHERE id = $3",
+      [fallbackId, new Date().toISOString(), taskId],
     );
   }
 }

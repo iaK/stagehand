@@ -83,7 +83,7 @@ export function AiBubble({
 }) {
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-white dark:bg-zinc-950 flex items-center justify-center flex-shrink-0">
         <img src={logoSrc} alt="Stagehand" className="w-6 h-6" />
       </div>
       <div className="flex-1 min-w-0 pt-1 pb-4">
@@ -120,7 +120,7 @@ export function LiveStreamBubble({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-white dark:bg-zinc-950 flex items-center justify-center flex-shrink-0">
         <img src={logoSrc} alt="Stagehand" className={`w-6 h-6 ${isStopping ? "opacity-50" : "animate-pulse"}`} />
       </div>
       <div className="flex-1 min-w-0 pt-1 pb-4">
@@ -261,7 +261,7 @@ const CollapsibleTimelineEntry = memo(function CollapsibleTimelineEntry({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="relative z-10 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
+      <div className="relative z-10 w-6 h-6 rounded-full bg-white dark:bg-zinc-950 flex items-center justify-center flex-shrink-0">
         <img src={logoSrc} alt="Stagehand" className="w-6 h-6" />
       </div>
       <Collapsible open={expanded} onOpenChange={handleToggle} className="flex-1 min-w-0 pb-4 pt-1">

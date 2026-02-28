@@ -217,4 +217,15 @@ export async function initProjectSchema(db: Database): Promise<void> {
 
   // Run version-tracked migrations
   await runPendingMigrations(db);
+
+  // Safety net: if current_stage_id points to a missing task_stages row,
+  // clear it so UI logic can fall back cleanly instead of using stale IDs.
+  await db.execute(`
+    UPDATE tasks SET current_stage_id = NULL
+    WHERE current_stage_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM task_stages ts
+        WHERE ts.id = tasks.current_stage_id AND ts.task_id = tasks.id
+      )
+  `).catch(() => {});
 }

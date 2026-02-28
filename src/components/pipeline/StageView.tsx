@@ -174,9 +174,13 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   const stageExecs = useMemo(
     () =>
       executions
-        .filter((e) => e.task_stage_id === sid)
+        // Legacy/race-recovery compatibility: old research executions may
+        // still have NULL task_stage_id. Surface them in the Research stage.
+        .filter((e) =>
+          e.task_stage_id === sid || (stage.output_format === "research" && !e.task_stage_id),
+        )
         .sort((a, b) => a.attempt_number - b.attempt_number),
-    [executions, sid],
+    [executions, sid, stage.output_format],
   );
 
   const latestExecution = useMemo(
@@ -366,7 +370,13 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
         .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
 
       await setTaskStages(activeProject.id, effectiveTask.id, stages);
-      await approveStage(effectiveTask, stage);
+      // setTaskStages may replace stage instance IDs; re-resolve the current
+      // research stage instance before approving to avoid stale/null linkage.
+      const refreshedStages = useTaskStore.getState().getActiveTaskStageInstances();
+      const refreshedStage = refreshedStages.find(
+        (s) => s.stage_template_id === stage.stage_template_id,
+      ) ?? stage;
+      await approveStage(effectiveTask, refreshedStage);
     } catch (err) {
       logger.error("Failed to approve with stages:", err);
       setStageError(err instanceof Error ? err.message : String(err));

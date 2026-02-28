@@ -171,9 +171,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   setTaskStages: async (projectId, taskId, stages) => {
     await repo.setTaskStages(projectId, taskId, stages);
-    const instances = await repo.getTaskStageInstances(projectId, taskId);
+    const [instances, tasks] = await Promise.all([
+      repo.getTaskStageInstances(projectId, taskId),
+      repo.listTasks(projectId),
+    ]);
     if (useProjectStore.getState().activeProject?.id !== projectId) return;
+    const active = get().activeTask;
     set((state) => ({
+      tasks,
+      activeTask:
+        active?.id === taskId
+          ? tasks.find((t) => t.id === taskId) ?? null
+          : active,
       taskStages: { ...state.taskStages, [taskId]: instances },
     }));
   },
