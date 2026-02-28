@@ -1,11 +1,11 @@
 import { useMemo, memo } from "react";
-import type { StageTemplate, StageExecution } from "../../lib/types";
+import type { TaskStageInstance, StageExecution } from "../../lib/types";
 
 interface PipelineStepperProps {
-  stages: StageTemplate[];
+  stages: TaskStageInstance[];
   currentStageId: string | null;
   executions: StageExecution[];
-  onStageClick: (stage: StageTemplate) => void;
+  onStageClick: (stage: TaskStageInstance) => void;
   isTaskCompleted?: boolean;
 }
 
@@ -18,28 +18,28 @@ export function PipelineStepper({
 }: PipelineStepperProps) {
   const stageStatusMap = useMemo(() => {
     const map = new Map<string, string>();
-    const currentStage = stages.find((s) => s.id === currentStageId);
+    const currentStage = stages.find((s) => s.task_stage_id === currentStageId);
     for (const stage of stages) {
       if (isTaskCompleted) {
-        map.set(stage.id, "completed");
+        map.set(stage.task_stage_id, "completed");
         continue;
       }
       const stageExecs = executions.filter(
-        (e) => e.stage_template_id === stage.id,
+        (e) => e.task_stage_id === stage.task_stage_id,
       );
       const latestExec = stageExecs[stageExecs.length - 1];
 
       if (latestExec?.status === "approved") {
-        map.set(stage.id, "completed");
-      } else if (stage.id === currentStageId) {
-        if (latestExec?.status === "running") map.set(stage.id, "running");
-        else if (latestExec?.status === "awaiting_user") map.set(stage.id, "awaiting");
-        else map.set(stage.id, "current");
+        map.set(stage.task_stage_id, "completed");
+      } else if (stage.task_stage_id === currentStageId) {
+        if (latestExec?.status === "running") map.set(stage.task_stage_id, "running");
+        else if (latestExec?.status === "awaiting_user") map.set(stage.task_stage_id, "awaiting");
+        else map.set(stage.task_stage_id, "current");
       } else {
         if (currentStage && stage.sort_order < currentStage.sort_order) {
-          map.set(stage.id, "completed");
+          map.set(stage.task_stage_id, "completed");
         } else {
-          map.set(stage.id, "future");
+          map.set(stage.task_stage_id, "future");
         }
       }
     }
@@ -50,9 +50,9 @@ export function PipelineStepper({
     <div className="flex items-center gap-1 px-6 py-4 overflow-x-auto">
       {stages.map((stage, i) => (
         <PipelineStep
-          key={stage.id}
+          key={stage.task_stage_id}
           stage={stage}
-          status={stageStatusMap.get(stage.id) ?? "future"}
+          status={stageStatusMap.get(stage.task_stage_id) ?? "future"}
           index={i}
           isLast={i === stages.length - 1}
           onStageClick={onStageClick}
@@ -69,11 +69,11 @@ const PipelineStep = memo(function PipelineStep({
   isLast,
   onStageClick,
 }: {
-  stage: StageTemplate;
+  stage: TaskStageInstance;
   status: string;
   index: number;
   isLast: boolean;
-  onStageClick: (stage: StageTemplate) => void;
+  onStageClick: (stage: TaskStageInstance) => void;
 }) {
   return (
     <div className="flex items-center">

@@ -33,7 +33,7 @@ import { loadConventions } from "../lib/conventions";
 import { quickAgentCall } from "../lib/agentHelper";
 import type {
   Task,
-  StageTemplate,
+  TaskStageInstance,
   StageExecution,
   GateRule,
   AgentStreamEvent,
@@ -51,7 +51,7 @@ export function useStageExecution() {
   const setStopped = useProcessStore((s) => s.setStopped);
 
   const runStage = useCallback(
-    async (task: Task, stage: StageTemplate, userInput?: string) => {
+    async (task: Task, stage: TaskStageInstance, userInput?: string) => {
       if (!activeProject) return;
 
       if (task.ejected) {
@@ -64,31 +64,31 @@ export function useStageExecution() {
 
       // Clear task_stages when re-running the research stage (triggers stage selection)
       if (stage.output_format === "research") {
-        const prevAttemptCheck = executions.filter((e) => e.stage_template_id === stage.id);
+        const prevAttemptCheck = executions.filter((e) => e.task_stage_id === stage.task_stage_id);
         if (prevAttemptCheck.length > 0) {
           await repo.setTaskStages(activeProject.id, task.id, []);
           await useTaskStore.getState().loadTaskStages(activeProject.id, task.id);
         }
       }
 
-      const sk = stageKey(task.id, stage.id);
+      const sk = stageKey(task.id, stage.task_stage_id);
       clearOutput(sk);
       setRunning(sk, "spawning");
 
       let executionId: string | null = null;
       try {
         // Find previous completed execution (using filtered stage list from store)
-        const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+        const taskStageInstances = useTaskStore.getState().getActiveTaskStageInstances();
         const prevExec = await repo.getPreviousStageExecution(
           activeProject.id,
           task.id,
           stage.sort_order,
-          taskStageTemplates,
+          taskStageInstances,
         );
 
         // Count previous attempts and gather prior context for re-runs
         const prevAttempts = executions
-          .filter((e) => e.stage_template_id === stage.id)
+          .filter((e) => e.task_stage_id === stage.task_stage_id)
           .sort((a, b) => a.attempt_number - b.attempt_number);
         const attemptNumber = prevAttempts.length + 1;
 
@@ -138,7 +138,7 @@ export function useStageExecution() {
         );
 
         // Build {{available_stages}} — list of non-first stages for Research prompt
-        const availableStagesText = taskStageTemplates
+        const availableStagesText = taskStageInstances
           .filter((t) => t.sort_order > 0)
           .map((t) => `- "${t.name}": ${t.description}`)
           .join("\n");
@@ -160,7 +160,7 @@ export function useStageExecution() {
         const execution: Omit<StageExecution, "completed_at"> = {
           id: executionId,
           task_id: task.id,
-          stage_template_id: stage.id,
+          task_stage_id: stage.task_stage_id,
           attempt_number: attemptNumber,
           status: "running",
           input_prompt: prompt,
@@ -430,7 +430,7 @@ export function useStageExecution() {
           {
             prompt,
             agent: effectiveAgent,
-            personaModel: stage.persona_model ?? undefined,
+            personaModel: stage.model_override ?? stage.persona_model ?? undefined,
             workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
@@ -486,7 +486,7 @@ export function useStageExecution() {
     async (
       executionId: string,
       taskId: string,
-      stage: StageTemplate,
+      stage: TaskStageInstance,
       rawOutput: string,
       resultText: string,
       exitCode: number | null,
@@ -505,7 +505,7 @@ export function useStageExecution() {
     ) => {
       if (!activeProject) return;
 
-      const sk = stageKey(taskId, stage.id);
+      const sk = stageKey(taskId, stage.task_stage_id);
       const wasKilled = useProcessStore.getState().stages[sk]?.killed ?? false;
 
       const savedThinking = thinkingText?.trim() || null;
@@ -567,14 +567,14 @@ export function useStageExecution() {
   const killTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const approveStage = useCallback(
-    async (task: Task, stage: StageTemplate, decision?: string) => {
+    async (task: Task, stage: TaskStageInstance, decision?: string) => {
       if (!activeProject) return;
 
       // Find latest execution for this stage
       const latest = await repo.getLatestExecution(
         activeProject.id,
         task.id,
-        stage.id,
+        stage.task_stage_id,
       );
       if (!latest) return;
 
@@ -584,8 +584,8 @@ export function useStageExecution() {
         return;
       }
 
-      // Use filtered stage templates from store (avoids redundant DB call)
-      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
+      // Use filtered stage instances from store (avoids redundant DB call)
+      const taskStageInstances = useTaskStore.getState().getActiveTaskStageInstances();
 
       // Extract this stage's own contribution
       const ownOutput = extractStageOutput(stage, latest, decision);
@@ -610,7 +610,7 @@ export function useStageExecution() {
         stage_summary: stageSummary,
       });
 
-      await advanceFromStageInner(activeProject.id, task, stage, taskStageTemplates);
+      await advanceFromStageInner(activeProject.id, task, stage, taskStageInstances);
     },
     [activeProject, stageTemplates, updateTask, loadExecutions],
   );
@@ -656,7 +656,7 @@ export function useStageExecution() {
   );
 
   const advanceFromStageInner = useCallback(
-    async (projectId: string, task: Task, stage: StageTemplate, taskStageTemplates: StageTemplate[]) => {
+    async (projectId: string, task: Task, stage: TaskStageInstance, taskStageInstances: TaskStageInstance[]) => {
       // Split tasks are terminal — don't advance to the next stage.
       // Query the DB directly instead of reading activeTask from the store,
       // because the user may have navigated to a different task.
@@ -668,13 +668,13 @@ export function useStageExecution() {
         return;
       }
 
-      const nextStage = taskStageTemplates
+      const nextStage = taskStageInstances
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 
       if (nextStage) {
         await updateTask(projectId, task.id, {
-          current_stage_id: nextStage.id,
+          current_stage_id: nextStage.task_stage_id,
         });
 
         // Auto-start next stage if it doesn't require user input
@@ -736,7 +736,7 @@ export function useStageExecution() {
   );
 
   const redoStage = useCallback(
-    async (task: Task, stage: StageTemplate, feedback?: string) => {
+    async (task: Task, stage: TaskStageInstance, feedback?: string) => {
       if (!activeProject) return;
       await runStage(task, stage, feedback);
     },
@@ -747,7 +747,7 @@ export function useStageExecution() {
   const failStaleExecutions = useCallback(async (projectId: string, taskId: string, stageId: string) => {
     const execs = await repo.listStageExecutions(projectId, taskId);
     for (const exec of execs) {
-      if (exec.stage_template_id === stageId && exec.status === "running") {
+      if (exec.task_stage_id === stageId && exec.status === "running") {
         await repo.updateStageExecution(projectId, exec.id, {
           status: "failed",
           error_message: "Stopped by user",
@@ -770,7 +770,7 @@ export function useStageExecution() {
       if (!project) return;
 
       const exec = useTaskStore.getState().executions.find(
-        (e) => e.task_id === taskId && e.stage_template_id === stageId && e.status === "running",
+        (e) => e.task_id === taskId && e.task_stage_id === stageId && e.status === "running",
       );
       if (!exec) return;
 
@@ -895,30 +895,31 @@ export async function createWorktreeForTask(
 /** Generate a pending commit for a stage that just finished. Returns early if no changes. */
 export async function generatePendingCommit(
   task: Task,
-  stage: StageTemplate,
+  stage: TaskStageInstance,
   projectPath: string,
   projectId: string,
 ): Promise<void> {
   const workDir = getTaskWorkingDir(task, projectPath);
   const store = useProcessStore.getState();
+  const sid = stage.task_stage_id;
 
   // Clear stale state from a *different* task before re-checking.
   // If the pending commit already belongs to this exact task+stage, leave it
   // alone — the caller should have skipped calling us in that case, but guard
   // against unnecessary clearing which causes a "Preparing commit..." flash.
-  if (store.pendingCommit?.stageId === stage.id && store.pendingCommit?.taskId !== task.id) {
+  if (store.pendingCommit?.stageId === sid && store.pendingCommit?.taskId !== task.id) {
     store.clearPendingCommit();
   }
-  if (store.noChangesStageId === stage.id) {
+  if (store.noChangesStageId === sid) {
     store.setNoChangesToCommit(null);
   }
 
-  store.setCommitMessageLoading(stage.id);
+  store.setCommitMessageLoading(sid);
   try {
     const hasChanges = await hasUncommittedChanges(workDir);
     if (!hasChanges) {
       // No file changes — nothing to commit, mark as no-changes so UI can show approve button
-      store.setNoChangesToCommit(stage.id);
+      store.setNoChangesToCommit(sid);
       return;
     }
 
@@ -953,7 +954,7 @@ ${conventions.commitFormat}`,
     }
 
     store.setPendingCommit({
-      stageId: stage.id,
+      stageId: sid,
       taskId: task.id,
       stageName: stage.name,
       message: commitMsg,
@@ -963,7 +964,7 @@ ${conventions.commitFormat}`,
     // If commit preparation fails, fall back to no-changes mode
     // so the user can still approve the stage instead of being stuck
     logger.error("Failed to generate pending commit:", err);
-    store.setNoChangesToCommit(stage.id);
+    store.setNoChangesToCommit(sid);
   } finally {
     store.setCommitMessageLoading(null);
   }

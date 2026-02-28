@@ -22,16 +22,17 @@ import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { CommitWorkflow } from "./CommitWorkflow";
+import { InsertStageButton } from "./InsertStageButton";
 import { StageInputArea } from "./StageInputArea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
-import type { StageTemplate } from "../../lib/types";
+import type { TaskStageInstance } from "../../lib/types";
 
 interface StageViewProps {
-  stage: StageTemplate;
+  stage: TaskStageInstance;
   taskId: string;
 }
 
@@ -46,14 +47,16 @@ export function StageView({ stage, taskId }: StageViewProps) {
   const executions = useTaskStore((s) => s.executions);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const setTaskStages = useTaskStore((s) => s.setTaskStages);
-  const sk = task ? stageKey(task.id, stage.id) : stage.id;
+  const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
+  const sid = stage.task_stage_id;
+  const sk = task ? stageKey(task.id, sid) : sid;
   const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
-  const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
-  const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
+  const committedHash = useProcessStore((s) => s.committedStages[sid]);
+  const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === sid);
   const { runStage, approveStage, redoStage, killCurrent } =
     useStageExecution();
-  useProcessHealthCheck(stage.id, taskId);
+  useProcessHealthCheck(sid, taskId);
   const [userInput, setUserInput] = useState("");
   // Tracks whether the user has manually edited the textarea since this StageView
   // mounted. Used by the pre-fill effect to avoid overwriting intentional edits.
@@ -70,13 +73,13 @@ export function StageView({ stage, taskId }: StageViewProps) {
 
   // Sync editable commit message when pending commit appears for this stage
   useEffect(() => {
-    if (pendingCommit?.stageId === stage.id) {
+    if (pendingCommit?.stageId === sid) {
       setCommitMessage(pendingCommit.message);
     }
-  }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
+  }, [pendingCommit?.stageId, pendingCommit?.message, sid]);
 
   const handleCommit = async () => {
-    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== sid) return;
     setCommitting(true);
     setCommitError(null);
     try {
@@ -85,7 +88,7 @@ export function StageView({ stage, taskId }: StageViewProps) {
       const result = await gitCommit(workDir, commitMessage);
       const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
       const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
-      useProcessStore.getState().setCommitted(stage.id, shortHash);
+      useProcessStore.getState().setCommitted(sid, shortHash);
       useProcessStore.getState().clearPendingCommit();
       sendNotification("Changes committed", shortHash, "success", { projectId: activeProject.id, taskId: task.id });
       await approveStage(task, stage);
@@ -101,7 +104,7 @@ export function StageView({ stage, taskId }: StageViewProps) {
   };
 
   const handleCommitFix = async () => {
-    if (!activeProject || !task || !commitError || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !task || !commitError || !pendingCommit || pendingCommit.stageId !== sid) return;
     const workDir = getTaskWorkingDir(task, activeProject.path);
     const { setRunning, setStopped, appendOutput, clearOutput } = useProcessStore.getState();
     clearOutput(sk);
@@ -171,9 +174,9 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   const stageExecs = useMemo(
     () =>
       executions
-        .filter((e) => e.stage_template_id === stage.id)
+        .filter((e) => e.task_stage_id === sid)
         .sort((a, b) => a.attempt_number - b.attempt_number),
-    [executions, stage.id],
+    [executions, sid],
   );
 
   const latestExecution = useMemo(
@@ -182,7 +185,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   );
 
   const stageStatus = latestExecution?.status ?? "pending";
-  const isCurrentStage = task?.current_stage_id === stage.id;
+  const isCurrentStage = task?.current_stage_id === sid;
   const isApproved = stageStatus === "approved";
   const needsUserInput = !!stage.requires_user_input;
 
@@ -199,8 +202,8 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   // Skip if a valid pending commit already exists for this task+stage to avoid
   // unnecessarily clearing and regenerating on tab switches (which causes the
   // "Preparing commit..." spinner to flash or get stuck if git ops are slow).
-  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === stage.id);
-  const hasPendingCommitForThisStage = pendingCommit?.stageId === stage.id && pendingCommit?.taskId === task?.id;
+  const commitMessageLoading = useProcessStore((s) => s.commitMessageLoadingStageId === sid);
+  const hasPendingCommitForThisStage = pendingCommit?.stageId === sid && pendingCommit?.taskId === task?.id;
   useEffect(() => {
     if (
       isCurrentStage &&
@@ -555,6 +558,21 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
               />
             </div>
           )}
+
+          {/* Insert Stage button */}
+          {activeProject && (() => {
+            const instances = getActiveTaskStageInstances();
+            const idx = instances.findIndex((s) => s.task_stage_id === sid);
+            const next = idx >= 0 ? instances[idx + 1] ?? null : null;
+            return (
+              <InsertStageButton
+                taskId={task.id}
+                projectId={activeProject.id}
+                currentSortOrder={stage.sort_order}
+                nextSortOrder={next?.sort_order ?? null}
+              />
+            );
+          })()}
         </div>
       )}
 
@@ -601,7 +619,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
             <LiveStreamBubble
               stageKey={sk}
               label={`${stage.name} working...`}
-              onStop={() => killCurrent(task!.id, stage.id)}
+              onStop={() => killCurrent(task!.id, sid)}
             />
           )}
 
@@ -631,7 +649,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
               {isCurrentStage && (
                 <CommitWorkflow
                   pendingCommit={pendingCommit}
-                  stageId={stage.id}
+                  stageId={sid}
                   commitMessage={commitMessage}
                   setCommitMessage={setCommitMessage}
                   commitError={commitError}

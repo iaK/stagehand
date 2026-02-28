@@ -26,12 +26,12 @@ import { sendNotification } from "../lib/notifications";
 import { PR_REVIEW_POLL_MS } from "../lib/constants";
 import type {
   Task,
-  StageTemplate,
+  TaskStageInstance,
   PrReviewFix,
   AgentStreamEvent,
 } from "../lib/types";
 
-export function usePrReview(stage: StageTemplate, task: Task | null) {
+export function usePrReview(stage: TaskStageInstance, task: Task | null) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const updateTask = useTaskStore((s) => s.updateTask);
@@ -60,7 +60,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
     const existing = await repo.getLatestExecution(
       activeProject.id,
       task.id,
-      stage.id,
+      stage.task_stage_id,
     );
     if (existing) {
       setExecutionId(existing.id);
@@ -72,7 +72,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
     await repo.createStageExecution(activeProject.id, {
       id,
       task_id: task.id,
-      stage_template_id: stage.id,
+      task_stage_id: stage.task_stage_id,
       attempt_number: 1,
       status: "awaiting_user",
       input_prompt: "PR Review",
@@ -98,7 +98,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
     setExecutionId(id);
     await loadExecutions(activeProject.id, task.id);
     return id;
-  }, [activeProject, task, stage.id, executionId, loadExecutions]);
+  }, [activeProject, task, stage.task_stage_id, executionId, loadExecutions]);
 
   const fetchReviews = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -268,7 +268,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
         prev.map((f) => (f.id === fixId ? { ...f, fix_status: "fixing" } : f)),
       );
 
-      const sk = stageKey(task.id, stage.id);
+      const sk = stageKey(task.id, stage.task_stage_id);
       clearOutput(sk);
       setRunning(sk, "fixing");
 
@@ -276,7 +276,7 @@ export function usePrReview(stage: StageTemplate, task: Task | null) {
 
       // Resolve effective agent: per-stage override → project default → "claude"
       const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+      const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
 
       // Snapshot currently changed files before the agent modifies anything
       const preFixFiles = await getChangedFiles(workDir).catch(() => []);
@@ -403,7 +403,7 @@ Keep it under 72 characters for the first line.`,
           }
 
           useProcessStore.getState().setPendingCommit({
-            stageId: stage.id,
+            stageId: stage.task_stage_id,
             taskId: task!.id,
             stageName: stage.name,
             message: commitMessage,
@@ -429,7 +429,7 @@ Keep it under 72 characters for the first line.`,
         );
       }
     },
-    [activeProject, task, fixes, stage.id, stage.name, clearOutput, setRunning, setStopped, appendOutput],
+    [activeProject, task, fixes, stage.task_stage_id, stage.name, clearOutput, setRunning, setStopped, appendOutput],
   );
 
   const commitFix = useCallback(

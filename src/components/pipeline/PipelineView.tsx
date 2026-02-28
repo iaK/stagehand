@@ -31,7 +31,7 @@ import {
 import { updateTask as repoUpdateTask, getCommitPrefix } from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
-import type { StageTemplate } from "../../lib/types";
+import type { TaskStageInstance } from "../../lib/types";
 
 export function PipelineView() {
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -39,26 +39,15 @@ export function PipelineView() {
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const loadTaskStages = useTaskStore((s) => s.loadTaskStages);
-  const stageTemplates = useTaskStore((s) => s.stageTemplates);
-  const taskStages = useTaskStore((s) => s.taskStages);
+  const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
 
   // Compute filtered stages from stable selectors
   const activeTaskId = activeTask?.id;
   const filteredStages = useMemo(() => {
-    if (!activeTaskId) return stageTemplates;
-    const selectedIds = taskStages[activeTaskId];
-    if (!selectedIds || selectedIds.length === 0) {
-      // During research stage (before user selects stages), only show the current stage
-      const currentStage = stageTemplates.find(
-        (t) => t.id === activeTask?.current_stage_id,
-      );
-      return currentStage ? [currentStage] : stageTemplates;
-    }
-    const idSet = new Set(selectedIds);
-    return stageTemplates.filter((t) => idSet.has(t.id));
-  }, [stageTemplates, taskStages, activeTaskId, activeTask?.current_stage_id]);
+    return getActiveTaskStageInstances();
+  }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id]);
 
-  const [viewingStage, setViewingStage] = useState<StageTemplate | null>(null);
+  const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
@@ -227,7 +216,7 @@ export function PipelineView() {
   useEffect(() => {
     if (currentStageId && filteredStages.length > 0) {
       const current = filteredStages.find(
-        (s) => s.id === currentStageId,
+        (s) => s.task_stage_id === currentStageId,
       );
       setViewingStage(current ?? filteredStages[0]);
     } else if (filteredStages.length > 0) {
@@ -244,7 +233,7 @@ export function PipelineView() {
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
-    const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.id) : null;
+    const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.task_stage_id) : null;
     useProcessStore.getState().setViewingStageId(sk);
   }, [viewingStage, activeTaskId]);
 
@@ -353,7 +342,7 @@ export function PipelineView() {
           {(() => {
             // Build a de-duped map of interactive terminal sessions to render.
             // Includes: the currently-viewed stage (if interactive_terminal) + all active PTY sessions.
-            const persistentTerminals = new Map<string, { taskId: string; stage: StageTemplate }>();
+            const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
 
             // Add all active PTY sessions
             for (const [key, session] of Object.entries(activePtySessions)) {
@@ -362,14 +351,14 @@ export function PipelineView() {
 
             // Add the currently-viewed stage if it's an interactive terminal
             if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
-              const key = stageKey(activeTaskId, viewingStage.id);
+              const key = stageKey(activeTaskId, viewingStage.task_stage_id);
               if (!persistentTerminals.has(key)) {
                 persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
               }
             }
 
             const currentKey = activeTaskId && viewingStage
-              ? stageKey(activeTaskId, viewingStage.id)
+              ? stageKey(activeTaskId, viewingStage.task_stage_id)
               : null;
 
             return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
@@ -389,7 +378,7 @@ export function PipelineView() {
           {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
           {viewingStage ? (
             viewingStage.output_format !== "interactive_terminal" ? (
-              <StageView key={`${activeTaskId}-${viewingStage.id}`} stage={viewingStage} taskId={activeTaskId!} />
+              <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
             ) : null
           ) : (
             <div className="flex items-center justify-center h-full">

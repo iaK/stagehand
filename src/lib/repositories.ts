@@ -4,6 +4,7 @@ import { getDefaultStageTemplates } from "./seed";
 import type {
   Project,
   StageTemplate,
+  TaskStageInstance,
   Task,
   StageExecution,
   PrReviewFix,
@@ -247,10 +248,11 @@ export async function deleteStageTemplate(
     throw new Error("Cannot delete special stage");
   }
 
-  // Refuse if active tasks reference this template
+  // Refuse if active tasks reference this template (current_stage_id now stores task_stage_id)
   const activeTasks = await db.select<{ cnt: number }[]>(
-    `SELECT COUNT(*) as cnt FROM tasks
-     WHERE current_stage_id = $1 AND status != 'completed' AND archived = 0`,
+    `SELECT COUNT(*) as cnt FROM tasks t
+     JOIN task_stages ts ON t.current_stage_id = ts.id
+     WHERE ts.stage_template_id = $1 AND t.status != 'completed' AND t.archived = 0`,
     [templateId],
   );
   if (activeTasks[0]?.cnt > 0) {
@@ -259,8 +261,9 @@ export async function deleteStageTemplate(
 
   // Refuse if running/awaiting_user executions reference this template
   const activeExecs = await db.select<{ cnt: number }[]>(
-    `SELECT COUNT(*) as cnt FROM stage_executions
-     WHERE stage_template_id = $1 AND status IN ('running', 'awaiting_user')`,
+    `SELECT COUNT(*) as cnt FROM stage_executions se
+     JOIN task_stages ts ON se.task_stage_id = ts.id
+     WHERE ts.stage_template_id = $1 AND se.status IN ('running', 'awaiting_user')`,
     [templateId],
   );
   if (activeExecs[0]?.cnt > 0) {
@@ -392,7 +395,7 @@ export async function getProjectTokenUsageSince(projectId: string, sinceIso: str
 export async function createTask(
   projectId: string,
   title: string,
-  firstStageId: string,
+  firstStageId?: string | null,
   branchName?: string,
   worktreePath?: string,
   parentTaskId?: string,
@@ -404,14 +407,14 @@ export async function createTask(
   await db.execute(
     `INSERT INTO tasks (id, project_id, title, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [id, projectId, title, firstStageId, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
+    [id, projectId, title, firstStageId ?? null, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
   );
 
   return {
     id,
     project_id: projectId,
     title,
-    current_stage_id: firstStageId,
+    current_stage_id: firstStageId ?? null,
     status: "pending",
     branch_name: branchName ?? null,
     worktree_path: worktreePath ?? null,
@@ -512,12 +515,12 @@ export async function listStageExecutions(
 export async function getLatestExecution(
   projectId: string,
   taskId: string,
-  stageTemplateId: string,
+  taskStageId: string,
 ): Promise<StageExecution | null> {
   const db = await getProjectDb(projectId);
   const results = await db.select<StageExecution[]>(
-    "SELECT * FROM stage_executions WHERE task_id = $1 AND stage_template_id = $2 ORDER BY attempt_number DESC LIMIT 1",
-    [taskId, stageTemplateId],
+    "SELECT * FROM stage_executions WHERE task_id = $1 AND task_stage_id = $2 ORDER BY attempt_number DESC LIMIT 1",
+    [taskId, taskStageId],
   );
   return results[0] ?? null;
 }
@@ -528,12 +531,12 @@ export async function createStageExecution(
 ): Promise<StageExecution> {
   const db = await getProjectDb(projectId);
   await db.execute(
-    `INSERT INTO stage_executions (id, task_id, stage_template_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, stage_result, stage_summary, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_cost_usd, duration_ms, num_turns, started_at)
+    `INSERT INTO stage_executions (id, task_id, task_stage_id, attempt_number, status, input_prompt, user_input, raw_output, parsed_output, user_decision, session_id, error_message, thinking_output, stage_result, stage_summary, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_cost_usd, duration_ms, num_turns, started_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
     [
       execution.id,
       execution.task_id,
-      execution.stage_template_id,
+      execution.task_stage_id,
       execution.attempt_number,
       execution.status,
       execution.input_prompt,
@@ -606,12 +609,12 @@ export async function updateStageExecution(
 export async function getExecutionsForStage(
   projectId: string,
   taskId: string,
-  stageTemplateId: string,
+  taskStageId: string,
 ): Promise<StageExecution[]> {
   const db = await getProjectDb(projectId);
   return db.select<StageExecution[]>(
-    "SELECT * FROM stage_executions WHERE task_id = $1 AND stage_template_id = $2 ORDER BY attempt_number ASC",
-    [taskId, stageTemplateId],
+    "SELECT * FROM stage_executions WHERE task_id = $1 AND task_stage_id = $2 ORDER BY attempt_number ASC",
+    [taskId, taskStageId],
   );
 }
 
@@ -619,35 +622,42 @@ export async function getPreviousStageExecution(
   projectId: string,
   taskId: string,
   currentSortOrder: number,
-  stageTemplates: StageTemplate[],
+  instances: TaskStageInstance[],
 ): Promise<StageExecution | null> {
   if (currentSortOrder <= 0) return null;
 
-  const previousTemplate = stageTemplates
+  const previous = instances
     .filter((t) => t.sort_order < currentSortOrder)
     .sort((a, b) => b.sort_order - a.sort_order)[0] ?? null;
-  if (!previousTemplate) return null;
+  if (!previous) return null;
 
-  const db = await getProjectDb(projectId);
-  const results = await db.select<StageExecution[]>(
-    "SELECT * FROM stage_executions WHERE task_id = $1 AND stage_template_id = $2 AND status = 'approved' ORDER BY attempt_number DESC LIMIT 1",
-    [taskId, previousTemplate.id],
-  );
-  return results[0] ?? null;
+  return getLatestExecution(projectId, taskId, previous.task_stage_id);
 }
 
 // === Task Stages ===
 
-export async function getTaskStages(
+export async function getTaskStageInstances(
   projectId: string,
   taskId: string,
-): Promise<string[]> {
+): Promise<TaskStageInstance[]> {
   const db = await getProjectDb(projectId);
-  const rows = await db.select<{ stage_template_id: string }[]>(
-    "SELECT stage_template_id FROM task_stages WHERE task_id = $1 ORDER BY sort_order ASC",
+  return db.select<TaskStageInstance[]>(
+    `SELECT ts.id as task_stage_id, ts.stage_template_id, ts.sort_order,
+            ts.agent_override, ts.model_override,
+            st.id, st.project_id, st.name, st.description,
+            st.prompt_template, st.input_source, st.output_format,
+            st.output_schema, st.gate_rules, st.persona_name,
+            st.persona_system_prompt, st.persona_model, st.preparation_prompt,
+            st.allowed_tools, st.requires_user_input, st.agent, st.result_mode,
+            st.commits_changes, st.creates_pr, st.is_terminal,
+            st.triggers_stage_selection, st.commit_prefix,
+            st.created_at, st.updated_at
+     FROM task_stages ts
+     JOIN stage_templates st ON ts.stage_template_id = st.id
+     WHERE ts.task_id = $1
+     ORDER BY ts.sort_order ASC`,
     [taskId],
   );
-  return rows.map((r) => r.stage_template_id);
 }
 
 export async function setTaskStages(
@@ -674,16 +684,41 @@ export async function setTaskStages(
   }
 }
 
-export async function getFilteredStageTemplates(
+export async function renumberTaskStages(
   projectId: string,
   taskId: string,
-  allTemplates: StageTemplate[],
-): Promise<StageTemplate[]> {
-  const selectedIds = await getTaskStages(projectId, taskId);
-  if (selectedIds.length === 0) return allTemplates;
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ id: string }[]>(
+    "SELECT id FROM task_stages WHERE task_id = $1 ORDER BY sort_order ASC",
+    [taskId],
+  );
+  // Avoid withTransaction — tauri-plugin-sql uses a connection pool so
+  // BEGIN/COMMIT can land on different connections, causing lock timeouts.
+  for (let i = 0; i < rows.length; i++) {
+    await db.execute(
+      "UPDATE task_stages SET sort_order = $1 WHERE id = $2",
+      [(i + 1) * 1000, rows[i].id],
+    );
+  }
+}
 
-  const idSet = new Set(selectedIds);
-  return allTemplates.filter((t) => idSet.has(t.id));
+export async function insertTaskStage(
+  projectId: string,
+  taskId: string,
+  stageTemplateId: string,
+  sortOrder: number,
+  agentOverride?: string | null,
+  modelOverride?: string | null,
+): Promise<string> {
+  const id = crypto.randomUUID();
+  const db = await getProjectDb(projectId);
+  await db.execute(
+    `INSERT INTO task_stages (id, task_id, stage_template_id, sort_order, agent_override, model_override)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, taskId, stageTemplateId, sortOrder, agentOverride ?? null, modelOverride ?? null],
+  );
+  return id;
 }
 
 // === PR Review Fixes ===
@@ -791,11 +826,17 @@ export async function getApprovedStageOutputs(
 ): Promise<{ stage_name: string; stage_result: string; stage_summary: string }[]> {
   const db = await getProjectDb(projectId);
   return db.select<{ stage_name: string; stage_result: string; stage_summary: string }[]>(
-    `SELECT st.name AS stage_name, se.stage_result, se.stage_summary
-     FROM stage_executions se
-     JOIN stage_templates st ON se.stage_template_id = st.id
-     WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
-     ORDER BY st.sort_order ASC`,
+    `SELECT stage_name, stage_result, stage_summary FROM (
+       SELECT st.name AS stage_name, se.stage_result, se.stage_summary, ts.sort_order AS so
+       FROM stage_executions se
+       JOIN task_stages ts ON se.task_stage_id = ts.id
+       JOIN stage_templates st ON ts.stage_template_id = st.id
+       WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
+       UNION ALL
+       SELECT 'Research' AS stage_name, se.stage_result, se.stage_summary, -1 AS so
+       FROM stage_executions se
+       WHERE se.task_id = $1 AND se.task_stage_id IS NULL AND se.status = 'approved' AND se.stage_result IS NOT NULL AND se.stage_result != ''
+     ) ORDER BY so ASC`,
     [taskId],
   );
 }
@@ -806,11 +847,17 @@ export async function getApprovedStageSummaries(
 ): Promise<{ stage_name: string; stage_summary: string }[]> {
   const db = await getProjectDb(projectId);
   const rows = await db.select<{ stage_name: string; stage_summary: string }[]>(
-    `SELECT st.name AS stage_name, se.stage_summary
-     FROM stage_executions se
-     JOIN stage_templates st ON se.stage_template_id = st.id
-     WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
-     ORDER BY st.sort_order ASC`,
+    `SELECT stage_name, stage_summary FROM (
+       SELECT st.name AS stage_name, se.stage_summary, ts.sort_order AS so
+       FROM stage_executions se
+       JOIN task_stages ts ON se.task_stage_id = ts.id
+       JOIN stage_templates st ON ts.stage_template_id = st.id
+       WHERE se.task_id = $1 AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
+       UNION ALL
+       SELECT 'Research' AS stage_name, se.stage_summary, -1 AS so
+       FROM stage_executions se
+       WHERE se.task_id = $1 AND se.task_stage_id IS NULL AND se.status = 'approved' AND se.stage_summary IS NOT NULL AND se.stage_summary != ''
+     ) ORDER BY so ASC`,
     [taskId],
   );
   return rows;

@@ -69,7 +69,6 @@ const statusConfig: Record<string, { label: string; variant: "success" | "info" 
 
 export function TaskOverview() {
   const activeTask = useTaskStore((s) => s.activeTask);
-  const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const executions = useTaskStore((s) => s.executions);
   const activeProject = useProjectStore((s) => s.activeProject);
   const defaultBranch = useGitHubStore((s) => s.defaultBranch);
@@ -94,7 +93,11 @@ export function TaskOverview() {
       setChildTasks([]);
       return;
     }
-    repo.getChildTasks(activeProject.id, activeTask.id).then(setChildTasks);
+    let cancelled = false;
+    repo.getChildTasks(activeProject.id, activeTask.id).then((tasks) => {
+      if (!cancelled) setChildTasks(tasks);
+    });
+    return () => { cancelled = true; };
   }, [activeTask?.id, activeTask?.status, activeProject?.id]);
 
   useEffect(() => {
@@ -102,7 +105,11 @@ export function TaskOverview() {
       setParentTask(null);
       return;
     }
-    repo.getTask(activeProject.id, activeTask.parent_task_id).then(setParentTask).catch(() => setParentTask(null));
+    let cancelled = false;
+    repo.getTask(activeProject.id, activeTask.parent_task_id)
+      .then((task) => { if (!cancelled) setParentTask(task); })
+      .catch(() => { if (!cancelled) setParentTask(null); });
+    return () => { cancelled = true; };
   }, [activeTask?.id, activeTask?.parent_task_id, activeProject?.id]);
 
   const tokenTotals = useMemo(() => {
@@ -119,20 +126,22 @@ export function TaskOverview() {
     };
   }, [executions]);
 
+  const taskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances)();
   const perStageUsage = useMemo(() => {
     if (!tokenTotals) return [];
     const byStage = new Map<string, StageExecution>();
     for (const exec of executions) {
       if (exec.total_cost_usd == null) continue;
-      const existing = byStage.get(exec.stage_template_id);
+      const key = exec.task_stage_id ?? exec.task_id;
+      const existing = byStage.get(key);
       if (!existing || exec.attempt_number > existing.attempt_number) {
-        byStage.set(exec.stage_template_id, exec);
+        byStage.set(key, exec);
       }
     }
-    return stageTemplates
-      .filter((t) => byStage.has(t.id))
-      .map((t) => ({ stage: t, execution: byStage.get(t.id)! }));
-  }, [executions, stageTemplates, tokenTotals]);
+    return taskStageInstances
+      .filter((t) => byStage.has(t.task_stage_id))
+      .map((t) => ({ stage: t, execution: byStage.get(t.task_stage_id)! }));
+  }, [executions, taskStageInstances, tokenTotals]);
 
   useEffect(() => {
     if (!activeTask || !activeProject) {
@@ -200,7 +209,7 @@ export function TaskOverview() {
 
   const status = statusConfig[activeTask.status] ?? statusConfig.pending;
   const currentStage = activeTask.current_stage_id
-    ? stageTemplates.find((s) => s.id === activeTask.current_stage_id)
+    ? taskStageInstances.find((s) => s.task_stage_id === activeTask.current_stage_id)
     : null;
 
   return (
@@ -402,7 +411,7 @@ export function TaskOverview() {
                         </thead>
                         <tbody>
                           {perStageUsage.map(({ stage, execution }) => (
-                            <tr key={stage.id} className="border-b border-border/50">
+                            <tr key={stage.task_stage_id} className="border-b border-border/50">
                               <td className="py-1.5 pr-3">{stage.name}</td>
                               <td className="text-right py-1.5 px-3">
                                 {execution.total_cost_usd != null ? formatCost(execution.total_cost_usd) : "\u2014"}

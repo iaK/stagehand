@@ -17,7 +17,7 @@ import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, ClipboardCopy } from "lucide-react";
-import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types";
+import type { TaskStageInstance, PtyEvent, AgentStreamEvent } from "../../lib/types";
 
 /**
  * InteractiveTerminalStageView — self-contained stage component (same pattern
@@ -25,7 +25,7 @@ import type { StageTemplate, PtyEvent, AgentStreamEvent } from "../../lib/types"
  * renders it in an xterm.js terminal. Bypasses useStageExecution.
  */
 interface Props {
-  stage: StageTemplate;
+  stage: TaskStageInstance;
   taskId: string;
   isVisible?: boolean;
 }
@@ -49,9 +49,10 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const { runStage } = useStageExecution();
+  const sid = stage.task_stage_id;
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
-  const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === stage.id);
-  const committedHash = useProcessStore((s) => s.committedStages[stage.id]);
+  const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === sid);
+  const committedHash = useProcessStore((s) => s.committedStages[sid]);
 
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -76,32 +77,32 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
 
   // Check if already approved
   const latestExecution = executions
-    .filter((e) => e.stage_template_id === stage.id)
+    .filter((e) => e.task_stage_id === sid)
     .sort((a, b) => b.attempt_number - a.attempt_number)[0] ?? null;
   const isApproved = latestExecution?.status === "approved";
 
   // Sync commit message from pending commit
   useEffect(() => {
-    if (pendingCommit?.stageId === stage.id) {
+    if (pendingCommit?.stageId === sid) {
       setCommitMessage(pendingCommit.message);
     }
-  }, [pendingCommit?.stageId, pendingCommit?.message, stage.id]);
+  }, [pendingCommit?.stageId, pendingCommit?.message, sid]);
 
   // Set initial state based on existing execution
   useEffect(() => {
     if (isApproved) {
       setSessionState("completed");
-      useProcessStore.getState().unregisterPtySession(stageKey(taskId, stage.id));
+      useProcessStore.getState().unregisterPtySession(stageKey(taskId, sid));
     }
-  }, [isApproved, taskId, stage.id]);
+  }, [isApproved, taskId, sid]);
 
   // Safety net: unregister PTY session on unmount
   useEffect(() => {
-    const key = stageKey(taskId, stage.id);
+    const key = stageKey(taskId, sid);
     return () => {
       useProcessStore.getState().unregisterPtySession(key);
     };
-  }, [taskId, stage.id]);
+  }, [taskId, sid]);
 
   const handleCopyPastStepOutput = useCallback(async () => {
     if (!activeProject || !task) return;
@@ -135,7 +136,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     setSessionState("starting");
     setError(null);
 
-    const prevAttempts = executions.filter((e) => e.stage_template_id === stage.id);
+    const prevAttempts = executions.filter((e) => e.task_stage_id === sid);
     const attemptNumber = prevAttempts.length + 1;
     const executionId = crypto.randomUUID();
     executionIdRef.current = executionId;
@@ -178,7 +179,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       await repo.createStageExecution(activeProject.id, {
         id: executionId,
         task_id: task.id,
-        stage_template_id: stage.id,
+        task_stage_id: sid,
         attempt_number: attemptNumber,
         status: "running",
         input_prompt: "(interactive terminal session)",
@@ -221,7 +222,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
 
       // Resolve effective agent for the PTY session
       const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-      const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+      const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
       effectiveAgentRef.current = effectiveAgent;
 
       // Spawn PTY
@@ -258,9 +259,9 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       );
       ptyIdRef.current = ptyId;
       useProcessStore.getState().registerPtySession(
-        stageKey(task.id, stage.id),
+        stageKey(task.id, sid),
         task.id,
-        stage.id,
+        sid,
         stage,
       );
     } catch (err) {
@@ -282,7 +283,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const handleFinish = useCallback(async () => {
     if (!activeProject || !task) return;
     setSessionState("finishing");
-    useProcessStore.getState().unregisterPtySession(stageKey(task.id, stage.id));
+    useProcessStore.getState().unregisterPtySession(stageKey(task.id, sid));
 
     // Kill PTY if still alive
     if (ptyIdRef.current) {
@@ -361,7 +362,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   }, [sessionState]);
 
   const handleStop = useCallback(async () => {
-    useProcessStore.getState().unregisterPtySession(stageKey(task?.id ?? "", stage.id));
+    useProcessStore.getState().unregisterPtySession(stageKey(task?.id ?? "", sid));
     if (ptyIdRef.current) {
       await killPty(ptyIdRef.current).catch(() => {});
       ptyIdRef.current = null;
@@ -379,7 +380,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   }, [activeProject, task, safeLoadExecutions]);
 
   const handleCommit = async () => {
-    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== stage.id) return;
+    if (!activeProject || !task || !pendingCommit || pendingCommit.stageId !== sid) return;
     setCommitting(true);
     setCommitError(null);
     try {
@@ -388,7 +389,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       const result = await gitCommit(workDir, commitMessage);
       const hashMatch = result.match(/\[[\w/.-]+\s+([a-f0-9]+)\]/);
       const shortHash = hashMatch?.[1] ?? result.slice(0, 7);
-      useProcessStore.getState().setCommitted(stage.id, shortHash);
+      useProcessStore.getState().setCommitted(sid, shortHash);
       useProcessStore.getState().clearPendingCommit();
       sendNotification("Changes committed", shortHash, "success", {
         projectId: activeProject.id,
@@ -425,14 +426,14 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       });
 
       // Advance to next stage
-      const taskStageTemplates = useTaskStore.getState().getActiveTaskStageTemplates();
-      const nextStage = taskStageTemplates
+      const taskStageInstances = useTaskStore.getState().getActiveTaskStageInstances();
+      const nextStage = taskStageInstances
         .filter((s) => s.sort_order > stage.sort_order)
         .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 
       if (nextStage) {
         await useTaskStore.getState().updateTask(activeProject.id, task.id, {
-          current_stage_id: nextStage.id,
+          current_stage_id: nextStage.task_stage_id,
         });
 
         // Auto-start next stage if it doesn't require user input
@@ -594,7 +595,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
 
         <CommitWorkflow
           pendingCommit={pendingCommit}
-          stageId={stage.id}
+          stageId={sid}
           commitMessage={commitMessage}
           setCommitMessage={setCommitMessage}
           commitError={commitError}
