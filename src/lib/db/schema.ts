@@ -124,6 +124,7 @@ export async function initProjectSchema(db: Database): Promise<void> {
   await db.execute(`ALTER TABLE tasks ADD COLUMN pr_url TEXT`).catch(() => {});
   await db.execute(`ALTER TABLE tasks ADD COLUMN worktree_path TEXT`).catch(() => {});
   await db.execute(`ALTER TABLE tasks ADD COLUMN ejected INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+  await db.execute(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT`).catch(() => {});
 
   // Vestigial: completion_strategy was moved to a project-level setting
   await db.execute(`ALTER TABLE tasks ADD COLUMN completion_strategy TEXT NOT NULL DEFAULT 'pr'`).catch(() => {});
