@@ -40,12 +40,14 @@ export function PipelineView() {
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const loadTaskStages = useTaskStore((s) => s.loadTaskStages);
   const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
+  const taskStagesMap = useTaskStore((s) => s.taskStages);
 
   // Compute filtered stages from stable selectors
   const activeTaskId = activeTask?.id;
+  const activeTaskStages = activeTaskId ? taskStagesMap[activeTaskId] : undefined;
   const filteredStages = useMemo(() => {
     return getActiveTaskStageInstances();
-  }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id]);
+  }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id, activeTaskStages]);
 
   const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
   const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");

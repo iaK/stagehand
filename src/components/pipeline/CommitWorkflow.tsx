@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -19,6 +20,8 @@ interface CommitWorkflowProps {
   commitPrepTimedOut: boolean;
   onAskAgentToFix?: () => void;
   agentFixRunning?: boolean;
+  nextStageSelector?: ReactNode;
+  nextStageLoading?: boolean;
 }
 
 export function CommitWorkflow({
@@ -36,6 +39,8 @@ export function CommitWorkflow({
   commitPrepTimedOut,
   onAskAgentToFix,
   agentFixRunning,
+  nextStageSelector,
+  nextStageLoading,
 }: CommitWorkflowProps) {
   if (pendingCommit?.stageId === stageId) {
     return (
@@ -68,6 +73,8 @@ export function CommitWorkflow({
           </Alert>
         )}
 
+        {nextStageSelector}
+
         <div className="flex items-center gap-2">
           {agentFixRunning ? (
             <Button size="sm" variant="outline" disabled>
@@ -78,7 +85,7 @@ export function CommitWorkflow({
             <>
               <Button
                 onClick={onCommit}
-                disabled={committing || !commitMessage.trim()}
+                disabled={committing || !commitMessage.trim() || nextStageLoading}
                 size="sm"
                 variant="success"
               >
@@ -104,15 +111,17 @@ export function CommitWorkflow({
   if (noChangesToCommit) {
     if (outputHasOwnActionButton) return null;
     return (
-      <Button
-        variant="success"
-        onClick={onApprove}
-        disabled={approving}
-        className="mt-4"
-      >
-        {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-        {approving ? "Approving..." : "Approve & Continue"}
-      </Button>
+      <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
+        {nextStageSelector}
+        <Button
+          variant="success"
+          onClick={onApprove}
+          disabled={approving || nextStageLoading}
+        >
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : "Approve & Continue"}
+        </Button>
+      </div>
     );
   }
 
@@ -120,15 +129,17 @@ export function CommitWorkflow({
 
   if (commitPrepTimedOut) {
     return (
-      <Button
-        variant="success"
-        onClick={onApprove}
-        disabled={approving}
-        className="mt-4"
-      >
-        {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-        {approving ? "Approving..." : "Approve & Continue"}
-      </Button>
+      <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
+        {nextStageSelector}
+        <Button
+          variant="success"
+          onClick={onApprove}
+          disabled={approving || nextStageLoading}
+        >
+          {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {approving ? "Approving..." : "Approve & Continue"}
+        </Button>
+      </div>
     );
   }
 

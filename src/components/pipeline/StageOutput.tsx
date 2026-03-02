@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { StageTemplate, StageExecution, ResearchQuestion } from "../../lib/types";
 import { detectInteractionType } from "../../lib/outputDetection";
 import { TextOutput } from "../output/TextOutput";
@@ -21,6 +21,8 @@ interface StageOutputProps {
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
   approving?: boolean;
+  nextStageSelector?: ReactNode;
+  nextStageLoading?: boolean;
 }
 
 export function StageOutput({
@@ -33,6 +35,8 @@ export function StageOutput({
   isApproved,
   stageTemplates,
   approving,
+  nextStageSelector,
+  nextStageLoading,
 }: StageOutputProps) {
   const output = execution.parsed_output ?? execution.raw_output ?? "";
 
@@ -124,15 +128,17 @@ export function StageOutput({
         <div>
           <TextOutput content={planContent} />
           {!isApproved && (
-            <Button
-              variant="success"
-              onClick={() => onApprove()}
-              disabled={approving}
-              className="mt-4"
-            >
-              {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {approving ? "Approving..." : "Approve & Continue"}
-            </Button>
+            <div className="mt-4 space-y-3">
+              {nextStageSelector}
+              <Button
+                variant="success"
+                onClick={() => onApprove()}
+                disabled={approving || nextStageLoading}
+              >
+                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {approving ? "Approving..." : "Approve & Continue"}
+              </Button>
+            </div>
           )}
         </div>
       );
@@ -148,6 +154,8 @@ export function StageOutput({
           isApproved={isApproved}
           stageTemplates={stageTemplates}
           approving={approving}
+          nextStageSelector={nextStageSelector}
+          nextStageLoading={nextStageLoading}
         />
       );
 
@@ -182,6 +190,8 @@ export function StageOutput({
           onSkipAll={() => onApprove()}
           isApproved={isApproved}
           approving={approving}
+          nextStageLoading={nextStageLoading}
+          nextStageSelector={nextStageSelector}
         />
       );
     }

@@ -36,7 +36,11 @@ export function PipelineStepper({
         else if (latestExec?.status === "awaiting_user") map.set(stage.task_stage_id, "awaiting");
         else map.set(stage.task_stage_id, "current");
       } else {
-        if (currentStage && stage.sort_order < currentStage.sort_order) {
+        // Only mark as completed if there's an actual approved execution,
+        // not just because it's before the current stage in sort_order.
+        // With dynamic stages, earlier stages may not have been executed.
+        const hasApprovedExec = stageExecs.some((e) => e.status === "approved");
+        if (hasApprovedExec) {
           map.set(stage.task_stage_id, "completed");
         } else {
           map.set(stage.task_stage_id, "future");

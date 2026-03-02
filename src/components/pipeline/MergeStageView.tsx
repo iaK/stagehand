@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useGitHubStore } from "../../stores/githubStore";
-import { performMerge } from "../../lib/merge";
+import { performMerge, type DirtyMergeStrategy } from "../../lib/merge";
 import {
   gitDefaultBranch,
   gitDiffNameOnly,
@@ -14,6 +14,8 @@ import {
   gitAdd,
   gitCommit,
   gitDiffShortStatBranch,
+  gitCurrentBranch,
+  hasUncommittedChanges,
 } from "../../lib/git";
 import { logger } from "../../lib/logger";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
@@ -26,6 +28,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import type { MergeState } from "../../stores/processStore";
@@ -82,6 +86,8 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
   const [fixCommitting, setFixCommitting] = useState(false);
   const [fixCommitError, setFixCommitError] = useState<string | null>(null);
+  const [targetIsDirty, setTargetIsDirty] = useState(false);
+  const [dirtyStrategy, setDirtyStrategy] = useState<DirtyMergeStrategy>("stash_merge_pop");
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
@@ -142,9 +148,19 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         const files = await gitDiffNameOnly(workDir, diffBase).catch(() => [] as string[]);
         const stat = await gitDiffStatBranch(workDir, diffBase).catch(() => "");
 
+        // Check if the target branch is checked out with dirty changes
+        let dirty = false;
+        try {
+          const current = (await gitCurrentBranch(activeProject.path)).trim();
+          if (current === defaultBr) {
+            dirty = await hasUncommittedChanges(activeProject.path);
+          }
+        } catch { /* ignore */ }
+
         if (!cancelled) {
           setChangedFiles(files);
           setDiffStat(stat);
+          setTargetIsDirty(dirty);
           // Only transition to preview on first load; keep persisted state otherwise
           if (mergeState === "loading") setMergeState("preview");
         }
@@ -213,6 +229,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         projectPath: activeProject.path,
         branchName: activeTask.branch_name,
         targetBranch,
+        dirtyStrategy: targetIsDirty ? dirtyStrategy : undefined,
       });
 
       // Mark execution as approved
@@ -527,6 +544,32 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
           <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
             {diffStat}
           </pre>
+        )}
+
+        {targetIsDirty && (
+          <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg">
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-2">
+              Uncommitted changes detected on <code className="font-mono bg-amber-100 dark:bg-amber-500/20 px-1 rounded">{targetBranch}</code>
+            </p>
+            <RadioGroup
+              value={dirtyStrategy}
+              onValueChange={(v) => setDirtyStrategy(v as DirtyMergeStrategy)}
+              className="gap-2"
+            >
+              <div className="flex items-start gap-2">
+                <RadioGroupItem value="stash_merge_pop" id="stash_merge_pop" className="mt-0.5" />
+                <Label htmlFor="stash_merge_pop" className="text-xs text-amber-900 dark:text-amber-200 font-normal cursor-pointer">
+                  <span className="font-medium">Stash, merge, pop</span> — temporarily stash dirty changes, merge, then re-apply them
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <RadioGroupItem value="update_ref" id="update_ref" className="mt-0.5" />
+                <Label htmlFor="update_ref" className="text-xs text-amber-900 dark:text-amber-200 font-normal cursor-pointer">
+                  <span className="font-medium">Do nothing</span> — merge in background without touching working tree (may revert merged changes on next commit)
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
         )}
 
         {error && (

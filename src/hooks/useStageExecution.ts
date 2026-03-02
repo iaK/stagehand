@@ -33,15 +33,44 @@ import { loadConventions } from "../lib/conventions";
 import { quickAgentCall } from "../lib/agentHelper";
 import type {
   Task,
+  StageTemplate,
   TaskStageInstance,
   StageExecution,
   GateRule,
   AgentStreamEvent,
 } from "../lib/types";
 
+const TERMINAL_OUTPUT_FORMATS = new Set(["pr_preparation", "pr_review", "merge"]);
+
+function parseNextStageSuggestion(raw: string | null): { suggestedTemplateId: string | null; reason: string | null } {
+  if (!raw) return { suggestedTemplateId: null, reason: null };
+  try {
+    const parsed = JSON.parse(raw) as { next_stage_name?: string; reason?: string };
+    const name = typeof parsed.next_stage_name === "string" ? parsed.next_stage_name : "";
+    const normalized = name.trim().toLowerCase();
+    const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
+    return {
+      suggestedTemplateId: normalized || null,
+      reason: reason || null,
+    };
+  } catch {
+    return { suggestedTemplateId: null, reason: null };
+  }
+}
+
+function resolveSuggestedTemplateId(
+  stageTemplates: StageTemplate[],
+  normalizedStageName: string | null,
+): string | null {
+  if (!normalizedStageName) return null;
+  const exact = stageTemplates.find((t) => t.name.trim().toLowerCase() === normalizedStageName);
+  if (exact) return exact.id;
+  const partial = stageTemplates.find((t) => normalizedStageName.includes(t.name.trim().toLowerCase()));
+  return partial?.id ?? null;
+}
+
 export function useStageExecution() {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
   const updateTask = useTaskStore((s) => s.updateTask);
@@ -435,7 +464,7 @@ export function useStageExecution() {
 
           // Append MCP tool hint to system prompt
           const mcpHint =
-            "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_description` tools to retrieve data from prior pipeline stages on demand.";
+            "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_title` tools to retrieve data from prior pipeline stages on demand.";
           systemPrompt = systemPrompt
             ? `${systemPrompt}\n\n${mcpHint}`
             : mcpHint;
@@ -502,7 +531,6 @@ export function useStageExecution() {
     },
     [
       activeProject,
-      stageTemplates,
       executions,
       clearOutput,
       appendOutput,
@@ -571,8 +599,8 @@ export function useStageExecution() {
         });
         sendNotification("Stage complete", `${stage.name} needs your review`, "success", { projectId: activeProject.id, taskId });
 
-        // Always attempt to generate a pending commit (returns early if no changes)
-        {
+        // Generate a pending commit only for stages that are expected to modify files
+        if (stage.commits_changes) {
           const task = useTaskStore.getState().activeTask;
           const project = useProjectStore.getState().activeProject;
           if (task && task.id === taskId && project) {
@@ -635,9 +663,6 @@ export function useStageExecution() {
         return;
       }
 
-      // Use filtered stage instances from store (avoids redundant DB call)
-      const taskStageInstances = useTaskStore.getState().getActiveTaskStageInstances();
-
       // Extract this stage's own contribution
       const ownOutput = extractStageOutput(stage, latest, decision);
 
@@ -661,9 +686,16 @@ export function useStageExecution() {
         stage_summary: stageSummary,
       });
 
-      await advanceFromStageInner(activeProject.id, task, stage, taskStageInstances);
+      // Sync approved status into the Zustand store so React re-renders
+      if (useTaskStore.getState().activeTask?.id === task.id) {
+        await loadExecutions(activeProject.id, task.id).catch((err) =>
+          logger.error("Failed to reload executions after approval", err),
+        );
+      } else {
+        await useTaskStore.getState().refreshTaskExecStatuses(activeProject.id);
+      }
     },
-    [activeProject, stageTemplates, updateTask, loadExecutions],
+    [activeProject, loadExecutions],
   );
 
   const createPullRequest = useCallback(
@@ -706,97 +738,186 @@ export function useStageExecution() {
     [activeProject, updateTask],
   );
 
-  const advanceFromStageInner = useCallback(
-    async (projectId: string, task: Task, stage: TaskStageInstance, _taskStageInstances: TaskStageInstance[]) => {
-      // Split tasks are terminal — don't advance to the next stage.
-      // Query the DB directly instead of reading activeTask from the store,
-      // because the user may have navigated to a different task.
+  const completeTaskFromStage = useCallback(
+    async (projectId: string, task: Task) => {
+      await updateTask(projectId, task.id, {
+        status: "completed",
+        current_stage_id: null,
+      });
+
+      {
+        const project = useProjectStore.getState().activeProject;
+        const defaultBranch = useGitHubStore.getState().defaultBranch;
+        if (project && defaultBranch) {
+          try {
+            const workDir = getTaskWorkingDir(task, project.path);
+            const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
+            await repo.updateTask(projectId, task.id, {
+              diff_insertions: stats.insertions,
+              diff_deletions: stats.deletions,
+            });
+          } catch {
+            // Non-critical — stats may already be persisted from earlier
+          }
+        }
+      }
+
+      {
+        const project = useProjectStore.getState().activeProject;
+        if (project) {
+          await cleanupTaskWorktree(project.path, task, { deleteBranch: true });
+        }
+      }
+    },
+    [updateTask],
+  );
+
+  const suggestNextStage = useCallback(
+    async (task: Task, stage: TaskStageInstance): Promise<{ suggestedTemplateId: string | null; reason: string | null }> => {
+      if (!activeProject) return { suggestedTemplateId: null, reason: null };
+      const currentTemplates = useTaskStore.getState().stageTemplates;
+      const activeTaskStages = await repo.getTaskStageInstances(activeProject.id, task.id);
+      const activeStageNames = new Set(activeTaskStages.map((s) => s.name));
+      const availableChoices = currentTemplates
+        .filter((t) => !TERMINAL_OUTPUT_FORMATS.has(t.output_format) && t.output_format !== "research")
+        .map((t) => `- ${t.name}${activeStageNames.has(t.name) ? " (already in pipeline)" : ""}`)
+        .join("\n");
+      const approvedSummaries = await repo.getApprovedStageSummaries(activeProject.id, task.id);
+      const recentContext = approvedSummaries
+        .slice(-4)
+        .map((s) => `### ${s.stage_name}\n${s.stage_summary}`)
+        .join("\n\n");
+
+      const prompt = `You are deciding the single best next stage in an AI coding workflow.
+
+Task:
+${task.title}
+
+Just approved stage:
+${stage.name}
+
+Recent completed stage summaries:
+${recentContext || "(none)"}
+
+Available next choices:
+${availableChoices}
+
+Rules:
+- Choose exactly one next_stage_name from the available choices.
+- Prefer "refinement" after implementation if risk remains.
+- Choosing the same stage again is allowed when a second opinion or another pass is useful.
+- Keep reason concise (one sentence).
+
+Return strict JSON:
+{"next_stage_name":"...","reason":"..."}`;
+
+      const raw = await quickAgentCall({
+        prompt,
+        workingDirectory: getTaskWorkingDir(task, activeProject.path),
+      });
+      const parsed = parseNextStageSuggestion(raw);
+      return {
+        suggestedTemplateId: resolveSuggestedTemplateId(currentTemplates, parsed.suggestedTemplateId),
+        reason: parsed.reason,
+      };
+    },
+    [activeProject],
+  );
+
+  const chooseNextStage = useCallback(
+    async (task: Task, stage: TaskStageInstance, nextTemplateId: string | null) => {
+      if (!activeProject) return;
+      const projectId = activeProject.id;
+
       const freshTask = await repo.getTask(projectId, task.id);
       if (freshTask?.status === "split") {
         if (useTaskStore.getState().activeTask?.id === task.id) {
           await loadExecutions(projectId, task.id);
+        } else {
+          await useTaskStore.getState().refreshTaskExecStatuses(projectId);
         }
         return;
       }
 
-      // Always query the DB for the real task stages — the in-memory list
-      // passed in may be a synthetic single-stage placeholder if
-      // loadTaskStages hasn't populated the store yet, which would cause
-      // nextStage to be null and the task to be incorrectly marked complete.
-      const realStages = await repo.getTaskStageInstances(projectId, task.id);
+      if (nextTemplateId === null) {
+        await completeTaskFromStage(projectId, task);
+        if (useTaskStore.getState().activeTask?.id === task.id) {
+          await loadExecutions(projectId, task.id);
+        } else {
+          await useTaskStore.getState().refreshTaskExecStatuses(projectId);
+        }
+        return;
+      }
 
-      // Also populate the store so the UI is consistent
+      let realStages = await repo.getTaskStageInstances(projectId, task.id);
+      const currentIdx = realStages.findIndex((s) => s.task_stage_id === stage.task_stage_id);
+      const current = currentIdx >= 0
+        ? realStages[currentIdx]
+        : realStages.find((s) => s.sort_order === stage.sort_order && s.stage_template_id === stage.stage_template_id) ?? stage;
+      const nextExisting = realStages
+        .filter((s) => s.sort_order > current.sort_order)
+        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
+
+      let nextStage: TaskStageInstance | null = null;
+      if (nextExisting && nextExisting.stage_template_id === nextTemplateId) {
+        nextStage = nextExisting;
+      } else {
+        let sortOrder: number;
+        let needsRenumber = false;
+        if (nextExisting) {
+          const gap = nextExisting.sort_order - current.sort_order;
+          if (gap < 2) {
+            sortOrder = current.sort_order + 1;
+            needsRenumber = true;
+          } else {
+            sortOrder = Math.floor((current.sort_order + nextExisting.sort_order) / 2);
+          }
+        } else {
+          sortOrder = current.sort_order + 1000;
+        }
+
+        const insertedId = await repo.insertTaskStage(projectId, task.id, nextTemplateId, sortOrder);
+        if (needsRenumber) {
+          await repo.renumberTaskStages(projectId, task.id);
+        }
+        realStages = await repo.getTaskStageInstances(projectId, task.id);
+        nextStage = realStages.find((s) => s.task_stage_id === insertedId)
+          ?? realStages
+            .filter((s) => s.sort_order > current.sort_order)
+            .sort((a, b) => a.sort_order - b.sort_order)[0]
+          ?? null;
+      }
+
+      if (!nextStage) {
+        await completeTaskFromStage(projectId, task);
+      } else {
+        await updateTask(projectId, task.id, {
+          current_stage_id: nextStage.task_stage_id,
+        });
+      }
+
       if (useTaskStore.getState().activeTask?.id === task.id) {
         useTaskStore.setState((state) => ({
           taskStages: { ...state.taskStages, [task.id]: realStages },
         }));
       }
 
-      const nextStage = realStages
-        .filter((s) => s.sort_order > stage.sort_order)
-        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
-
-      if (nextStage) {
-        await updateTask(projectId, task.id, {
-          current_stage_id: nextStage.task_stage_id,
-        });
-
-        // Auto-start next stage if it doesn't require user input
-        if (shouldAutoStartStage(nextStage)) {
-          const freshTask = useTaskStore.getState().activeTask;
-          if (freshTask && freshTask.id === task.id) {
-            // Fire-and-forget: don't await so the approval flow completes
-            // immediately and the UI can update to show the running state.
-            // Return early — runStage's "started" event handler will call
-            // loadExecutions, avoiding a race with the loadExecutions below.
-            runStageRef.current(freshTask, nextStage).catch((err) => {
-              logger.error("Auto-start next stage failed:", err);
-            });
-            return;
-          }
-        }
-      } else {
-        // No more stages — task is complete
-        await updateTask(projectId, task.id, {
-          status: "completed",
-        });
-
-        // Persist diff stats before cleanup so they survive after merge
-        {
-          const project = useProjectStore.getState().activeProject;
-          const defaultBranch = useGitHubStore.getState().defaultBranch;
-          if (project && defaultBranch) {
-            try {
-              const workDir = getTaskWorkingDir(task, project.path);
-              const stats = await gitDiffShortStatBranch(workDir, defaultBranch);
-              await repo.updateTask(projectId, task.id, {
-                diff_insertions: stats.insertions,
-                diff_deletions: stats.deletions,
-              });
-            } catch {
-              // Non-critical — stats may already be persisted from earlier
-            }
-          }
-        }
-
-        // Clean up worktree on completion. Note: merge stages handle their
-        // own completion and cleanup in MergeStageView and never reach here.
-        {
-          const project = useProjectStore.getState().activeProject;
-          if (project) {
-            await cleanupTaskWorktree(project.path, task, { deleteBranch: true });
-          }
+      if (nextStage && shouldAutoStartStage(nextStage)) {
+        const freshActiveTask = useTaskStore.getState().activeTask;
+        if (freshActiveTask && freshActiveTask.id === task.id) {
+          runStageRef.current(freshActiveTask, nextStage).catch((err) => {
+            logger.error("Auto-start next stage failed:", err);
+          });
         }
       }
 
-      // Update detailed executions if active, otherwise just refresh sidebar statuses
       if (useTaskStore.getState().activeTask?.id === task.id) {
         await loadExecutions(projectId, task.id);
       } else {
         await useTaskStore.getState().refreshTaskExecStatuses(projectId);
       }
     },
-    [updateTask, loadExecutions],
+    [activeProject, completeTaskFromStage, loadExecutions, updateTask],
   );
 
   const redoStage = useCallback(
@@ -905,7 +1026,7 @@ export function useStageExecution() {
     };
   }, []);
 
-  return { runStage, approveStage, redoStage, killCurrent };
+  return { runStage, approveStage, suggestNextStage, chooseNextStage, redoStage, killCurrent };
 }
 
 /** Generate a fallback branch name slug from a task title. */

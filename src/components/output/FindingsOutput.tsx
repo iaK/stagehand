@@ -13,6 +13,8 @@ interface FindingsOutputProps {
   onSkipAll: () => void;
   isApproved: boolean;
   approving?: boolean;
+  nextStageLoading?: boolean;
+  nextStageSelector?: React.ReactNode;
 }
 
 const severityVariant: Record<string, "critical" | "warning" | "info"> = {
@@ -33,6 +35,8 @@ export function FindingsOutput({
   onSkipAll,
   isApproved,
   approving,
+  nextStageLoading,
+  nextStageSelector,
 }: FindingsOutputProps) {
   let summary = "";
   let initialFindings: FindingItem[] = [];
@@ -70,7 +74,8 @@ export function FindingsOutput({
               <p className="text-sm font-medium mb-3">
                 No findings — everything looks good.
               </p>
-              <Button variant="success" onClick={onSkipAll} disabled={approving}>
+              {nextStageSelector}
+              <Button variant="success" onClick={onSkipAll} disabled={approving || nextStageLoading}>
                 {approving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {approving ? "Approving..." : "Approve & Continue"}
               </Button>

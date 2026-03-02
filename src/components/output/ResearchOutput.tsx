@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { TextOutput } from "./TextOutput";
 import { MarkdownTextarea } from "../ui/MarkdownTextarea";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,8 @@ interface ResearchOutputProps {
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
   approving?: boolean;
+  nextStageSelector?: ReactNode;
+  nextStageLoading?: boolean;
 }
 
 export function ResearchOutput({
@@ -37,6 +39,8 @@ export function ResearchOutput({
   isApproved,
   stageTemplates,
   approving,
+  nextStageSelector,
+  nextStageLoading,
 }: ResearchOutputProps) {
   let research = "";
   let questions: ResearchQuestion[] = [];
@@ -52,7 +56,7 @@ export function ResearchOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={() => onApprove()} disabled={approving} className="mt-4">
+          <Button variant="success" onClick={() => onApprove()} disabled={approving || nextStageLoading} className="mt-4">
             {approving && <Loader2 className="w-4 h-4 animate-spin" />}
             {approving ? "Approving..." : "Approve & Continue"}
           </Button>
@@ -85,7 +89,7 @@ export function ResearchOutput({
       )}
 
       {!hasQuestions && !isApproved && !hasStageSelection && (
-        <SimpleApproveWithBranch onApprove={onApprove} approving={approving} />
+        <SimpleApproveWithBranch onApprove={onApprove} approving={approving} nextStageSelector={nextStageSelector} nextStageLoading={nextStageLoading} />
       )}
     </div>
   );
@@ -95,9 +99,13 @@ export function ResearchOutput({
 function SimpleApproveWithBranch({
   onApprove,
   approving,
+  nextStageSelector,
+  nextStageLoading,
 }: {
   onApprove: (decision?: string, branchName?: string, baseBranch?: string) => void;
   approving?: boolean;
+  nextStageSelector?: ReactNode;
+  nextStageLoading?: boolean;
 }) {
   const { branchName, setBranchName, baseBranch, setBaseBranch, loading } = useBranchFields();
 
@@ -114,10 +122,12 @@ function SimpleApproveWithBranch({
           setBaseBranch={setBaseBranch}
           loading={loading}
         />
+        {nextStageSelector}
         <Button
           variant="success"
           onClick={() => onApprove(undefined, branchName, baseBranch)}
-          disabled={approving || !branchName.trim()}
+          disabled={approving || !branchName.trim() || nextStageLoading}
+          className="mt-3"
         >
           {approving && <Loader2 className="w-4 h-4 animate-spin" />}
           {approving ? "Approving..." : "Approve & Continue"}

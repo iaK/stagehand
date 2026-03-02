@@ -58,10 +58,16 @@ export const DEFAULT_MERGE_STATE: MergeStageState = {
   fixCommitDiffStat: "",
 };
 
+export interface StageSuggestion {
+  suggestedTemplateId: string | null;
+  reason: string | null;
+}
+
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
   mergeStages: Record<string, MergeStageState>;
   activePtySessions: Record<string, ActivePtySession>;
+  stageSuggestions: Record<string, StageSuggestion>; // task_stage_id → cached suggestion
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
   committedStages: Record<string, string>; // stageId → short commit hash
@@ -80,6 +86,7 @@ interface ProcessStore {
   setCommitted: (stageId: string, shortHash: string) => void;
   setCommitMessageLoading: (stageId: string | null) => void;
   setNoChangesToCommit: (stageId: string | null) => void;
+  setStageSuggestion: (taskStageId: string, suggestion: StageSuggestion) => void;
   getMergeState: (key: string) => MergeStageState;
   updateMergeState: (key: string, patch: Partial<MergeStageState>) => void;
   clearMergeState: (key: string) => void;
@@ -95,6 +102,7 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
   stages: {},
   mergeStages: {},
   activePtySessions: {},
+  stageSuggestions: {},
   viewingStageId: null,
   pendingCommit: null,
   committedStages: {},
@@ -191,6 +199,11 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
   setCommitMessageLoading: (stageId) => set({ commitMessageLoadingStageId: stageId }),
 
   setNoChangesToCommit: (stageId) => set({ noChangesStageId: stageId }),
+
+  setStageSuggestion: (taskStageId, suggestion) =>
+    set((state) => ({
+      stageSuggestions: { ...state.stageSuggestions, [taskStageId]: suggestion },
+    })),
 
   getMergeState: (key) => get().mergeStages[key] ?? DEFAULT_MERGE_STATE,
 

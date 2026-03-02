@@ -22,14 +22,16 @@ import { MergeStageView } from "./MergeStageView";
 import { PrReviewView } from "./PrReviewView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { CommitWorkflow } from "./CommitWorkflow";
-import { InsertStageButton } from "./InsertStageButton";
 import { StageInputArea } from "./StageInputArea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
-import type { TaskStageInstance } from "../../lib/types";
+import * as repo from "../../lib/repositories";
+import type { TaskStageInstance, CompletionStrategy } from "../../lib/types";
 
 interface StageViewProps {
   stage: TaskStageInstance;
@@ -46,15 +48,13 @@ export function StageView({ stage, taskId }: StageViewProps) {
   const task = storeTask ?? taskRef.current;
   const executions = useTaskStore((s) => s.executions);
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
-  const setTaskStages = useTaskStore((s) => s.setTaskStages);
-  const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
   const sid = stage.task_stage_id;
   const sk = task ? stageKey(task.id, sid) : sid;
   const isRunning = useProcessStore((s) => s.stages[sk]?.isRunning ?? false);
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const committedHash = useProcessStore((s) => s.committedStages[sid]);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === sid);
-  const { runStage, approveStage, redoStage, killCurrent } =
+  const { runStage, approveStage, suggestNextStage, chooseNextStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(sid, taskId);
   const [userInput, setUserInput] = useState("");
@@ -68,8 +68,39 @@ export function StageView({ stage, taskId }: StageViewProps) {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  const cachedSuggestion = useProcessStore((s) => s.stageSuggestions[sid]);
+  const [loadingNextSuggestion, setLoadingNextSuggestion] = useState(false);
+  const [nextSuggestionReason, setNextSuggestionReason] = useState<string | null>(cachedSuggestion?.reason ?? null);
+  const [selectedNextTemplateId, setSelectedNextTemplateId] = useState<string | null>(cachedSuggestion?.suggestedTemplateId ?? null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [commitPrepTimedOut, setCommitPrepTimedOut] = useState(false);
+  // Terminal output formats whose next stage is fixed (not user-selectable)
+  const TERMINAL_FORMATS = ["pr_preparation", "pr_review", "merge"] as const;
+  const isTerminalStage = (TERMINAL_FORMATS as readonly string[]).includes(stage.output_format);
+
+  // For terminal stages, compute the fixed next template ID:
+  // pr_preparation → pr_review, pr_review/merge → null (complete task)
+  const terminalNextTemplateId = useMemo(() => {
+    if (stage.output_format === "pr_preparation") {
+      return stageTemplates.find((t) => t.output_format === "pr_review")?.id ?? null;
+    }
+    return null; // pr_review and merge complete the task
+  }, [stage.output_format, stageTemplates]);
+
+  // "Finish task" maps to the terminal stage based on project completion strategy
+  const FINISH_TASK_VALUE = "__finish__";
+  const [completionStrategy, setCompletionStrategy] = useState<CompletionStrategy>("pr");
+  useEffect(() => {
+    if (activeProject) {
+      repo.getCompletionStrategy(activeProject.id).then(setCompletionStrategy);
+    }
+  }, [activeProject?.id]);
+  const finishTemplateId = useMemo(() => {
+    if (completionStrategy === "merge") {
+      return stageTemplates.find((t) => t.output_format === "merge")?.id ?? null;
+    }
+    return stageTemplates.find((t) => t.output_format === "pr_preparation")?.id ?? null;
+  }, [completionStrategy, stageTemplates]);
 
   // Sync editable commit message when pending commit appears for this stage
   useEffect(() => {
@@ -92,6 +123,10 @@ export function StageView({ stage, taskId }: StageViewProps) {
       useProcessStore.getState().clearPendingCommit();
       sendNotification("Changes committed", shortHash, "success", { projectId: activeProject.id, taskId: task.id });
       await approveStage(task, stage);
+      const nextId = isTerminalStage ? terminalNextTemplateId : effectiveNextTemplateId;
+      if (nextId !== null || isTerminalStage) {
+        await chooseNextStage(task, stage, nextId);
+      }
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : String(e));
       // Re-check git status — if user committed externally, switch to continue button
@@ -201,6 +236,24 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     return formatHasOwnActionButton(output, stage.output_format);
   }, [!!latestExecution, latestExecution?.parsed_output, latestExecution?.raw_output, stage.output_format]);
 
+  // True when the output has pending interactions that will trigger a redo (not an approve).
+  // Covers: question cards (research/plan Q&A) and Phase 1 findings (selectable findings).
+  // In this state, hide the next-stage picker since the stage will re-run.
+  const hasPendingQuestions = useMemo(() => {
+    if (!latestExecution) return false;
+    const output = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
+    try {
+      const parsed = JSON.parse(output);
+      if ((parsed.questions ?? []).length > 0) return true;
+      // Phase 1 findings with actual items: user selects findings → Apply triggers redo, not approve.
+      // Empty findings array means "no findings" — user approves directly, so show next stage selector.
+      if (Array.isArray(parsed.findings) && parsed.findings.length > 0) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }, [!!latestExecution, latestExecution?.parsed_output, latestExecution?.raw_output]);
+
   // Re-generate pending commit on mount/navigation if the stage is awaiting_user
   // but no commit dialog is present (e.g. after app restart where in-memory state was lost,
   // or a stale pendingCommit from a different stage is still in the store).
@@ -303,6 +356,17 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
       }
       await approveStage(effectiveTask, stage, decision);
       sendNotification("Stage approved", stage.name, "success", { projectId: activeProject.id, taskId: task.id });
+      // Advance to the selected next stage in one action.
+      // Terminal stages have a fixed next stage (pr_preparation → pr_review, others → complete).
+      // If no next stage is selected yet (e.g. approve triggered by an output action button
+      // before the user picked a stage), skip advancing — the approved state will show
+      // the next stage selector so the user can choose and continue.
+      const nextId = isTerminalStage ? terminalNextTemplateId : effectiveNextTemplateId;
+      if (nextId !== null || isTerminalStage) {
+        await chooseNextStage(effectiveTask, stage, nextId);
+      } else {
+        setApproving(false);
+      }
     } catch (err) {
       logger.error("Failed to approve stage:", err);
       setStageError(err instanceof Error ? err.message : String(err));
@@ -331,58 +395,6 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     await redoStage(task, stage, answers);
   };
 
-  const handleApproveWithStages = async (selectedStageIds: string[], branchName?: string, baseBranch?: string) => {
-    if (!task || !activeProject) return;
-    setApproving(true);
-    // Clear commit-related state so it doesn't leak into the next stage
-    useProcessStore.getState().clearPendingCommit();
-    useProcessStore.getState().setNoChangesToCommit(null);
-    try {
-      // Create worktree with the user-confirmed branch name
-      let effectiveTask = task;
-      if (branchName && baseBranch && !task.worktree_path) {
-        try {
-          effectiveTask = await createWorktreeForTask(
-            activeProject.id, activeProject.path, task, branchName, baseBranch,
-          );
-        } catch (err) {
-          // Worktree creation is non-critical — continue in project root
-          logger.warn("Worktree creation failed, continuing in project root:", err);
-        }
-      }
-
-      let ids = [...selectedStageIds];
-      const hasPrCreator = stageTemplates.some(
-        (t) => ids.includes(t.id) && t.output_format === "pr_preparation",
-      );
-      if (hasPrCreator) {
-        const prReviewTemplate = stageTemplates.find((t) => t.output_format === "pr_review");
-        if (prReviewTemplate && !ids.includes(prReviewTemplate.id)) {
-          ids.push(prReviewTemplate.id);
-        }
-      }
-
-      const stages = ids
-        .map((id) => {
-          const t = stageTemplates.find((s) => s.id === id);
-          return t ? { stageTemplateId: id, sortOrder: t.sort_order } : null;
-        })
-        .filter((s): s is { stageTemplateId: string; sortOrder: number } => s !== null);
-
-      await setTaskStages(activeProject.id, effectiveTask.id, stages);
-      // setTaskStages may replace stage instance IDs; re-resolve the current
-      // research stage instance before approving to avoid stale/null linkage.
-      const refreshedStages = useTaskStore.getState().getActiveTaskStageInstances();
-      const refreshedStage = refreshedStages.find(
-        (s) => s.stage_template_id === stage.stage_template_id,
-      ) ?? stage;
-      await approveStage(effectiveTask, refreshedStage);
-    } catch (err) {
-      logger.error("Failed to approve with stages:", err);
-      setStageError(err instanceof Error ? err.message : String(err));
-      setApproving(false);
-    }
-  };
 
   const handleSplitTask = async (subtasks: { title: string; initialInput?: string }[]) => {
     if (!activeProject || !task) return;
@@ -463,8 +475,97 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     );
   }
 
+  // Pre-fetch next stage suggestion while user is reviewing output (awaiting_user).
+  // Only fire when the output doesn't have interactive controls (e.g. question cards)
+  // so we don't waste an agent call during the Q&A phase.
+  const isAwaitingUser = stageStatus === "awaiting_user" && !isRunning;
+  const readyForSuggestion = (isAwaitingUser && !hasPendingQuestions) || isApproved;
+  useEffect(() => {
+    if (!task || !isCurrentStage || !readyForSuggestion || isTerminalStage || task.status === "completed" || task.status === "split") return;
+    const cached = useProcessStore.getState().stageSuggestions[sid];
+    if (cached) return;
+    let cancelled = false;
+    setLoadingNextSuggestion(true);
+    setNextSuggestionReason(null);
+    suggestNextStage(task, stage)
+      .then((result) => {
+        if (cancelled) return;
+        const suggestion = { suggestedTemplateId: result.suggestedTemplateId ?? null, reason: result.reason ?? null };
+        useProcessStore.getState().setStageSuggestion(sid, suggestion);
+        setSelectedNextTemplateId(suggestion.suggestedTemplateId);
+        setNextSuggestionReason(suggestion.reason);
+      })
+      .catch((err) => {
+        logger.error("Failed to suggest next stage:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingNextSuggestion(false);
+      });
+    return () => { cancelled = true; };
+  }, [task?.id, stage.task_stage_id, isCurrentStage, readyForSuggestion, task?.status, suggestNextStage]);
+
   const showInitialForm =
     isCurrentStage && !isRunning && (stageStatus === "pending" || !latestExecution);
+
+  // Filter stage templates shown in the next-stage picker:
+  // - Terminal stages (pr_preparation, pr_review, merge) are never shown as user-selectable
+  //   next stages; the AI suggestion handles routing to them.
+  const selectableTemplates = useMemo(() => {
+    if (isTerminalStage) return [];
+    return stageTemplates.filter(
+      (t) =>
+        !(TERMINAL_FORMATS as readonly string[]).includes(t.output_format) &&
+        t.output_format !== "research",
+    );
+  }, [stageTemplates, isTerminalStage]);
+
+  // Resolve the effective template ID: FINISH_TASK_VALUE maps to the terminal stage
+  const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
+    ? finishTemplateId
+    : selectedNextTemplateId;
+
+  const nextStageSelectorNode = isTerminalStage ? null : (
+    <div className="my-3">
+      <label className="text-xs font-medium text-foreground">Next Stage</label>
+      {loadingNextSuggestion ? (
+        <p className="mt-1 text-xs text-muted-foreground">Analyzing...</p>
+      ) : (
+        <>
+          <Select
+            value={selectedNextTemplateId ?? ""}
+            onValueChange={(value) => setSelectedNextTemplateId(value || null)}
+          >
+            <SelectTrigger className="mt-1 h-8 text-sm w-full">
+              <SelectValue placeholder="Select next stage..." />
+            </SelectTrigger>
+            <SelectContent className="max-w-[360px]">
+              {selectableTemplates.map((t) => (
+                <SelectItem key={t.id} value={t.id} description={t.description ?? undefined}>
+                  {t.name}
+                </SelectItem>
+              ))}
+              {finishTemplateId && (
+                <>
+                  <SelectSeparator />
+                  <SelectItem
+                    value={FINISH_TASK_VALUE}
+                    description={completionStrategy === "merge"
+                      ? "Merge changes into the base branch"
+                      : "Prepare and create a pull request"}
+                  >
+                    Finish task ({completionStrategy === "merge" ? "merge" : "PR"})
+                  </SelectItem>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+          {nextSuggestionReason && (
+            <p className="mt-1 text-xs text-muted-foreground">{nextSuggestionReason}</p>
+          )}
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-4xl">
@@ -520,37 +621,23 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
           )}
 
           {(stage.output_format === "research" || stage.output_format === "findings" || stage.output_format === "task_splitting") && (
-            <Alert className={`mb-4 ${
-              stage.output_format === "task_splitting"
-                ? "border-violet-200 dark:border-violet-500/20 bg-violet-50 dark:bg-violet-500/10 text-violet-800 dark:text-violet-300"
-                : "border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
-            }`}>
-              <svg className={`w-4 h-4 flex-shrink-0 ${
-                stage.output_format === "task_splitting"
-                  ? "text-violet-600 dark:text-violet-400"
-                  : "text-emerald-600 dark:text-emerald-400"
-              }`} fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <AlertDescription className={
-                stage.output_format === "task_splitting"
-                  ? "text-violet-800 dark:text-violet-300"
-                  : "text-emerald-800 dark:text-emerald-300"
-              }>
-                {stage.output_format === "task_splitting"
-                  ? "Task Split Successfully"
-                  : stage.output_format === "research"
-                  ? "Research Complete"
-                  : (() => {
-                      const out = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
-                      try {
-                        const p = JSON.parse(out);
-                        if (p.findings && Array.isArray(p.findings)) return "Review Complete";
-                      } catch { /* not JSON */ }
-                      return latestExecution.attempt_number > 1 ? "Findings Applied" : "Review Complete";
-                    })()}
-              </AlertDescription>
-            </Alert>
+            <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                stage.output_format === "task_splitting" ? "bg-violet-500" : "bg-emerald-500"
+              }`} />
+              {stage.output_format === "task_splitting"
+                ? "Task Split Successfully"
+                : stage.output_format === "research"
+                ? "Research Complete"
+                : (() => {
+                    const out = latestExecution.parsed_output ?? latestExecution.raw_output ?? "";
+                    try {
+                      const p = JSON.parse(out);
+                      if (p.findings && Array.isArray(p.findings)) return "Review Complete";
+                    } catch { /* not JSON */ }
+                    return latestExecution.attempt_number > 1 ? "Findings Applied" : "Review Complete";
+                  })()}
+            </div>
           )}
 
           <StageOutput
@@ -570,33 +657,41 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
             </div>
           )}
 
-          {/* Insert Stage button */}
-          {activeProject && (() => {
-            const instances = getActiveTaskStageInstances();
-            const idx = instances.findIndex((s) => s.task_stage_id === sid);
-            const next = idx >= 0 ? instances[idx + 1] ?? null : null;
-            return (
-              <InsertStageButton
-                taskId={task.id}
-                projectId={activeProject.id}
-                currentSortOrder={stage.sort_order}
-                nextSortOrder={next?.sort_order ?? null}
-              />
-            );
-          })()}
+          {/* Stage approved but no next stage chosen yet — show selector so user can continue */}
+          {isCurrentStage && !isTerminalStage && task.status !== "completed" && task.status !== "split" && (
+            <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
+              {nextStageSelectorNode}
+              <Button
+                variant="success"
+                onClick={async () => {
+                  const nextId = effectiveNextTemplateId;
+                  if (!nextId || !task) return;
+                  setApproving(true);
+                  try {
+                    await chooseNextStage(task, stage, nextId);
+                  } catch (err) {
+                    logger.error("Failed to advance stage:", err);
+                    setStageError(err instanceof Error ? err.message : String(err));
+                    setApproving(false);
+                  }
+                }}
+                disabled={approving || loadingNextSuggestion || !effectiveNextTemplateId}
+              >
+                {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {approving ? "Continuing..." : "Continue"}
+              </Button>
+            </div>
+          )}
+
         </div>
       )}
 
       {/* COMMITTED BADGE */}
       {committedHash && isApproved && (
-        <Alert className="mb-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-          <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-          <AlertDescription className="text-emerald-700 dark:text-emerald-400">
-            Committed: <code className="font-mono">{committedHash}</code>
-          </AlertDescription>
-        </Alert>
+        <div className="mb-6 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          Committed <code className="font-mono text-foreground/70">{committedHash}</code>
+        </div>
       )}
 
       {/* RUNNING / AWAITING: live timeline */}
@@ -648,16 +743,38 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                 execution={latestExecution}
                 stage={stage}
                 onApprove={handleApprove}
-                onApproveWithStages={stage.output_format === "research" ? handleApproveWithStages : undefined}
                 onSubmitAnswers={handleSubmitAnswers}
                 onSplitTask={stage.output_format === "task_splitting" ? handleSplitTask : undefined}
                 isApproved={false}
-                stageTemplates={stage.output_format === "research" ? stageTemplates : undefined}
                 approving={approving}
+                nextStageSelector={isCurrentStage && !hasPendingQuestions ? nextStageSelectorNode : undefined}
+                nextStageLoading={isCurrentStage && !hasPendingQuestions ? loadingNextSuggestion : undefined}
               />
 
-              {/* Inline commit workflow */}
-              {isCurrentStage && (
+              {/* Next stage selector + approve button for formats that don't embed them internally.
+                  Plan, research, and findings render these inside their own UI via props.
+                  Commit stages render the selector above CommitWorkflow below. */}
+              {isCurrentStage && !hasPendingQuestions && !stage.commits_changes
+                && stage.output_format !== "plan" && stage.output_format !== "research"
+                && stage.output_format !== "findings"
+                && (
+                <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
+                  {nextStageSelectorNode}
+                  {!outputHasOwnActionButton && (
+                    <Button
+                      variant="success"
+                      onClick={() => handleApprove()}
+                      disabled={approving || loadingNextSuggestion}
+                    >
+                      {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {approving ? "Approving..." : "Approve & Continue"}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Inline commit workflow — only for stages that modify files */}
+              {isCurrentStage && !!stage.commits_changes && (
                 <CommitWorkflow
                   pendingCommit={pendingCommit}
                   stageId={sid}
@@ -673,6 +790,8 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                   commitPrepTimedOut={commitPrepTimedOut}
                   onAskAgentToFix={handleCommitFix}
                   agentFixRunning={isRunning}
+                  nextStageSelector={!hasPendingQuestions ? nextStageSelectorNode : undefined}
+                  nextStageLoading={!hasPendingQuestions ? (loadingNextSuggestion || !effectiveNextTemplateId) : undefined}
                 />
               )}
 
@@ -686,12 +805,12 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
               {isCurrentStage && (
                 <div className="flex items-start gap-3 mt-4">
                   {!showFeedback && (
-                    <Button
-                      variant="outline"
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setShowFeedback(true)}
                     >
-                      Redo with Feedback
-                    </Button>
+                      💩 Not great? Redo with feedback
+                    </button>
                   )}
                   {showFeedback && (
                     <div className="flex-1 max-w-lg">
@@ -732,14 +851,15 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                 </Alert>
               )}
               {isCurrentStage && (
-                <Button
-                  variant="warning"
-                  onClick={handleRun}
-                  disabled={isRunning}
-                  className="mt-4"
-                >
-                  Retry
-                </Button>
+                <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
+                  <Button
+                    variant="warning"
+                    onClick={handleRun}
+                    disabled={isRunning}
+                  >
+                    Retry
+                  </Button>
+                </div>
               )}
             </div>
           )}

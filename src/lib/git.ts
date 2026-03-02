@@ -43,6 +43,14 @@ export async function gitCommit(workingDir: string, message: string): Promise<st
   return runGit(workingDir, "commit", "-m", message);
 }
 
+export async function gitStash(workingDir: string): Promise<string> {
+  return runGit(workingDir, "stash", "--include-untracked");
+}
+
+export async function gitStashPop(workingDir: string): Promise<string> {
+  return runGit(workingDir, "stash", "pop");
+}
+
 export async function gitCreateBranch(workingDir: string, name: string): Promise<string> {
   return runGit(workingDir, "checkout", "-b", name);
 }

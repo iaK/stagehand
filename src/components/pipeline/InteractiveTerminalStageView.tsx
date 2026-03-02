@@ -5,7 +5,7 @@ import { useProcessStore, stageKey } from "../../stores/processStore";
 import { spawnPty, writeToPty, resizePty, killPty, spawnAgent } from "../../lib/agent";
 import { parseAgentStreamLine } from "../../lib/agentParsers";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { generatePendingCommit, useStageExecution, shouldAutoStartStage } from "../../hooks/useStageExecution";
+import { generatePendingCommit, useStageExecution } from "../../hooks/useStageExecution";
 import * as repo from "../../lib/repositories";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "../../lib/notifications";
@@ -16,8 +16,9 @@ import { CommitWorkflow } from "./CommitWorkflow";
 import { gitAdd, gitCommit } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ClipboardCopy } from "lucide-react";
-import type { TaskStageInstance, PtyEvent, AgentStreamEvent } from "../../lib/types";
+import type { TaskStageInstance, PtyEvent, AgentStreamEvent, CompletionStrategy } from "../../lib/types";
 
 /**
  * InteractiveTerminalStageView — self-contained stage component (same pattern
@@ -48,7 +49,8 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const task = storeTask ?? taskCacheRef.current;
   const executions = useTaskStore((s) => s.executions);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
-  const { runStage } = useStageExecution();
+  const stageTemplates = useTaskStore((s) => s.stageTemplates);
+  const { suggestNextStage, chooseNextStage } = useStageExecution();
   const sid = stage.task_stage_id;
   const pendingCommit = useProcessStore((s) => s.pendingCommit);
   const noChangesToCommit = useProcessStore((s) => s.noChangesStageId === sid);
@@ -60,6 +62,87 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  const cachedSuggestion = useProcessStore((s) => s.stageSuggestions[sid]);
+  const [loadingNextSuggestion, setLoadingNextSuggestion] = useState(false);
+  const [nextSuggestionReason, setNextSuggestionReason] = useState<string | null>(cachedSuggestion?.reason ?? null);
+  const [selectedNextTemplateId, setSelectedNextTemplateId] = useState<string | null>(cachedSuggestion?.suggestedTemplateId ?? null);
+  const TERMINAL_FORMATS = ["pr_preparation", "pr_review", "merge"] as const;
+  const isTerminalStage = (TERMINAL_FORMATS as readonly string[]).includes(stage.output_format);
+  const terminalNextTemplateId = useMemo(() => {
+    if (stage.output_format === "pr_preparation") {
+      return stageTemplates.find((t) => t.output_format === "pr_review")?.id ?? null;
+    }
+    return null;
+  }, [stage.output_format, stageTemplates]);
+  const selectableTemplates = useMemo(() => {
+    if (isTerminalStage) return [];
+    return stageTemplates.filter(
+      (t) =>
+        !(TERMINAL_FORMATS as readonly string[]).includes(t.output_format) &&
+        t.output_format !== "research",
+    );
+  }, [stageTemplates, isTerminalStage]);
+
+  // "Finish task" maps to the terminal stage based on project completion strategy
+  const FINISH_TASK_VALUE = "__finish__";
+  const [completionStrategy, setCompletionStrategy] = useState<CompletionStrategy>("pr");
+  useEffect(() => {
+    if (activeProject) {
+      repo.getCompletionStrategy(activeProject.id).then(setCompletionStrategy);
+    }
+  }, [activeProject?.id]);
+  const finishTemplateId = useMemo(() => {
+    if (completionStrategy === "merge") {
+      return stageTemplates.find((t) => t.output_format === "merge")?.id ?? null;
+    }
+    return stageTemplates.find((t) => t.output_format === "pr_preparation")?.id ?? null;
+  }, [completionStrategy, stageTemplates]);
+  const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
+    ? finishTemplateId
+    : selectedNextTemplateId;
+
+  const nextStageSelectorNode = isTerminalStage ? null : (
+    <div className="my-3">
+      <label className="text-xs font-medium text-foreground">Next Stage</label>
+      {loadingNextSuggestion ? (
+        <p className="mt-1 text-xs text-muted-foreground">Analyzing...</p>
+      ) : (
+        <>
+          <Select
+            value={selectedNextTemplateId ?? ""}
+            onValueChange={(value) => setSelectedNextTemplateId(value || null)}
+          >
+            <SelectTrigger className="mt-1 h-8 text-sm w-full">
+              <SelectValue placeholder="Select next stage..." />
+            </SelectTrigger>
+            <SelectContent className="max-w-[360px]">
+              {selectableTemplates.map((t) => (
+                <SelectItem key={t.id} value={t.id} description={t.description ?? undefined}>
+                  {t.name}
+                </SelectItem>
+              ))}
+              {finishTemplateId && (
+                <>
+                  <SelectSeparator />
+                  <SelectItem
+                    value={FINISH_TASK_VALUE}
+                    description={completionStrategy === "merge"
+                      ? "Merge changes into the base branch"
+                      : "Prepare and create a pull request"}
+                  >
+                    Finish task ({completionStrategy === "merge" ? "merge" : "PR"})
+                  </SelectItem>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+          {nextSuggestionReason && (
+            <p className="mt-1 text-xs text-muted-foreground">{nextSuggestionReason}</p>
+          )}
+        </>
+      )}
+    </div>
+  );
 
   // Only refresh the global executions store if this is the active task,
   // to avoid overwriting another task's data when this component is hidden
@@ -80,6 +163,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     .filter((e) => e.task_stage_id === sid)
     .sort((a, b) => b.attempt_number - a.attempt_number)[0] ?? null;
   const isApproved = latestExecution?.status === "approved";
+  const isCurrentStage = !!task && task.current_stage_id === sid;
 
   // Sync commit message from pending commit
   useEffect(() => {
@@ -103,6 +187,30 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       useProcessStore.getState().unregisterPtySession(key);
     };
   }, [taskId, sid]);
+
+  // Pre-fetch next stage suggestion while awaiting commit / user review
+  const isAwaitingAction = sessionState === "awaiting_commit" || isApproved;
+  useEffect(() => {
+    if (!task || !isCurrentStage || !isAwaitingAction || isTerminalStage || task.status === "completed" || task.status === "split") return;
+    const cached = useProcessStore.getState().stageSuggestions[sid];
+    if (cached) return;
+    let cancelled = false;
+    setLoadingNextSuggestion(true);
+    setNextSuggestionReason(null);
+    suggestNextStage(task, stage)
+      .then((result) => {
+        if (cancelled) return;
+        const suggestion = { suggestedTemplateId: result.suggestedTemplateId ?? null, reason: result.reason ?? null };
+        useProcessStore.getState().setStageSuggestion(sid, suggestion);
+        setSelectedNextTemplateId(suggestion.suggestedTemplateId);
+        setNextSuggestionReason(suggestion.reason);
+      })
+      .catch((err) => logger.error("Failed to suggest next stage:", err))
+      .finally(() => {
+        if (!cancelled) setLoadingNextSuggestion(false);
+      });
+    return () => { cancelled = true; };
+  }, [task?.id, isAwaitingAction, isCurrentStage, task?.status, stage.task_stage_id, suggestNextStage]);
 
   const handleCopyPastStepOutput = useCallback(async () => {
     if (!activeProject || !task) return;
@@ -425,37 +533,12 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         taskId: task.id,
       });
 
-      // Advance to next stage using DB-backed instances so stale in-memory
-      // placeholders don't incorrectly mark the task as complete.
-      const realStages = await repo.getTaskStageInstances(activeProject.id, task.id);
-      useTaskStore.setState((state) => ({
-        taskStages: { ...state.taskStages, [task.id]: realStages },
-      }));
-      const nextStage = realStages
-        .filter((s) => s.sort_order > stage.sort_order)
-        .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
-
-      if (nextStage) {
-        await useTaskStore.getState().updateTask(activeProject.id, task.id, {
-          current_stage_id: nextStage.task_stage_id,
-        });
-
-        // Auto-start next stage if it doesn't require user input
-        if (shouldAutoStartStage(nextStage)) {
-          const freshTask = useTaskStore.getState().activeTask;
-          if (freshTask && freshTask.id === task.id) {
-            runStage(freshTask, nextStage).catch((err) => {
-              logger.error("Auto-start next stage failed:", err);
-            });
-          }
-        }
-      } else {
-        await useTaskStore.getState().updateTask(activeProject.id, task.id, {
-          status: "completed",
-        });
-      }
-
       await safeLoadExecutions(activeProject.id, task.id);
+      // Advance to selected next stage in one action
+      const nextId = isTerminalStage ? terminalNextTemplateId : effectiveNextTemplateId;
+      if (nextId !== null || isTerminalStage) {
+        await chooseNextStage(task, stage, nextId);
+      }
       setSessionState("completed");
     } catch (err) {
       logger.error("Failed to approve interactive terminal stage:", err);
@@ -610,6 +693,8 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
           onApprove={handleApprove}
           approving={approving}
           commitPrepTimedOut={false}
+          nextStageSelector={!isTerminalStage ? nextStageSelectorNode : undefined}
+          nextStageLoading={!isTerminalStage ? (loadingNextSuggestion || !effectiveNextTemplateId) : undefined}
         />
       </div>
     );

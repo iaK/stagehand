@@ -44,21 +44,28 @@ server.tool(
   async () => {
     const rows = db
       .prepare(
-        `SELECT st.name, se.stage_summary
-         FROM stage_executions se
-         JOIN stage_templates st ON se.stage_template_id = st.id
-         WHERE se.task_id = ? AND se.status = 'approved'
-           AND se.stage_result IS NOT NULL AND se.stage_result != ''
-         ORDER BY st.sort_order ASC`,
+        `SELECT stage_name, stage_summary FROM (
+           SELECT st.name AS stage_name, se.stage_summary, ts.sort_order AS so
+           FROM stage_executions se
+           JOIN task_stages ts ON se.task_stage_id = ts.id
+           JOIN stage_templates st ON ts.stage_template_id = st.id
+           WHERE se.task_id = ? AND se.status = 'approved'
+             AND se.stage_result IS NOT NULL AND se.stage_result != ''
+           UNION ALL
+           SELECT 'Research' AS stage_name, se.stage_summary, -1 AS so
+           FROM stage_executions se
+           WHERE se.task_id = ? AND se.task_stage_id IS NULL AND se.status = 'approved'
+             AND se.stage_result IS NOT NULL AND se.stage_result != ''
+         ) ORDER BY so ASC`,
       )
-      .all(taskId);
+      .all(taskId, taskId);
 
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
-            rows.map((r) => ({ name: r.name, summary: r.stage_summary || "" })),
+            rows.map((r) => ({ name: r.stage_name, summary: r.stage_summary || "" })),
             null,
             2,
           ),
@@ -73,17 +80,30 @@ server.tool(
   "Get the full output (stage_result) of a completed stage by name.",
   { stage_name: z.string().describe("The name of the stage to retrieve output for") },
   async ({ stage_name }) => {
-    const row = db
-      .prepare(
-        `SELECT se.stage_result
-         FROM stage_executions se
-         JOIN stage_templates st ON se.stage_template_id = st.id
-         WHERE se.task_id = ? AND st.name = ? AND se.status = 'approved'
-           AND se.stage_result IS NOT NULL AND se.stage_result != ''
-         ORDER BY se.attempt_number DESC
-         LIMIT 1`,
-      )
-      .get(taskId, stage_name);
+    // Research stages have task_stage_id IS NULL, handle separately
+    const row = stage_name === "Research"
+      ? db
+          .prepare(
+            `SELECT se.stage_result
+             FROM stage_executions se
+             WHERE se.task_id = ? AND se.task_stage_id IS NULL AND se.status = 'approved'
+               AND se.stage_result IS NOT NULL AND se.stage_result != ''
+             ORDER BY se.attempt_number DESC
+             LIMIT 1`,
+          )
+          .get(taskId)
+      : db
+          .prepare(
+            `SELECT se.stage_result
+             FROM stage_executions se
+             JOIN task_stages ts ON se.task_stage_id = ts.id
+             JOIN stage_templates st ON ts.stage_template_id = st.id
+             WHERE se.task_id = ? AND st.name = ? AND se.status = 'approved'
+               AND se.stage_result IS NOT NULL AND se.stage_result != ''
+             ORDER BY se.attempt_number DESC
+             LIMIT 1`,
+          )
+          .get(taskId, stage_name);
 
     if (!row) {
       return {
