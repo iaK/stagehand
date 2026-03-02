@@ -11,6 +11,12 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import type { Task, Project } from "../types";
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({
+    setFocus: vi.fn(() => Promise.resolve()),
+  })),
+}));
+
 const mockIsPermissionGranted = vi.mocked(isPermissionGranted);
 const mockRequestPermission = vi.mocked(requestPermission);
 const mockTauriSendNotification = vi.mocked(tauriSendNotification);
