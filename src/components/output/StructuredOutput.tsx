@@ -101,7 +101,6 @@ export function StructuredOutput({
 
       {!isApproved && (
         <Button
-          variant="success"
           onClick={() => onSubmit(fields)}
           disabled={!allFieldsFilled || approving}
           className="mt-4"

@@ -3,7 +3,6 @@ import { TextOutput } from "./TextOutput";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import type { FindingItem } from "../../lib/types";
 
@@ -53,7 +52,7 @@ export function FindingsOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={onSkipAll} disabled={approving} className="mt-4">
+          <Button onClick={onSkipAll} disabled={approving} className="mt-4">
             {approving && <Loader2 className="w-4 h-4 animate-spin" />}
             {approving ? "Approving..." : "Approve & Continue"}
           </Button>
@@ -69,18 +68,16 @@ export function FindingsOutput({
       <div>
         <TextOutput content={summary} />
         {!isApproved && (
-          <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-            <AlertDescription className="text-emerald-800 dark:text-emerald-300">
-              <p className="text-sm font-medium mb-3">
+          <div className="mt-6 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
+              <p className="text-sm font-medium">
                 No findings — everything looks good.
               </p>
               {nextStageSelector}
-              <Button variant="success" onClick={onSkipAll} disabled={approving || nextStageLoading}>
+              <Button onClick={onSkipAll} disabled={approving || nextStageLoading}>
                 {approving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {approving ? "Approving..." : "Approve & Continue"}
               </Button>
-            </AlertDescription>
-          </Alert>
+          </div>
         )}
       </div>
     );
@@ -212,7 +209,6 @@ function FindingsCards({
       {!isApproved && (
         <div className="flex items-center gap-3 mt-4">
           <Button
-            variant="success"
             onClick={handleApply}
             disabled={selectedCount === 0 || applying}
           >

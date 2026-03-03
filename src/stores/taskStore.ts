@@ -224,6 +224,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           stage_template_id: research.id,
           agent_override: null,
           model_override: null,
+          suggested_next_template_id: null,
+          suggestion_reason: null,
         }];
       }
       return [];
@@ -246,7 +248,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       // committedStages is keyed by bare stage.id; stale entries from the
       // previous task prevent both commit generation and the timeout fallback,
       // leaving the UI permanently stuck on "Preparing commit...".
-      useProcessStore.setState({ committedStages: {}, mergeStages: {}, stageSuggestions: {} });
+      useProcessStore.setState({ committedStages: {}, mergeStages: {} });
     }
     set({ activeTask: task, executions: [] });
   },

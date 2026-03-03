@@ -44,6 +44,8 @@ const MIGRATIONS: Migration[] = [
   { version: 17, name: "strip_json_from_prompts", fn: migrateStripJsonFromPrompts },
   { version: 18, name: "task_stage_instances", fn: migrateTaskStageInstances },
   { version: 19, name: "task_lifecycle", fn: migrateTaskLifecycle },
+  { version: 20, name: "stage_suggestion_cache", fn: migrateStageSuggestionCache },
+  { version: 21, name: "can_follow_graph", fn: migrateCanFollowGraph },
 ];
 
 /**
@@ -955,4 +957,38 @@ async function migrateTaskLifecycle(db: Database): Promise<void> {
 
   // Backfill: archived=1 → lifecycle='archived'
   await db.execute(`UPDATE tasks SET lifecycle = 'archived' WHERE archived = 1 AND lifecycle = 'active'`);
+}
+
+async function migrateStageSuggestionCache(db: Database): Promise<void> {
+  await db.execute(`ALTER TABLE task_stages ADD COLUMN suggested_next_template_id TEXT DEFAULT NULL`).catch(() => {});
+  await db.execute(`ALTER TABLE task_stages ADD COLUMN suggestion_reason TEXT DEFAULT NULL`).catch(() => {});
+}
+
+const CAN_FOLLOW_MAP: Record<string, string[] | null> = {
+  "Research": null,
+  "Task Splitting": ["Research"],
+  "High-Level Approaches": ["Research", "Task Splitting"],
+  "Planning": ["High-Level Approaches", "Research", "Task Splitting"],
+  "Second Opinion": ["Planning"],
+  "Guided Implementation": ["Planning", "Second Opinion", "Research", "Task Splitting"],
+  "Implementation": ["Planning", "Second Opinion", "Research", "Task Splitting"],
+  "Refinement": ["Implementation", "Guided Implementation"],
+  "Security Review": ["Implementation", "Guided Implementation", "Refinement"],
+  "Documentation": ["Implementation", "Guided Implementation", "Refinement", "Security Review"],
+  "PR Preparation": ["Implementation", "Guided Implementation", "Refinement", "Security Review", "Documentation"],
+  "PR Review": ["PR Preparation"],
+  "Merge": ["Implementation", "Guided Implementation", "Refinement", "Security Review", "Documentation"],
+};
+
+async function migrateCanFollowGraph(db: Database): Promise<void> {
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN can_follow TEXT`).catch(() => {});
+
+  const now = new Date().toISOString();
+  for (const [name, canFollow] of Object.entries(CAN_FOLLOW_MAP)) {
+    if (canFollow === null) continue; // null means "any" — no need to set
+    await db.execute(
+      `UPDATE stage_templates SET can_follow = $1, updated_at = $2 WHERE name = $3 AND can_follow IS NULL`,
+      [JSON.stringify(canFollow), now, name],
+    );
+  }
 }

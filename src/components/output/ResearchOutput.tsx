@@ -56,7 +56,7 @@ export function ResearchOutput({
       <div>
         <TextOutput content={output} />
         {!isApproved && (
-          <Button variant="success" onClick={() => onApprove()} disabled={approving || nextStageLoading} className="mt-4">
+          <Button onClick={() => onApprove()} disabled={approving || nextStageLoading} className="mt-4">
             {approving && <Loader2 className="w-4 h-4 animate-spin" />}
             {approving ? "Approving..." : "Approve & Continue"}
           </Button>
@@ -110,8 +110,7 @@ function SimpleApproveWithBranch({
   const { branchName, setBranchName, baseBranch, setBaseBranch, loading } = useBranchFields();
 
   return (
-    <Alert className="mt-6 border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
-      <AlertDescription className="text-emerald-800 dark:text-emerald-300">
+    <div className="mt-6 p-4 bg-muted/50 border border-border rounded-lg">
         <p className="text-sm font-medium mb-3">
           Research complete — no further questions.
         </p>
@@ -124,7 +123,6 @@ function SimpleApproveWithBranch({
         />
         {nextStageSelector}
         <Button
-          variant="success"
           onClick={() => onApprove(undefined, branchName, baseBranch)}
           disabled={approving || !branchName.trim() || nextStageLoading}
           className="mt-3"
@@ -132,8 +130,7 @@ function SimpleApproveWithBranch({
           {approving && <Loader2 className="w-4 h-4 animate-spin" />}
           {approving ? "Approving..." : "Approve & Continue"}
         </Button>
-      </AlertDescription>
-    </Alert>
+    </div>
   );
 }
 
@@ -187,6 +184,13 @@ function StageSelectionPanel({
       if ((SPECIAL_TERMINAL_FORMATS as readonly string[]).includes(t.output_format)) {
         terminal.push(t);
       } else {
+        // Filter by can_follow: only show stages that can follow Research
+        if (t.can_follow) {
+          try {
+            const canFollow: string[] = JSON.parse(t.can_follow);
+            if (!canFollow.includes("Research")) continue;
+          } catch { /* allow on parse error */ }
+        }
         middle.push(t);
       }
     }
@@ -319,7 +323,7 @@ function StageSelectionPanel({
         })}
       </div>
 
-      <Button variant="success" onClick={handleApprove} disabled={selectedCount === 0 || approving || !branchName.trim()}>
+      <Button onClick={handleApprove} disabled={selectedCount === 0 || approving || !branchName.trim()}>
         {approving && <Loader2 className="w-4 h-4 animate-spin" />}
         {approving ? "Approving..." : "Approve & Continue"}
       </Button>

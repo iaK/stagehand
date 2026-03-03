@@ -464,7 +464,6 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
               onClick={handleFixCommit}
               disabled={fixCommitting || !fixCommitMessage.trim()}
               size="sm"
-              variant="success"
             >
               {fixCommitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {fixCommitting ? "Committing..." : "Commit & Retry Merge"}

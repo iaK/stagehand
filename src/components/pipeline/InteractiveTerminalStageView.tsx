@@ -642,7 +642,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleFinish} size="sm" variant="success">
+          <Button onClick={handleFinish} size="sm">
             Finish Session
           </Button>
           <Button onClick={handleStop} size="sm" variant="outline">

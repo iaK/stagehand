@@ -303,6 +303,7 @@ export function StageTemplateEditorContent() {
         allowed_tools: null,
         requires_user_input: 0,
         agent: null,
+        can_follow: null,
       });
       setSelectedId(created.id);
     } catch (err) {

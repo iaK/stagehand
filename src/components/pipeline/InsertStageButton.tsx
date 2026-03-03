@@ -18,6 +18,8 @@ interface InsertStageButtonProps {
   currentSortOrder: number;
   /** sort_order of the next stage, or null if at end */
   nextSortOrder: number | null;
+  /** name of the current stage, used to filter by can_follow */
+  currentStageName?: string;
 }
 
 export function InsertStageButton({
@@ -25,6 +27,7 @@ export function InsertStageButton({
   projectId,
   currentSortOrder,
   nextSortOrder,
+  currentStageName,
 }: InsertStageButtonProps) {
   const stageTemplates = useTaskStore((s) => s.stageTemplates);
   const insertTaskStage = useTaskStore((s) => s.insertTaskStage);
@@ -34,12 +37,18 @@ export function InsertStageButton({
   const [inserting, setInserting] = useState(false);
 
   const insertableTemplates = useMemo(
-    () => stageTemplates.filter((t) =>
-      !NON_INSERTABLE_FORMATS.has(t.output_format) &&
-      !t.is_terminal &&
-      !t.triggers_stage_selection
-    ),
-    [stageTemplates],
+    () => stageTemplates.filter((t) => {
+      if (NON_INSERTABLE_FORMATS.has(t.output_format)) return false;
+      if (t.is_terminal || t.triggers_stage_selection) return false;
+      if (currentStageName && t.can_follow) {
+        try {
+          const canFollow: string[] = JSON.parse(t.can_follow);
+          if (!canFollow.includes(currentStageName)) return false;
+        } catch { /* allow on parse error */ }
+      }
+      return true;
+    }),
+    [stageTemplates, currentStageName],
   );
 
   const handleInsert = useCallback(async () => {

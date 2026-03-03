@@ -103,6 +103,8 @@ export async function initProjectSchema(db: Database): Promise<void> {
       sort_order INTEGER NOT NULL,
       agent_override TEXT DEFAULT NULL,
       model_override TEXT DEFAULT NULL,
+      suggested_next_template_id TEXT DEFAULT NULL,
+      suggestion_reason TEXT DEFAULT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id),
       FOREIGN KEY (stage_template_id) REFERENCES stage_templates(id)
     )
@@ -143,6 +145,9 @@ export async function initProjectSchema(db: Database): Promise<void> {
 
   // Add agent column for per-stage agent override
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN agent TEXT`).catch(() => {});
+
+  // Add can_follow column for stage transition graph
+  await db.execute(`ALTER TABLE stage_templates ADD COLUMN can_follow TEXT`).catch(() => {});
 
   // Migrate old completion strategy values
   await db.execute("UPDATE settings SET value = 'merge' WHERE key = 'default_completion_strategy' AND value = 'direct_merge'").catch(() => {});

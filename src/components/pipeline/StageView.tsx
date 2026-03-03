@@ -69,9 +69,13 @@ export function StageView({ stage, taskId }: StageViewProps) {
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const cachedSuggestion = useProcessStore((s) => s.stageSuggestions[sid]);
+  // Seed from in-memory cache first, then fall back to DB-persisted suggestion
+  const initialSuggestion = cachedSuggestion ?? (
+    stage.suggested_next_template_id ? { suggestedTemplateId: stage.suggested_next_template_id, reason: stage.suggestion_reason } : null
+  );
   const [loadingNextSuggestion, setLoadingNextSuggestion] = useState(false);
-  const [nextSuggestionReason, setNextSuggestionReason] = useState<string | null>(cachedSuggestion?.reason ?? null);
-  const [selectedNextTemplateId, setSelectedNextTemplateId] = useState<string | null>(cachedSuggestion?.suggestedTemplateId ?? null);
+  const [nextSuggestionReason, setNextSuggestionReason] = useState<string | null>(initialSuggestion?.reason ?? null);
+  const [selectedNextTemplateId, setSelectedNextTemplateId] = useState<string | null>(initialSuggestion?.suggestedTemplateId ?? null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [commitPrepTimedOut, setCommitPrepTimedOut] = useState(false);
   // Terminal output formats whose next stage is fixed (not user-selectable)
@@ -482,8 +486,17 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   const readyForSuggestion = (isAwaitingUser && !hasPendingQuestions) || isApproved;
   useEffect(() => {
     if (!task || !isCurrentStage || !readyForSuggestion || isTerminalStage || task.status === "completed" || task.status === "split") return;
+    // Check in-memory cache first, then DB-persisted suggestion
     const cached = useProcessStore.getState().stageSuggestions[sid];
     if (cached) return;
+    if (stage.suggested_next_template_id) {
+      // Restore from DB into in-memory cache
+      const dbSuggestion = { suggestedTemplateId: stage.suggested_next_template_id, reason: stage.suggestion_reason };
+      useProcessStore.getState().setStageSuggestion(sid, dbSuggestion);
+      setSelectedNextTemplateId(dbSuggestion.suggestedTemplateId);
+      setNextSuggestionReason(dbSuggestion.reason);
+      return;
+    }
     let cancelled = false;
     setLoadingNextSuggestion(true);
     setNextSuggestionReason(null);
@@ -494,6 +507,10 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
         useProcessStore.getState().setStageSuggestion(sid, suggestion);
         setSelectedNextTemplateId(suggestion.suggestedTemplateId);
         setNextSuggestionReason(suggestion.reason);
+        // Persist to DB so it survives task/project switches
+        if (activeProject) {
+          repo.saveStageSuggestion(activeProject.id, sid, suggestion.suggestedTemplateId, suggestion.reason).catch(() => {});
+        }
       })
       .catch((err) => {
         logger.error("Failed to suggest next stage:", err);
@@ -512,12 +529,18 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   //   next stages; the AI suggestion handles routing to them.
   const selectableTemplates = useMemo(() => {
     if (isTerminalStage) return [];
-    return stageTemplates.filter(
-      (t) =>
-        !(TERMINAL_FORMATS as readonly string[]).includes(t.output_format) &&
-        t.output_format !== "research",
-    );
-  }, [stageTemplates, isTerminalStage]);
+    return stageTemplates.filter((t) => {
+      if ((TERMINAL_FORMATS as readonly string[]).includes(t.output_format)) return false;
+      if (t.output_format === "research") return false;
+      if (!t.can_follow) return true; // null = no restriction
+      try {
+        const canFollow: string[] = JSON.parse(t.can_follow);
+        return canFollow.includes(stage.name);
+      } catch {
+        return true;
+      }
+    });
+  }, [stageTemplates, isTerminalStage, stage.name]);
 
   // Resolve the effective template ID: FINISH_TASK_VALUE maps to the terminal stage
   const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
@@ -525,7 +548,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     : selectedNextTemplateId;
 
   const nextStageSelectorNode = isTerminalStage ? null : (
-    <div className="my-3">
+    <div className="mb-3">
       <label className="text-xs font-medium text-foreground">Next Stage</label>
       {loadingNextSuggestion ? (
         <p className="mt-1 text-xs text-muted-foreground">Analyzing...</p>
@@ -560,7 +583,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
             </SelectContent>
           </Select>
           {nextSuggestionReason && (
-            <p className="mt-1 text-xs text-muted-foreground">{nextSuggestionReason}</p>
+            <p className="mt-3 mb-2 text-xs text-muted-foreground italic border-l-2 border-border pl-2">{nextSuggestionReason}</p>
           )}
         </>
       )}
@@ -662,7 +685,6 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
             <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
               {nextStageSelectorNode}
               <Button
-                variant="success"
                 onClick={async () => {
                   const nextId = effectiveNextTemplateId;
                   if (!nextId || !task) return;
@@ -762,7 +784,6 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                   {nextStageSelectorNode}
                   {!outputHasOwnActionButton && (
                     <Button
-                      variant="success"
                       onClick={() => handleApprove()}
                       disabled={approving || loadingNextSuggestion}
                     >

@@ -128,7 +128,6 @@ export function ChecklistOutput({
 
       {!isApproved && (
         <Button
-          variant="success"
           onClick={() => onComplete(items)}
           disabled={!allChecked || approving}
           className="mt-4"

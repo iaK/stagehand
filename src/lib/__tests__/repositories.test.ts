@@ -42,6 +42,8 @@ function makeTaskStageInstance(overrides?: Partial<TaskStageInstance>): TaskStag
     stage_template_id: template.id,
     agent_override: overrides?.agent_override ?? null,
     model_override: overrides?.model_override ?? null,
+    suggested_next_template_id: overrides?.suggested_next_template_id ?? null,
+    suggestion_reason: overrides?.suggestion_reason ?? null,
   };
 }
 

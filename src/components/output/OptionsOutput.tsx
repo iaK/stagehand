@@ -92,7 +92,6 @@ export function OptionsOutput({
 
       {!isApproved && (
         <Button
-          variant="success"
           onClick={handleSelect}
           disabled={!selectedId || approving}
           className="mt-4"

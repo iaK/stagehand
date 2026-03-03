@@ -87,7 +87,6 @@ export function CommitWorkflow({
                 onClick={onCommit}
                 disabled={committing || !commitMessage.trim() || nextStageLoading}
                 size="sm"
-                variant="success"
               >
                 {committing && <Loader2 className="w-4 h-4 animate-spin" />}
                 {committing ? "Committing..." : "Commit & Continue"}
@@ -114,7 +113,7 @@ export function CommitWorkflow({
       <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
         {nextStageSelector}
         <Button
-          variant="success"
+          variant="default"
           onClick={onApprove}
           disabled={approving || nextStageLoading}
         >
@@ -132,7 +131,7 @@ export function CommitWorkflow({
       <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
         {nextStageSelector}
         <Button
-          variant="success"
+          variant="default"
           onClick={onApprove}
           disabled={approving || nextStageLoading}
         >

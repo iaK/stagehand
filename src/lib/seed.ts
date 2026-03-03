@@ -41,6 +41,7 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep", "WebSearch", "WebFetch"]),
       requires_user_input: 1,
       agent: null,
+      can_follow: null,
     },
     {
       id: crypto.randomUUID(),
@@ -61,13 +62,14 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Research"]),
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "High-Level Approaches",
       description:
-        "Generate multiple implementation approaches based on the research.",
+        "Explore multiple implementation approaches and trade-offs.",
       sort_order: 2,
       prompt_template: APPROACHES_PROMPT,
       input_source: "previous_stage",
@@ -85,6 +87,7 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Research", "Task Splitting"]),
     },
     {
       id: crypto.randomUUID(),
@@ -105,13 +108,14 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["High-Level Approaches", "Research", "Task Splitting"]),
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "Second Opinion",
       description:
-        "Critique the implementation plan — identify risks, gaps, and improvements for the developer to select, then revise the plan.",
+        "Critique the plan — identify risks, gaps, and improvements, then revise.",
       sort_order: 4,
       prompt_template: SECOND_OPINION_PROMPT,
       input_source: "previous_stage",
@@ -149,13 +153,14 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Planning"]),
     },
     {
       id: crypto.randomUUID(),
       project_id: projectId,
       name: "Guided Implementation",
       description:
-        "Interactive agent session — you guide the AI step by step in a live terminal.",
+        "Interactive terminal session — you guide the AI step by step (alternative to Implementation).",
       sort_order: 5,
       prompt_template: "",
       input_source: "previous_stage",
@@ -169,6 +174,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Planning", "Second Opinion", "Research", "Task Splitting"]),
     },
     {
       id: crypto.randomUUID(),
@@ -189,6 +195,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null, // Full tool access
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Planning", "Second Opinion", "Research", "Task Splitting"]),
     },
     {
       id: crypto.randomUUID(),
@@ -209,6 +216,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Implementation", "Guided Implementation"]),
     },
     {
       id: crypto.randomUUID(),
@@ -229,6 +237,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement"]),
     },
     {
       id: crypto.randomUUID(),
@@ -249,6 +258,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement", "Security Review"]),
     },
     {
       id: crypto.randomUUID(),
@@ -272,6 +282,7 @@ export function getDefaultStageTemplates(
       allowed_tools: JSON.stringify(["Read", "Glob", "Grep"]),
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement", "Security Review", "Documentation"]),
     },
     {
       id: crypto.randomUUID(),
@@ -292,6 +303,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["PR Preparation"]),
     },
     {
       id: crypto.randomUUID(),
@@ -312,6 +324,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement", "Security Review", "Documentation"]),
     },
   ];
 }

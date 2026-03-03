@@ -8,6 +8,7 @@ import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
 import { TaskOverview } from "../task/TaskOverview";
 import { ProjectOverview } from "../project/ProjectOverview";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -50,7 +51,7 @@ export function PipelineView() {
   }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id, activeTaskStages]);
 
   const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
-  const [activeView, setActiveView] = useState<"overview" | "pipeline">("pipeline");
+  const [showOverview, setShowOverview] = useState(false);
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
 
@@ -228,11 +229,6 @@ export function PipelineView() {
     }
   }, [activeTaskId, currentStageId, filteredStages]);
 
-  // Reset tab view when task changes
-  useEffect(() => {
-    setActiveView("pipeline");
-  }, [activeTaskId]);
-
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
     const sk = activeTaskId && viewingStage ? stageKey(activeTaskId, viewingStage.task_stage_id) : null;
@@ -264,127 +260,125 @@ export function PipelineView() {
 
       {/* Header bar */}
       <div className="border-b border-border flex items-center h-[57px]" style={{ display: showPlaceholder ? "none" : undefined }}>
-        {/* Tab toggle */}
-        <div className="flex items-center gap-1 px-4">
-          <button
-            onClick={() => setActiveView("overview")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-              activeView === "overview"
-                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveView("pipeline")}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-              activeView === "pipeline"
-                ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-600"
-                : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-400"
-            }`}
-          >
-            Pipeline
-          </button>
-        </div>
-        {activeView === "pipeline" && (
-          <>
-            <div className="w-px h-6 bg-border" />
-            <PipelineStepper
-              stages={filteredStages}
-              currentStageId={currentStageId ?? null}
-              executions={executions}
-              onStageClick={setViewingStage}
-            />
-          </>
-        )}
-        {activeTask?.branch_name && (
-          <div className="ml-auto pr-4">
-            {activeTask.ejected ? (
-              <Button
-                size="sm"
-                onClick={() => setInjectDialogOpen(true)}
-                disabled={isAnyStageRunning}
-              >
-                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                </svg>
-                Inject
-              </Button>
-            ) : (
-              <span title={!activeTask.worktree_path ? "Run a pipeline stage first to create the worktree" : undefined}>
-                <Button
-                  size="sm"
-                  onClick={handleEjectClick}
-                  disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
-                >
-                  {checkingChanges ? (
-                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+        <PipelineStepper
+          stages={filteredStages}
+          currentStageId={currentStageId ?? null}
+          executions={executions}
+          onStageClick={setViewingStage}
+        />
+        <div className="ml-auto pr-4 flex items-center gap-1">
+          {activeTask?.branch_name && (
+            activeTask.ejected ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setInjectDialogOpen(true)}
+                    disabled={isAnyStageRunning}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                     </svg>
-                  )}
-                  Eject
-                </Button>
-              </span>
-            )}
-          </div>
-        )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Inject back to worktree</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span title={!activeTask.worktree_path ? "Run a pipeline stage first to create the worktree" : undefined}>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={handleEjectClick}
+                      disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
+                    >
+                      {checkingChanges ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        </svg>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Eject to main repo</TooltipContent>
+              </Tooltip>
+            )
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setShowOverview((v) => !v)}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{showOverview ? "Hide Overview" : "Show Overview"}</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Content */}
-      {showPlaceholder ? null : activeView === "overview" ? (
-        <div className="flex-1 overflow-y-auto">
-          <TaskOverview />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto relative">
-          {/* Layer 1: Persistent interactive terminals — survive navigation */}
-          {(() => {
-            // Build a de-duped map of interactive terminal sessions to render.
-            // Includes: the currently-viewed stage (if interactive_terminal) + all active PTY sessions.
-            const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
+      {showPlaceholder ? null : (
+        <div className="flex-1 flex min-h-0">
+          {/* Pipeline (always visible) */}
+          <div className="flex-1 overflow-y-auto relative">
+            {/* Layer 1: Persistent interactive terminals — survive navigation */}
+            {(() => {
+              const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
 
-            // Add all active PTY sessions
-            for (const [key, session] of Object.entries(activePtySessions)) {
-              persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
-            }
-
-            // Add the currently-viewed stage if it's an interactive terminal
-            if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
-              const key = stageKey(activeTaskId, viewingStage.task_stage_id);
-              if (!persistentTerminals.has(key)) {
-                persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
+              for (const [key, session] of Object.entries(activePtySessions)) {
+                persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
               }
-            }
 
-            const currentKey = activeTaskId && viewingStage
-              ? stageKey(activeTaskId, viewingStage.task_stage_id)
-              : null;
+              if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
+                const key = stageKey(activeTaskId, viewingStage.task_stage_id);
+                if (!persistentTerminals.has(key)) {
+                  persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
+                }
+              }
 
-            return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
-              const isVisible = activeView === "pipeline" && key === currentKey;
-              return (
-                <div
-                  key={`pty-${key}`}
-                  className="absolute inset-0"
-                  style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
-                >
-                  <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
-                </div>
-              );
-            });
-          })()}
+              const currentKey = activeTaskId && viewingStage
+                ? stageKey(activeTaskId, viewingStage.task_stage_id)
+                : null;
 
-          {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
-          {viewingStage ? (
-            viewingStage.output_format !== "interactive_terminal" ? (
-              <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
-            ) : null
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">No stage selected</p>
+              return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
+                const isVisible = key === currentKey;
+                return (
+                  <div
+                    key={`pty-${key}`}
+                    className="absolute inset-0"
+                    style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
+                  >
+                    <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
+            {viewingStage ? (
+              viewingStage.output_format !== "interactive_terminal" ? (
+                <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
+              ) : null
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-muted-foreground">No stage selected</p>
+              </div>
+            )}
+          </div>
+
+          {/* Overview panel (collapsible right side) */}
+          {showOverview && (
+            <div className="w-[400px] shrink-0 border-l border-border overflow-y-auto">
+              <TaskOverview />
             </div>
           )}
         </div>

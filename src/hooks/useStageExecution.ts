@@ -779,7 +779,16 @@ export function useStageExecution() {
       const activeTaskStages = await repo.getTaskStageInstances(activeProject.id, task.id);
       const activeStageNames = new Set(activeTaskStages.map((s) => s.name));
       const availableChoices = currentTemplates
-        .filter((t) => !TERMINAL_OUTPUT_FORMATS.has(t.output_format) && t.output_format !== "research")
+        .filter((t) => {
+          if (TERMINAL_OUTPUT_FORMATS.has(t.output_format) || t.output_format === "research") return false;
+          if (!t.can_follow) return true;
+          try {
+            const canFollow: string[] = JSON.parse(t.can_follow);
+            return canFollow.includes(stage.name);
+          } catch {
+            return true;
+          }
+        })
         .map((t) => `- ${t.name}${activeStageNames.has(t.name) ? " (already in pipeline)" : ""}`)
         .join("\n");
       const approvedSummaries = await repo.getApprovedStageSummaries(activeProject.id, task.id);

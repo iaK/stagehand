@@ -27,6 +27,7 @@ export interface StageTemplate {
   allowed_tools: string | null; // JSON array of tool names
   requires_user_input: number; // boolean: stage needs user input before running (shows input box)
   agent: string | null; // AI agent override: 'claude' | 'codex' | 'gemini' | 'amp' | 'opencode' | null (use project default)
+  can_follow: string | null; // JSON array of stage names this stage can follow, null = any
   result_mode?: string; // 'replace' | 'append' — added via migration, has DB default
   commits_changes?: number; // boolean — added via migration, has DB default
   creates_pr?: number; // boolean — added via migration, has DB default
@@ -49,6 +50,9 @@ export interface TaskStageInstance extends StageTemplate {
   /** Per-instance overrides (null = use template default) */
   agent_override: string | null;
   model_override: string | null;
+  /** Cached next-stage suggestion (persisted across sessions) */
+  suggested_next_template_id: string | null;
+  suggestion_reason: string | null;
 }
 
 export type TaskLifecycle = "active" | "paused" | "archived";

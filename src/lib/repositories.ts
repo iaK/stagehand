@@ -653,6 +653,7 @@ export async function getTaskStageInstances(
   return db.select<TaskStageInstance[]>(
     `SELECT ts.id as task_stage_id, ts.stage_template_id, ts.sort_order,
             ts.agent_override, ts.model_override,
+            ts.suggested_next_template_id, ts.suggestion_reason,
             st.id, st.project_id, st.name, st.description,
             st.prompt_template, st.input_source, st.output_format,
             st.output_schema, st.gate_rules, st.persona_name,
@@ -666,6 +667,19 @@ export async function getTaskStageInstances(
      WHERE ts.task_id = $1
      ORDER BY ts.sort_order ASC`,
     [taskId],
+  );
+}
+
+export async function saveStageSuggestion(
+  projectId: string,
+  taskStageId: string,
+  suggestedTemplateId: string | null,
+  reason: string | null,
+): Promise<void> {
+  const db = await getProjectDb(projectId);
+  await db.execute(
+    `UPDATE task_stages SET suggested_next_template_id = $1, suggestion_reason = $2 WHERE id = $3`,
+    [suggestedTemplateId, reason, taskStageId],
   );
 }
 

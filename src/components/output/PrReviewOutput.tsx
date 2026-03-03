@@ -114,7 +114,6 @@ export function PrReviewOutput({
           </Button>
           {!isCompleted && (
             <Button
-              variant="success"
               size="sm"
               onClick={() => {
                 if (pendingCount > 0) {
