@@ -144,7 +144,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
           await gitFetch(activeProject.path, defaultBr).catch(() => {});
         }
 
-        const diffBase = remote ? `origin/${defaultBr}` : defaultBr;
+        const diffBase = defaultBr;
         const files = await gitDiffNameOnly(workDir, diffBase).catch(() => [] as string[]);
         const stat = await gitDiffStatBranch(workDir, diffBase).catch(() => "");
 
