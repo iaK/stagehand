@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { useProjectStore } from "../../stores/projectStore";
 import { sendNotification } from "../../lib/notifications";
+import { resolveProjectLogo, LOGO_NONE } from "../../lib/projectLogo";
+import { ProjectAvatar } from "../layout/ProjectRail";
+import * as repo from "../../lib/repositories";
 
 import { StageTemplateEditorContent } from "../project/StageTemplateEditor";
 import { LinearSettingsContent } from "../linear/LinearSettings";
@@ -150,18 +154,76 @@ function SectionContent({
   }
 }
 
+const LOGO_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
+  "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b",
+];
+
+function resizeImageToDataUrl(src: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, 64, 64);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = src;
+  });
+}
+
+
 function ProjectSettings({ projectId }: { projectId: string }) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const archiveProject = useProjectStore((s) => s.archiveProject);
   const renameProject = useProjectStore((s) => s.renameProject);
+  const loadProjectLogos = useProjectStore((s) => s.loadProjectLogos);
   const [confirming, setConfirming] = useState(false);
   const [name, setName] = useState(activeProject?.name ?? "");
   const nameChanged = name.trim() !== "" && name.trim() !== activeProject?.name;
+
+  // Logo settings
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoColor, setLogoColor] = useState<string | null>(null);
+  const [logoInitials, setLogoInitials] = useState<string>("");
+  const [githubOwner, setGithubOwner] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [url, color, initials, owner] = await Promise.all([
+        repo.getProjectSetting(projectId, "logo_url"),
+        repo.getProjectSetting(projectId, "logo_color"),
+        repo.getProjectSetting(projectId, "logo_initials"),
+        repo.getProjectSetting(projectId, "github_repo_owner"),
+      ]);
+      if (cancelled) return;
+      setLogoUrl(url);
+      setLogoColor(color);
+      setLogoInitials(initials ?? "");
+      setGithubOwner(owner);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  const currentLogo = resolveProjectLogo({
+    logoUrl,
+    githubOwner,
+    projectName: activeProject?.name ?? "",
+    logoColor,
+    logoInitials: logoInitials || null,
+  });
+  const hasImageLogo = currentLogo.type === "custom" || currentLogo.type === "github";
 
   const handleRename = async () => {
     if (!nameChanged) return;
     await renameProject(projectId, name.trim());
     sendNotification("Project renamed", name.trim(), "success", { projectId });
+    loadProjectLogos();
   };
 
   const handleArchive = async () => {
@@ -169,6 +231,49 @@ function ProjectSettings({ projectId }: { projectId: string }) {
     await archiveProject(activeProject.id);
     sendNotification("Project archived", activeProject.name, "success", { projectId });
     setConfirming(false);
+  };
+
+  const saveLogoDataUrl = async (dataUrl: string) => {
+    setLogoUrl(dataUrl);
+    await repo.setProjectSetting(projectId, "logo_url", dataUrl);
+    loadProjectLogos();
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const dataUrl = await resizeImageToDataUrl(reader.result as string);
+        saveLogoDataUrl(dataUrl);
+      } catch { /* ignore bad image */ }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleRemoveLogo = async () => {
+    setLogoUrl(LOGO_NONE);
+    await repo.setProjectSetting(projectId, "logo_url", LOGO_NONE);
+    loadProjectLogos();
+  };
+
+  const handleColorChange = async (color: string) => {
+    setLogoColor(color);
+    await repo.setProjectSetting(projectId, "logo_color", color);
+    loadProjectLogos();
+  };
+
+  const handleInitialsChange = async (value: string) => {
+    const v = value.slice(0, 3).toUpperCase();
+    setLogoInitials(v);
+    if (v) {
+      await repo.setProjectSetting(projectId, "logo_initials", v);
+    } else {
+      await repo.deleteProjectSetting(projectId, "logo_initials");
+    }
+    loadProjectLogos();
   };
 
   return (
@@ -194,6 +299,70 @@ function ProjectSettings({ projectId }: { projectId: string }) {
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Logo customization */}
+      <div className="border border-border rounded-md p-4 space-y-4 mb-4">
+        <p className="text-sm font-medium text-foreground">Project Logo</p>
+
+        <div className="flex items-center gap-4">
+          <ProjectAvatar logo={currentLogo} size={48} />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleUpload}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Upload
+              </Button>
+            </div>
+            {hasImageLogo && (
+              <Button variant="ghost" size="sm" className="w-fit text-destructive hover:text-destructive" onClick={handleRemoveLogo}>
+                Remove logo
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {!hasImageLogo && (
+          <>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Initials (max 3 chars)</p>
+              <input
+                type="text"
+                value={logoInitials}
+                onChange={(e) => handleInitialsChange(e.target.value)}
+                placeholder={activeProject?.name.slice(0, 3).toUpperCase()}
+                maxLength={3}
+                className="w-20 h-8 rounded-md border border-input bg-background px-2 text-sm text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Color</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {LOGO_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => handleColorChange(c)}
+                    className={`w-6 h-6 rounded-full transition-all ${
+                      logoColor === c ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "hover:scale-110"
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="border border-border rounded-md p-4 flex items-center justify-between">

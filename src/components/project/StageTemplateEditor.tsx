@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { updateStageTemplate } from "../../lib/repositories";
+import { updateStageTemplate, getAgentModels, getProjectSetting } from "../../lib/repositories";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,8 +13,17 @@ import { sendNotification } from "../../lib/notifications";
 import { isSpecialStage } from "../../lib/repositories";
 import { AVAILABLE_AGENTS } from "../../lib/agents";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { JsonEditor } from "../ui/JsonEditor";
 import type { StageTemplate, OutputFormat } from "../../lib/types";
+
+const USER_SELECTABLE_FORMATS: { value: OutputFormat; label: string }[] = [
+  { value: "auto", label: "Auto (detect from output)" },
+  { value: "text", label: "Text" },
+  { value: "findings", label: "Findings (selectable items)" },
+  { value: "options", label: "Options (choice cards)" },
+  { value: "plan", label: "Plan" },
+  { value: "checklist", label: "Checklist" },
+  { value: "structured", label: "Structured (schema)" },
+];
 
 interface StageTemplateEditorProps {
   onClose: () => void;
@@ -49,8 +58,9 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
   const [editingTemplate, setEditingTemplate] = useState<StageTemplate | null>(
     null,
   );
-  const [toolsError, setToolsError] = useState<string | null>(null);
-  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [agentModels, setAgentModels] = useState<string[]>([]);
+  const [customModel, setCustomModel] = useState(false);
+
   useEffect(() => {
     const template = stageTemplates.find((t) => t.id === templateId);
     if (template) {
@@ -61,6 +71,22 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       setEditingTemplate({ ...template, output_schema: schema });
     }
   }, [templateId, stageTemplates]);
+
+  // Load model list for the effective agent
+  useEffect(() => {
+    if (!activeProject || !editingTemplate) return;
+    const resolveAgent = async () => {
+      const agent = editingTemplate.agent
+        ?? (await getProjectSetting(activeProject.id, "default_agent"))
+        ?? "claude";
+      const models = await getAgentModels(activeProject.id, agent);
+      setAgentModels(models);
+      // If current model is set but not in the list, show custom input
+      const current = editingTemplate.persona_model;
+      setCustomModel(!!current && !models.includes(current));
+    };
+    resolveAgent();
+  }, [activeProject?.id, editingTemplate?.agent, editingTemplate?.id]);
 
   const handleSave = async () => {
     if (!activeProject || !editingTemplate) return;
@@ -76,8 +102,10 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
       output_schema: editingTemplate.output_schema
         ? (() => { try { return JSON.stringify(JSON.parse(editingTemplate.output_schema)); } catch { return editingTemplate.output_schema; } })()
         : null,
+      output_format: editingTemplate.output_format,
       requires_user_input: editingTemplate.requires_user_input,
       agent: editingTemplate.agent,
+      can_follow: editingTemplate.can_follow,
     });
     await loadStageTemplates(activeProject.id);
     sendNotification("Template saved", editingTemplate.name, "success", { projectId: activeProject.id });
@@ -115,6 +143,35 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
         />
       </div>
 
+      {!isSpecialStage(editingTemplate.output_format as OutputFormat) && (
+        <div>
+          <Label>Output Format</Label>
+          <Select
+            value={editingTemplate.output_format}
+            onValueChange={(v) =>
+              setEditingTemplate({
+                ...editingTemplate,
+                output_format: v as OutputFormat,
+              })
+            }
+          >
+            <SelectTrigger className="w-64 mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {USER_SELECTABLE_FORMATS.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Controls how the stage output is rendered. "Auto" detects from output content.
+          </p>
+        </div>
+      )}
+
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
           checked={!!editingTemplate.requires_user_input}
@@ -127,6 +184,40 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
         />
         Requires user input
       </label>
+
+      <div>
+        <Label>Can Follow Stages</Label>
+        <p className="text-[10px] text-muted-foreground mb-1.5">
+          Which stages can come before this one. If none selected, this stage can follow any stage.
+        </p>
+        <div className="mt-1 space-y-1 max-h-40 overflow-y-auto border border-border rounded-md p-2">
+          {stageTemplates
+            .filter((t) => t.id !== editingTemplate.id)
+            .map((t) => {
+              const canFollow: string[] = editingTemplate.can_follow
+                ? (() => { try { return JSON.parse(editingTemplate.can_follow); } catch { return []; } })()
+                : [];
+              const checked = canFollow.includes(t.name);
+              return (
+                <label key={t.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => {
+                      const updated = v
+                        ? [...canFollow, t.name]
+                        : canFollow.filter((n: string) => n !== t.name);
+                      setEditingTemplate({
+                        ...editingTemplate,
+                        can_follow: updated.length > 0 ? JSON.stringify(updated) : null,
+                      });
+                    }}
+                  />
+                  {t.name}
+                </label>
+              );
+            })}
+        </div>
+      </div>
 
       <div>
         <Label>AI Agent</Label>
@@ -167,17 +258,58 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
 
       <div>
         <Label>Model Override</Label>
-        <Input
-          value={editingTemplate.persona_model ?? ""}
-          onChange={(e) =>
-            setEditingTemplate({
-              ...editingTemplate,
-              persona_model: e.target.value || null,
-            })
-          }
-          placeholder="e.g. o3, gemini-2.5-pro — empty for agent default"
-          className="mt-1 font-mono text-xs"
-        />
+        {customModel ? (
+          <div className="flex gap-2 mt-1">
+            <Input
+              value={editingTemplate.persona_model ?? ""}
+              onChange={(e) =>
+                setEditingTemplate({
+                  ...editingTemplate,
+                  persona_model: e.target.value || null,
+                })
+              }
+              placeholder="Enter model slug"
+              className="flex-1 font-mono text-xs"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCustomModel(false);
+                setEditingTemplate({ ...editingTemplate, persona_model: null });
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Select
+            value={editingTemplate.persona_model ?? "__default__"}
+            onValueChange={(v) => {
+              if (v === "__custom__") {
+                setCustomModel(true);
+                return;
+              }
+              setEditingTemplate({
+                ...editingTemplate,
+                persona_model: v === "__default__" ? null : v,
+              });
+            }}
+          >
+            <SelectTrigger className="w-64 mt-1 font-mono text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">Agent Default</SelectItem>
+              {agentModels.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+              <SelectItem value="__custom__">Custom...</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div>
@@ -201,67 +333,9 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
         </p>
       </div>
 
-      <div>
-        <Label>Allowed Tools (JSON array)</Label>
-        <Input
-          value={editingTemplate.allowed_tools ?? ""}
-          onChange={(e) => {
-            setEditingTemplate({
-              ...editingTemplate,
-              allowed_tools: e.target.value || null,
-            });
-            setToolsError(null);
-          }}
-          onBlur={(e) => {
-            const val = e.target.value.trim();
-            if (!val) { setToolsError(null); return; }
-            try {
-              const parsed = JSON.parse(val);
-              if (!Array.isArray(parsed)) {
-                setToolsError("Must be a JSON array, e.g. [\"Read\", \"Glob\"]");
-              } else {
-                setToolsError(null);
-              }
-            } catch {
-              setToolsError("Invalid JSON");
-            }
-          }}
-          placeholder='e.g. ["Read", "Glob", "Grep"] — empty for full access'
-          className="mt-1 font-mono text-xs"
-        />
-        {toolsError && <p className="text-xs text-destructive mt-1">{toolsError}</p>}
-      </div>
-
-      <div>
-        <Label>Output Schema (JSON)</Label>
-        <JsonEditor
-          value={editingTemplate.output_schema ?? ""}
-          onChange={(val) => {
-            setEditingTemplate({
-              ...editingTemplate,
-              output_schema: val || null,
-            });
-            setSchemaError(null);
-          }}
-          onBlur={(e) => {
-            const val = e.currentTarget.value.trim();
-            if (!val) { setSchemaError(null); return; }
-            try {
-              const formatted = JSON.stringify(JSON.parse(val), null, 2);
-              setEditingTemplate({ ...editingTemplate, output_schema: formatted });
-              setSchemaError(null);
-            } catch {
-              setSchemaError("Invalid JSON");
-            }
-          }}
-          placeholder="Optional JSON schema for structured output"
-          className="mt-1"
-        />
-        {schemaError && <p className="text-xs text-destructive mt-1">{schemaError}</p>}
-      </div>
 
       <div className="flex items-center justify-end gap-3">
-        <Button onClick={handleSave} disabled={!editingTemplate.name.trim() || !!toolsError || !!schemaError}>
+        <Button onClick={handleSave} disabled={!editingTemplate.name.trim()}>
           Save Changes
         </Button>
       </div>
@@ -276,6 +350,7 @@ export function StageTemplateEditorContent() {
   const deleteTemplate = useTaskStore((s) => s.deleteStageTemplate);
   const duplicateTemplate = useTaskStore((s) => s.duplicateStageTemplate);
   const reorderTemplates = useTaskStore((s) => s.reorderStageTemplates);
+  const restoreDefaults = useTaskStore((s) => s.restoreDefaultTemplates);
   const [selectedId, setSelectedId] = useState<string | null>(
     stageTemplates[0]?.id ?? null,
   );
@@ -342,6 +417,22 @@ export function StageTemplateEditorContent() {
     const ids = stageTemplates.map((t) => t.id);
     [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
     await reorderTemplates(activeProject.id, ids);
+  };
+
+  const handleRestoreDefaults = async () => {
+    if (!activeProject) return;
+    const confirmed = window.confirm(
+      "This will delete all custom stages and restore the default templates. Are you sure?",
+    );
+    if (!confirmed) return;
+    setError(null);
+    try {
+      await restoreDefaults(activeProject.id);
+      const templates = useTaskStore.getState().stageTemplates;
+      setSelectedId(templates[0]?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleMoveDown = async (id: string) => {
@@ -421,9 +512,12 @@ export function StageTemplateEditorContent() {
             </div>
           ))}
         </div>
-        <div className="p-2 border-t border-border">
+        <div className="p-2 border-t border-border space-y-1">
           <Button variant="outline" size="sm" className="w-full" onClick={handleNew}>
             + New Stage
+          </Button>
+          <Button variant="ghost" size="sm" className="w-full text-muted-foreground" onClick={handleRestoreDefaults}>
+            Restore Defaults
           </Button>
         </div>
         {error && (

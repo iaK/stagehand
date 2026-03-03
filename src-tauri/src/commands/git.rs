@@ -46,3 +46,13 @@ pub async fn read_file_contents(path: String) -> Result<Option<String>, String> 
         Err(e) => Err(format!("Failed to read file: {}", e)),
     }
 }
+
+#[tauri::command]
+pub async fn read_file_base64(path: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => Ok(Some(base64::engine::general_purpose::STANDARD.encode(&bytes))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Failed to read file: {}", e)),
+    }
+}

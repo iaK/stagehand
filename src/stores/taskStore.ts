@@ -63,6 +63,7 @@ interface TaskStore {
   deleteStageTemplate: (projectId: string, templateId: string) => Promise<void>;
   reorderStageTemplates: (projectId: string, orderedIds: string[]) => Promise<void>;
   duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
+  restoreDefaultTemplates: (projectId: string) => Promise<void>;
   createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; initialInput?: string }[]) => Promise<Task[]>;
 }
 
@@ -359,6 +360,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     if (useProjectStore.getState().activeProject?.id !== projectId) return created;
     set({ stageTemplates });
     return created;
+  },
+
+  restoreDefaultTemplates: async (projectId) => {
+    await repo.restoreDefaultTemplates(projectId);
+    const stageTemplates = await repo.listStageTemplates(projectId);
+    if (useProjectStore.getState().activeProject?.id !== projectId) return;
+    set({ stageTemplates });
   },
 
   createSubtasks: async (projectId, parentTaskId, subtasks) => {

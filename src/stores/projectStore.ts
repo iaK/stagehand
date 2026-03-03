@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { Project } from "../lib/types";
+import type { ProjectLogoInfo } from "../lib/projectLogo";
+import { resolveProjectLogo } from "../lib/projectLogo";
 import * as repo from "../lib/repositories";
 import { aggregateProjectDotClass } from "../lib/taskStatus";
 import { scanRepository } from "../lib/repoScanner";
@@ -13,9 +15,11 @@ interface ProjectStore {
   loading: boolean;
   showArchived: boolean;
   projectStatuses: Record<string, string>;
+  projectLogos: Record<string, ProjectLogoInfo>;
   loadProjects: () => Promise<void>;
   loadArchivedProjects: () => Promise<void>;
   loadProjectStatuses: () => Promise<void>;
+  loadProjectLogos: () => Promise<void>;
   setActiveProject: (project: Project | null) => void;
   setShowArchived: (show: boolean) => void;
   addProject: (name: string, path: string) => Promise<Project>;
@@ -32,6 +36,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loading: false,
   showArchived: false,
   projectStatuses: {},
+  projectLogos: {},
 
   loadProjects: async () => {
     set({ loading: true });
@@ -65,6 +70,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       r.status === "fulfilled" ? r.value : [projects[i].id, "bg-zinc-400"] as const,
     );
     set({ projectStatuses: Object.fromEntries(entries) });
+  },
+
+  loadProjectLogos: async () => {
+    const projects = get().projects;
+    const results = await Promise.allSettled(
+      projects.map(async (p) => {
+        const [logoUrl, logoColor, logoInitials, githubOwner] = await Promise.all([
+          repo.getProjectSetting(p.id, "logo_url"),
+          repo.getProjectSetting(p.id, "logo_color"),
+          repo.getProjectSetting(p.id, "logo_initials"),
+          repo.getProjectSetting(p.id, "github_repo_owner"),
+        ]);
+        return [p.id, resolveProjectLogo({
+          logoUrl,
+          githubOwner,
+          projectName: p.name,
+          logoColor,
+          logoInitials,
+        })] as const;
+      }),
+    );
+    const entries = results.map((r, i) =>
+      r.status === "fulfilled"
+        ? r.value
+        : [projects[i].id, resolveProjectLogo({ projectName: projects[i].name })] as const,
+    );
+    set({ projectLogos: Object.fromEntries(entries) });
   },
 
   setActiveProject: (project) => set({ activeProject: project }),

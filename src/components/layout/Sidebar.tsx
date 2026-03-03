@@ -6,41 +6,33 @@ import { useLinearStore } from "../../stores/linearStore";
 import { useGitHubStore } from "../../stores/githubStore";
 import { TaskList } from "../task/TaskList";
 import { TaskCreate } from "../task/TaskCreate";
-import { ProjectCreate } from "../project/ProjectCreate";
 import { LinearImport } from "../linear/LinearImport";
 import { SettingsModal } from "../settings/SettingsModal";
-import { AppSettingsModal } from "../settings/AppSettingsModal";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { logger } from "../../lib/logger";
-import logoSrc from "../../assets/logo.png";
 
 export function Sidebar() {
-  const projects = useProjectStore((s) => s.projects);
   const activeProject = useProjectStore((s) => s.activeProject);
   const loadProjects = useProjectStore((s) => s.loadProjects);
-  const setActiveProject = useProjectStore((s) => s.setActiveProject);
-  const projectStatuses = useProjectStore((s) => s.projectStatuses);
   const loadProjectStatuses = useProjectStore((s) => s.loadProjectStatuses);
+  const loadProjectLogos = useProjectStore((s) => s.loadProjectLogos);
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const tasks = useTaskStore((s) => s.tasks);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const loadStageTemplates = useTaskStore((s) => s.loadStageTemplates);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
-  const [showProjectCreate, setShowProjectCreate] = useState(false);
   const [showLinearImport, setShowLinearImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showAppSettings, setShowAppSettings] = useState(false);
   const { apiKey: linearApiKey, loadForProject: loadLinearForProject } = useLinearStore();
   const loadGitHubForProject = useGitHubStore((s) => s.loadForProject);
 
   useEffect(() => {
-    loadProjects().catch((err) =>
-      logger.error("Failed to load projects:", err),
-    );
-  }, [loadProjects]);
+    loadProjects()
+      .then(() => loadProjectLogos())
+      .catch((err) => logger.error("Failed to load projects:", err));
+  }, [loadProjects, loadProjectLogos]);
 
   useEffect(() => {
     if (activeProject) {
@@ -69,53 +61,7 @@ export function Sidebar() {
   }, [tasks, taskExecStatuses, loadProjectStatuses]);
 
   return (
-    <div className="w-64 flex-shrink-0 border-r border-border bg-muted/30 flex flex-col">
-      {/* Header + Project Selector */}
-      <div className="px-3 border-b border-border flex items-center h-[57px] gap-2.5">
-        <img src={logoSrc} alt="Stagehand" className="w-6 h-6 flex-shrink-0" />
-        <div className="w-px h-5 bg-border flex-shrink-0" />
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Select
-            value={activeProject?.id ?? ""}
-            onValueChange={(value) => {
-              const p = projects.find((p) => p.id === value);
-              useTaskStore.getState().setActiveTask(null);
-              setActiveProject(p ?? null);
-            }}
-          >
-            <SelectTrigger className="flex-1">
-              <SelectValue placeholder="No projects" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${projectStatuses[p.id] ?? "bg-zinc-400"}`}
-                    />
-                    {p.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setShowProjectCreate(true)}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>New Project</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
+    <div className="w-56 flex-shrink-0 border-r border-border bg-muted/30 flex flex-col">
       {/* Tasks */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center justify-between px-3 py-2">
@@ -175,20 +121,6 @@ export function Sidebar() {
             </TooltipTrigger>
             <TooltipContent>Project Settings</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowAppSettings(true)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Settings</TooltipContent>
-          </Tooltip>
         </div>
         <ThemeToggle />
       </div>
@@ -200,9 +132,6 @@ export function Sidebar() {
           onClose={() => setShowTaskCreate(false)}
         />
       )}
-      {showProjectCreate && (
-        <ProjectCreate onClose={() => setShowProjectCreate(false)} />
-      )}
       {showLinearImport && activeProject && (
         <LinearImport
           projectId={activeProject.id}
@@ -211,9 +140,6 @@ export function Sidebar() {
       )}
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} />
-      )}
-      {showAppSettings && (
-        <AppSettingsModal onClose={() => setShowAppSettings(false)} />
       )}
 
     </div>

@@ -14,7 +14,8 @@ interface CommitWorkflowProps {
   committing: boolean;
   onCommit: () => void;
   noChangesToCommit: boolean;
-  outputHasOwnActionButton: boolean;
+  /** @deprecated No longer used internally — kept for call-site compat */
+  outputHasOwnActionButton?: boolean;
   onApprove: () => void;
   approving: boolean;
   commitPrepTimedOut: boolean;
@@ -33,7 +34,6 @@ export function CommitWorkflow({
   committing,
   onCommit,
   noChangesToCommit,
-  outputHasOwnActionButton,
   onApprove,
   approving,
   commitPrepTimedOut,
@@ -108,7 +108,6 @@ export function CommitWorkflow({
   }
 
   if (noChangesToCommit) {
-    if (outputHasOwnActionButton) return null;
     return (
       <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
         {nextStageSelector}
@@ -123,8 +122,6 @@ export function CommitWorkflow({
       </div>
     );
   }
-
-  if (outputHasOwnActionButton) return null;
 
   if (commitPrepTimedOut) {
     return (

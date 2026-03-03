@@ -97,6 +97,17 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
     }
     return stageTemplates.find((t) => t.output_format === "pr_preparation")?.id ?? null;
   }, [completionStrategy, stageTemplates]);
+  // Clear stale selection if the chosen template was deleted
+  useEffect(() => {
+    if (
+      selectedNextTemplateId &&
+      selectedNextTemplateId !== FINISH_TASK_VALUE &&
+      !selectableTemplates.some((t) => t.id === selectedNextTemplateId)
+    ) {
+      setSelectedNextTemplateId(null);
+    }
+  }, [selectableTemplates, selectedNextTemplateId]);
+
   const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
     ? finishTemplateId
     : selectedNextTemplateId;

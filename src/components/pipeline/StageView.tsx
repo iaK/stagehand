@@ -542,6 +542,17 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     });
   }, [stageTemplates, isTerminalStage, stage.name]);
 
+  // Clear stale selection if the chosen template was deleted
+  useEffect(() => {
+    if (
+      selectedNextTemplateId &&
+      selectedNextTemplateId !== FINISH_TASK_VALUE &&
+      !selectableTemplates.some((t) => t.id === selectedNextTemplateId)
+    ) {
+      setSelectedNextTemplateId(null);
+    }
+  }, [selectableTemplates, selectedNextTemplateId]);
+
   // Resolve the effective template ID: FINISH_TASK_VALUE maps to the terminal stage
   const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
     ? finishTemplateId
@@ -774,23 +785,22 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
               />
 
               {/* Next stage selector + approve button for formats that don't embed them internally.
-                  Plan, research, and findings render these inside their own UI via props.
-                  Commit stages render the selector above CommitWorkflow below. */}
+                  Formats like plan, research, findings, options, etc. render their own action
+                  buttons via props. Commit stages render the selector above CommitWorkflow below.
+                  Use the dynamic outputHasOwnActionButton check instead of hardcoded format list
+                  so custom/auto stages always get a button when the output is plain text. */}
               {isCurrentStage && !hasPendingQuestions && !stage.commits_changes
-                && stage.output_format !== "plan" && stage.output_format !== "research"
-                && stage.output_format !== "findings"
+                && !outputHasOwnActionButton
                 && (
                 <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg space-y-3">
                   {nextStageSelectorNode}
-                  {!outputHasOwnActionButton && (
-                    <Button
-                      onClick={() => handleApprove()}
-                      disabled={approving || loadingNextSuggestion}
-                    >
-                      {approving && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {approving ? "Approving..." : "Approve & Continue"}
-                    </Button>
-                  )}
+                  <Button
+                    onClick={() => handleApprove()}
+                    disabled={approving || loadingNextSuggestion}
+                  >
+                    {approving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {approving ? "Approving..." : "Approve & Continue"}
+                  </Button>
                 </div>
               )}
 

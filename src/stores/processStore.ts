@@ -71,6 +71,7 @@ interface ProcessStore {
   viewingStageId: string | null;
   pendingCommit: PendingCommit | null;
   committedStages: Record<string, string>; // stageId → short commit hash
+  commitVersion: number; // increments on each commit to trigger UI refreshes
   commitMessageLoadingStageId: string | null;
   commitGenerationNonce: number;
   noChangesStageId: string | null; // stage with no uncommitted changes to commit
@@ -106,6 +107,7 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
   viewingStageId: null,
   pendingCommit: null,
   committedStages: {},
+  commitVersion: 0,
   commitMessageLoadingStageId: null,
   commitGenerationNonce: 0,
   noChangesStageId: null,
@@ -194,6 +196,7 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
         ...state.committedStages,
         [stageId]: shortHash,
       },
+      commitVersion: state.commitVersion + 1,
     })),
 
   setCommitMessageLoading: (stageId) => set({ commitMessageLoadingStageId: stageId }),

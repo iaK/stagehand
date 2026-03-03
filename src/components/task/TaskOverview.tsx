@@ -11,6 +11,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { gitLog, gitLogBranchDiff, gitListBranches, gitDiffShortStatBranch, type GitCommit } from "../../lib/git";
 import { sendNotification } from "../../lib/notifications";
+import { useProcessStore } from "../../stores/processStore";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
@@ -73,6 +74,7 @@ export function TaskOverview() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const defaultBranch = useGitHubStore((s) => s.defaultBranch);
   const setDefaultBranch = useGitHubStore((s) => s.setDefaultBranch);
+  const commitVersion = useProcessStore((s) => s.commitVersion);
 
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
   const updateTask = useTaskStore((s) => s.updateTask);
@@ -166,7 +168,7 @@ export function TaskOverview() {
     });
 
     return () => { cancelled = true; };
-  }, [activeTask?.id, activeProject?.path, defaultBranch]);
+  }, [activeTask?.id, activeProject?.path, defaultBranch, commitVersion]);
 
   useEffect(() => {
     if (!activeTask || !activeProject || !defaultBranch) {
@@ -194,7 +196,7 @@ export function TaskOverview() {
       });
 
     return () => { cancelled = true; };
-  }, [activeTask?.id, activeProject?.path, defaultBranch]);
+  }, [activeTask?.id, activeProject?.path, defaultBranch, commitVersion]);
 
   const confirmArchive = async () => {
     if (!activeProject || !activeTask) return;

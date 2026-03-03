@@ -61,6 +61,22 @@ export async function deleteProjectSetting(projectId: string, key: string): Prom
   await db.execute("DELETE FROM settings WHERE key = $1", [key]);
 }
 
+// === Per-Agent Model Lists ===
+
+export async function getAgentModels(projectId: string, agent: string): Promise<string[]> {
+  const raw = await getProjectSetting(projectId, `agent_models_${agent}`);
+  if (raw) {
+    try { return JSON.parse(raw); } catch { /* fall through */ }
+  }
+  const { AVAILABLE_AGENTS } = await import("./agents");
+  const entry = AVAILABLE_AGENTS.find((a) => a.value === agent);
+  return entry ? [...entry.defaultModels] : [];
+}
+
+export async function setAgentModels(projectId: string, agent: string, models: string[]): Promise<void> {
+  await setProjectSetting(projectId, `agent_models_${agent}`, JSON.stringify(models));
+}
+
 export async function getCompletionStrategy(projectId: string): Promise<CompletionStrategy> {
   return (await getProjectSetting(projectId, "default_completion_strategy") ?? "pr") as CompletionStrategy;
 }
@@ -173,6 +189,7 @@ export async function updateStageTemplate(
       | "persona_model"
       | "requires_user_input"
       | "agent"
+      | "can_follow"
     >
   >,
 ): Promise<void> {
@@ -271,6 +288,25 @@ export async function deleteStageTemplate(
   }
 
   await db.execute("DELETE FROM stage_templates WHERE id = $1", [templateId]);
+}
+
+export async function restoreDefaultTemplates(projectId: string): Promise<void> {
+  const db = await getProjectDb(projectId);
+  await db.execute("DELETE FROM stage_templates WHERE project_id = $1", [projectId]);
+  const templates = getDefaultStageTemplates(projectId);
+  for (const t of templates) {
+    await db.execute(
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      [
+        t.id, t.project_id, t.name, t.description, t.sort_order,
+        t.prompt_template, t.input_source, t.output_format,
+        t.output_schema, t.gate_rules, t.persona_name,
+        t.persona_system_prompt, t.persona_model, t.preparation_prompt,
+        t.allowed_tools, t.requires_user_input, t.agent ?? null,
+      ],
+    );
+  }
 }
 
 export async function reorderStageTemplates(

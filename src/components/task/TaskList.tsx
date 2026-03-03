@@ -27,8 +27,14 @@ export function TaskList() {
     // it represents an active/ongoing state.  A stale "failed" execution
     // should NOT paint the dot red when the task itself isn't failed (e.g.
     // the user may have re-queued the task or it's still in_progress).
+    // Similarly, "approved" just means the last *stage* completed — if the
+    // task itself is still in_progress (more stages remain), it's awaiting
+    // user action on the next stage.
     const execStatus = taskExecStatuses[task.id];
-    if (execStatus && execStatus !== "failed") {
+    if (execStatus === "approved" && task.status === "in_progress") {
+      return pipelineColors.awaiting_user;
+    }
+    if (execStatus && execStatus !== "failed" && execStatus !== "approved") {
       return pipelineColors[execStatus] ?? statusColors[task.status] ?? "bg-zinc-400";
     }
     // Show execution "failed" only when the task itself is also failed
