@@ -322,7 +322,7 @@ export function PipelineView() {
                 <Code2 className="w-3.5 h-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{isEditorOpen ? "Hide Editor" : "Toggle Editor"}</TooltipContent>
+            <TooltipContent>{isEditorOpen ? "Hide Editor" : "Show Editor"}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

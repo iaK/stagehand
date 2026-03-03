@@ -55,15 +55,19 @@ interface FileTreeNodeProps {
   node: TreeNode;
   depth: number;
   gitStatusMap: Map<string, string>;
+  rootPath: string;
 }
 
-function FileTreeNode({ node, depth, gitStatusMap }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth, gitStatusMap, rootPath }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 1);
   const activeFilePath = useEditorStore((s) => s.activeFilePath);
   const openFile = useEditorStore((s) => s.openFile);
 
   const isActive = activeFilePath === node.path;
-  const statusIndicator = gitStatusMap.get(node.name);
+  const relativePath = node.path.startsWith(rootPath + "/")
+    ? node.path.slice(rootPath.length + 1)
+    : node.name;
+  const statusIndicator = gitStatusMap.get(relativePath);
 
   if (node.isDir) {
     return (
@@ -89,6 +93,7 @@ function FileTreeNode({ node, depth, gitStatusMap }: FileTreeNodeProps) {
                 node={child}
                 depth={depth + 1}
                 gitStatusMap={gitStatusMap}
+                rootPath={rootPath}
               />
             ))}
           </div>
@@ -108,6 +113,7 @@ function FileTreeNode({ node, depth, gitStatusMap }: FileTreeNodeProps) {
       <span className="w-3 h-3 shrink-0" /> {/* spacer matching chevron */}
       <File className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
       <span className="truncate">{node.name}</span>
+      {/* Git status indicators: Yellow for modified (M), Green for untracked (?) */}
       {statusIndicator === "M" && (
         <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0 ml-auto" />
       )}
@@ -145,9 +151,9 @@ export function FileTree({ workingDir }: FileTreeProps) {
       for (const line of status.trim().split("\n")) {
         if (!line) continue;
         const code = line[1] === " " ? line[0] : line[1];
-        const fileName = line.slice(3).trim().split("/").pop() ?? "";
+        const relativePath = line.slice(3).trim();
         if (code === "?" || code === "M" || code === "A") {
-          map.set(fileName, code === "?" ? "?" : "M");
+          map.set(relativePath, code === "?" ? "?" : "M");
         }
       }
       setGitStatusMap(map);
@@ -176,7 +182,7 @@ export function FileTree({ workingDir }: FileTreeProps) {
   return (
     <div className="py-1 overflow-y-auto h-full select-none">
       {tree.map((node) => (
-        <FileTreeNode key={node.path} node={node} depth={0} gitStatusMap={gitStatusMap} />
+        <FileTreeNode key={node.path} node={node} depth={0} gitStatusMap={gitStatusMap} rootPath={workingDir} />
       ))}
     </div>
   );

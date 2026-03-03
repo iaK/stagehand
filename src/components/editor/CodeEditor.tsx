@@ -1,4 +1,5 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
+import { KeyMod, KeyCode } from "monaco-editor";
 import { useTheme } from "next-themes";
 import { X } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
@@ -34,7 +35,7 @@ const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
 };
 
 const BINARY_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "svg",
+  "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp",
   "woff", "woff2", "ttf", "eot", "otf",
   "zip", "tar", "gz", "bz2", "7z", "rar",
   "pdf", "doc", "docx", "xls", "xlsx",
@@ -66,6 +67,9 @@ export function CodeEditor() {
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
   const closeFile = useEditorStore((s) => s.closeFile);
   const updateFileContent = useEditorStore((s) => s.updateFileContent);
+  const saveError = useEditorStore((s) => s.saveError);
+  const clearSaveError = useEditorStore((s) => s.clearSaveError);
+  const isSaving = useEditorStore((s) => s.isSaving);
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
   const monacoTheme = resolvedTheme === "dark" ? "vs-dark" : "vs";
@@ -76,12 +80,11 @@ export function CodeEditor() {
       id: "save-file",
       label: "Save File",
       keybindings: [
-        // Monaco KeyMod.CtrlCmd = 2048, KeyCode.KeyS = 49
-        2048 | 49,
+        KeyMod.CtrlCmd | KeyCode.KeyS,
       ],
-      run: () => {
+      run: async () => {
         const path = useEditorStore.getState().activeFilePath;
-        if (path) useEditorStore.getState().saveFile(path);
+        if (path) await useEditorStore.getState().saveFile(path);
       },
     });
   };
@@ -102,6 +105,7 @@ export function CodeEditor() {
       <div className="flex items-center border-b border-border bg-muted/30 overflow-x-auto shrink-0">
         {openFiles.map((file) => {
           const isActive = file.path === activeFilePath;
+          const isSavingThisFile = isSaving && isActive;
           return (
             <div
               key={file.path}
@@ -113,9 +117,11 @@ export function CodeEditor() {
               onClick={() => setActiveFile(file.path)}
             >
               <span className="truncate max-w-[120px]">{fileName(file.path)}</span>
-              {file.isDirty && (
+              {isSavingThisFile ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 animate-pulse" />
+              ) : file.isDirty ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-              )}
+              ) : null}
               <button
                 className="ml-1 hover:bg-accent rounded p-0.5"
                 onClick={(e) => {
@@ -130,6 +136,16 @@ export function CodeEditor() {
         })}
       </div>
 
+      {/* Save error banner */}
+      {saveError && (
+        <div className="flex items-center gap-2 px-3 py-1.5 text-xs bg-destructive/10 text-destructive border-b border-destructive/20">
+          <span className="truncate">Save failed: {saveError}</span>
+          <button className="ml-auto shrink-0 hover:underline" onClick={clearSaveError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Editor area */}
       {activeFile && (
         isBinaryFile(activeFile.path) ? (
@@ -138,7 +154,6 @@ export function CodeEditor() {
           </div>
         ) : (
           <Editor
-            key={activeFile.path}
             theme={monacoTheme}
             language={getLanguage(activeFile.path)}
             value={activeFile.content}

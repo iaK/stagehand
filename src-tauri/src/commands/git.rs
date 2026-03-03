@@ -1,4 +1,3 @@
-use serde::Serialize;
 use tokio::process::Command;
 
 async fn run_command(binary: &str, args: Vec<String>, working_directory: String) -> Result<String, String> {
@@ -17,7 +16,6 @@ async fn run_command(binary: &str, args: Vec<String>, working_directory: String)
         let combined = [&stderr, &stdout]
             .iter()
             .filter(|s| !s.is_empty())
-            .cloned()
             .cloned()
             .collect::<Vec<_>>()
             .join("\n");
@@ -59,51 +57,30 @@ pub async fn read_file_base64(path: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn write_file_contents(path: String, contents: String) -> Result<(), String> {
+pub async fn write_file_contents(path: String, contents: String, worktree_root: String) -> Result<(), String> {
+    // Validate that the target path is within the worktree
+    let canonical_root = std::path::Path::new(&worktree_root)
+        .canonicalize()
+        .map_err(|e| format!("Invalid worktree root: {}", e))?;
+    let canonical_path = std::path::Path::new(&path)
+        .canonicalize()
+        .or_else(|_| {
+            // File may not exist yet; canonicalize parent instead
+            let p = std::path::Path::new(&path);
+            if let Some(parent) = p.parent() {
+                parent.canonicalize().map(|pp| pp.join(p.file_name().unwrap_or_default()))
+            } else {
+                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "No parent directory"))
+            }
+        })
+        .map_err(|e| format!("Invalid file path: {}", e))?;
+
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("Path is outside the worktree — write denied".to_string());
+    }
+
     tokio::fs::write(&path, contents.as_bytes())
         .await
         .map_err(|e| format!("Failed to write file: {}", e))
 }
 
-#[derive(Serialize)]
-pub struct DirEntry {
-    pub name: String,
-    pub is_dir: bool,
-    pub path: String,
-}
-
-#[tauri::command]
-pub async fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
-    let mut entries = Vec::new();
-    let mut reader = tokio::fs::read_dir(&path)
-        .await
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
-
-    while let Some(entry) = reader
-        .next_entry()
-        .await
-        .map_err(|e| format!("Failed to read entry: {}", e))?
-    {
-        let metadata = entry
-            .metadata()
-            .await
-            .map_err(|e| format!("Failed to read metadata: {}", e))?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        // Skip hidden files/directories
-        if name.starts_with('.') {
-            continue;
-        }
-        entries.push(DirEntry {
-            name,
-            is_dir: metadata.is_dir(),
-            path: entry.path().to_string_lossy().to_string(),
-        });
-    }
-
-    entries.sort_by(|a, b| {
-        // Directories first, then alphabetical
-        b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name))
-    });
-
-    Ok(entries)
-}

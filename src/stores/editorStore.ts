@@ -11,21 +11,40 @@ interface EditorStore {
   isEditorOpen: boolean;
   openFiles: OpenFile[];
   activeFilePath: string | null;
+  worktreeRoot: string | null;
+  saveError: string | null;
+  isSaving: boolean;
+  unsavedChangesDialogOpen: boolean;
+  fileAwaitingClosePath: string | null;
+  unsavedChangesDialogCallback: ((confirm: boolean) => void) | null;
 
   toggleEditor: () => void;
+  setWorktreeRoot: (root: string | null) => void;
   openFile: (path: string) => Promise<void>;
-  closeFile: (path: string) => void;
+  closeFile: (path: string) => boolean;
   setActiveFile: (path: string) => void;
   updateFileContent: (path: string, content: string) => void;
   saveFile: (path: string) => Promise<void>;
+  resetForTask: () => void;
+  clearSaveError: () => void;
+  promptUnsavedChanges: (filePath: string, callback: (confirm: boolean) => void) => void;
+  resolveUnsavedChanges: (confirmed: boolean) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
   isEditorOpen: false,
   openFiles: [],
   activeFilePath: null,
+  worktreeRoot: null,
+  saveError: null,
+  isSaving: false,
+  unsavedChangesDialogOpen: false,
+  fileAwaitingClosePath: null,
+  unsavedChangesDialogCallback: null,
 
   toggleEditor: () => set((s) => ({ isEditorOpen: !s.isEditorOpen })),
+
+  setWorktreeRoot: (root: string | null) => set({ worktreeRoot: root }),
 
   openFile: async (path: string) => {
     const { openFiles } = get();
@@ -45,6 +64,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   closeFile: (path: string) => {
+    const { openFiles } = get();
+    const file = openFiles.find((f) => f.path === path);
+    if (file?.isDirty) {
+      // Show custom dialog instead of window.confirm
+      get().promptUnsavedChanges(path, (confirmed) => {
+        if (confirmed) {
+          get().resolveUnsavedChanges(true);
+        }
+      });
+      return false; // Dialog will handle closing asynchronously
+    }
+
     set((s) => {
       const filtered = s.openFiles.filter((f) => f.path !== path);
       let nextActive = s.activeFilePath;
@@ -53,6 +84,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       return { openFiles: filtered, activeFilePath: nextActive };
     });
+    return true;
   },
 
   setActiveFile: (path: string) => set({ activeFilePath: path }),
@@ -66,13 +98,71 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   saveFile: async (path: string) => {
-    const file = get().openFiles.find((f) => f.path === path);
-    if (!file) return;
-    await writeFileContents(path, file.content);
-    set((s) => ({
-      openFiles: s.openFiles.map((f) =>
-        f.path === path ? { ...f, isDirty: false } : f,
-      ),
-    }));
+    const { openFiles, worktreeRoot } = get();
+    const file = openFiles.find((f) => f.path === path);
+    if (!file || !worktreeRoot) return;
+
+    set({ isSaving: true });
+    try {
+      await writeFileContents(path, file.content, worktreeRoot);
+      set((s) => ({
+        saveError: null,
+        isSaving: false,
+        openFiles: s.openFiles.map((f) =>
+          f.path === path ? { ...f, isDirty: false } : f,
+        ),
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      set({ saveError: message, isSaving: false });
+    }
+  },
+
+  resetForTask: () => {
+    set({
+      openFiles: [],
+      activeFilePath: null,
+      saveError: null,
+      isSaving: false,
+      unsavedChangesDialogOpen: false,
+      fileAwaitingClosePath: null,
+      unsavedChangesDialogCallback: null,
+    });
+  },
+
+  clearSaveError: () => set({ saveError: null }),
+
+  promptUnsavedChanges: (filePath: string, callback: (confirm: boolean) => void) => {
+    set({
+      unsavedChangesDialogOpen: true,
+      fileAwaitingClosePath: filePath,
+      unsavedChangesDialogCallback: callback,
+    });
+  },
+
+  resolveUnsavedChanges: (confirmed: boolean) => {
+    const { fileAwaitingClosePath, unsavedChangesDialogCallback, openFiles } = get();
+
+    if (!fileAwaitingClosePath) return;
+
+    if (confirmed && unsavedChangesDialogCallback) {
+      unsavedChangesDialogCallback(true);
+    }
+
+    // Perform the actual close
+    set((s) => {
+      const filtered = s.openFiles.filter((f) => f.path !== fileAwaitingClosePath);
+      let nextActive = s.activeFilePath;
+      if (s.activeFilePath === fileAwaitingClosePath) {
+        nextActive = filtered.length > 0 ? filtered[filtered.length - 1].path : null;
+      }
+      return {
+        openFiles: filtered,
+        activeFilePath: nextActive,
+        unsavedChangesDialogOpen: false,
+        fileAwaitingClosePath: null,
+        unsavedChangesDialogCallback: null,
+      };
+    });
   },
 }));

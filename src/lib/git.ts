@@ -535,16 +535,7 @@ export async function readFileContents(path: string): Promise<string | null> {
   return invoke<string | null>("read_file_contents", { path });
 }
 
-export async function writeFileContents(path: string, contents: string): Promise<void> {
-  return invoke<void>("write_file_contents", { path, contents });
+export async function writeFileContents(path: string, contents: string, worktreeRoot: string): Promise<void> {
+  return invoke<void>("write_file_contents", { path, contents, worktreeRoot });
 }
 
-export interface DirEntry {
-  name: string;
-  is_dir: boolean;
-  path: string;
-}
-
-export async function listDirectory(path: string): Promise<DirEntry[]> {
-  return invoke<DirEntry[]>("list_directory", { path });
-}
