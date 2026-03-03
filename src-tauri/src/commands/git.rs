@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tokio::process::Command;
 
 async fn run_command(binary: &str, args: Vec<String>, working_directory: String) -> Result<String, String> {
@@ -55,4 +56,54 @@ pub async fn read_file_base64(path: String) -> Result<Option<String>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("Failed to read file: {}", e)),
     }
+}
+
+#[tauri::command]
+pub async fn write_file_contents(path: String, contents: String) -> Result<(), String> {
+    tokio::fs::write(&path, contents.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[derive(Serialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+    let mut entries = Vec::new();
+    let mut reader = tokio::fs::read_dir(&path)
+        .await
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    while let Some(entry) = reader
+        .next_entry()
+        .await
+        .map_err(|e| format!("Failed to read entry: {}", e))?
+    {
+        let metadata = entry
+            .metadata()
+            .await
+            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden files/directories
+        if name.starts_with('.') {
+            continue;
+        }
+        entries.push(DirEntry {
+            name,
+            is_dir: metadata.is_dir(),
+            path: entry.path().to_string_lossy().to_string(),
+        });
+    }
+
+    entries.sort_by(|a, b| {
+        // Directories first, then alphabetical
+        b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name))
+    });
+
+    Ok(entries)
 }

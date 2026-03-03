@@ -98,6 +98,8 @@ pub fn run() {
             commands::git::run_gh_command,
             commands::git::read_file_contents,
             commands::git::read_file_base64,
+            commands::git::write_file_contents,
+            commands::git::list_directory,
             commands::pty::spawn_pty,
             commands::pty::write_to_pty,
             commands::pty::resize_pty,

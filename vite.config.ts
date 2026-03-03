@@ -22,6 +22,10 @@ export default defineConfig(async () => ({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 
+  optimizeDeps: {
+    include: ["monaco-editor"],
+  },
+
   clearScreen: false,
   server: {
     port: 1420,
