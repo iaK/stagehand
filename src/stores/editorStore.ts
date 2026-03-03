@@ -47,14 +47,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setWorktreeRoot: (root: string | null) => set({ worktreeRoot: root }),
 
   openFile: async (path: string) => {
-    const { openFiles } = get();
+    const { openFiles, worktreeRoot } = get();
     const existing = openFiles.find((f) => f.path === path);
     if (existing) {
       set({ activeFilePath: path });
       return;
     }
 
-    const content = await readFileContents(path);
+    if (!worktreeRoot) return;
+    const content = await readFileContents(path, worktreeRoot);
     if (content === null) return;
 
     set((s) => ({
@@ -141,28 +142,37 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   resolveUnsavedChanges: (confirmed: boolean) => {
-    const { fileAwaitingClosePath, unsavedChangesDialogCallback, openFiles } = get();
+    const { fileAwaitingClosePath, unsavedChangesDialogCallback } = get();
 
     if (!fileAwaitingClosePath) return;
 
-    if (confirmed && unsavedChangesDialogCallback) {
-      unsavedChangesDialogCallback(true);
-    }
-
-    // Perform the actual close
-    set((s) => {
-      const filtered = s.openFiles.filter((f) => f.path !== fileAwaitingClosePath);
-      let nextActive = s.activeFilePath;
-      if (s.activeFilePath === fileAwaitingClosePath) {
-        nextActive = filtered.length > 0 ? filtered[filtered.length - 1].path : null;
+    if (confirmed) {
+      if (unsavedChangesDialogCallback) {
+        unsavedChangesDialogCallback(true);
       }
-      return {
-        openFiles: filtered,
-        activeFilePath: nextActive,
+
+      // Only close the file when the user confirmed discarding changes
+      set((s) => {
+        const filtered = s.openFiles.filter((f) => f.path !== fileAwaitingClosePath);
+        let nextActive = s.activeFilePath;
+        if (s.activeFilePath === fileAwaitingClosePath) {
+          nextActive = filtered.length > 0 ? filtered[filtered.length - 1].path : null;
+        }
+        return {
+          openFiles: filtered,
+          activeFilePath: nextActive,
+          unsavedChangesDialogOpen: false,
+          fileAwaitingClosePath: null,
+          unsavedChangesDialogCallback: null,
+        };
+      });
+    } else {
+      // User chose "Keep Open" — just dismiss the dialog, keep the file open
+      set({
         unsavedChangesDialogOpen: false,
         fileAwaitingClosePath: null,
         unsavedChangesDialogCallback: null,
-      };
-    });
+      });
+    }
   },
 }));

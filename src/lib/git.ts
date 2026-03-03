@@ -531,8 +531,8 @@ export async function injectTaskFromMainRepo(
   await gitWorktreeAdd(projectPath, worktreePath, branchName, false);
 }
 
-export async function readFileContents(path: string): Promise<string | null> {
-  return invoke<string | null>("read_file_contents", { path });
+export async function readFileContents(path: string, worktreeRoot: string): Promise<string | null> {
+  return invoke<string | null>("read_file_contents", { path, worktreeRoot });
 }
 
 export async function writeFileContents(path: string, contents: string, worktreeRoot: string): Promise<void> {
