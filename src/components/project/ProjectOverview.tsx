@@ -41,12 +41,16 @@ export function ProjectOverview() {
   const [pausedOpen, setPausedOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [taskDiffStats, setTaskDiffStats] = useState<Record<string, { insertions: number; deletions: number }>>({});
+  const [savedRepoFullName, setSavedRepoFullName] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeProject) {
       loadProjectOverview(activeProject.id);
       repo.getProjectSetting(activeProject.id, "default_agent").then((val) => {
         setDefaultAgent(val ?? "claude");
+      });
+      repo.getProjectSetting(activeProject.id, "github_repo_full_name").then((val) => {
+        setSavedRepoFullName(val ?? null);
       });
     }
   }, [activeProject?.id, loadProjectOverview]);
@@ -143,10 +147,10 @@ export function ProjectOverview() {
           <span className="text-xs text-muted-foreground">GitHub</span>
           {githubLoading ? (
             <Skeleton className="h-5 w-24 mt-1" />
-          ) : githubRepoFullName ? (
+          ) : (githubRepoFullName || savedRepoFullName) ? (
             <div className="flex items-center gap-2 mt-1">
               <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-              <p className="text-sm font-medium truncate">{githubRepoFullName}</p>
+              <p className="text-sm font-medium truncate">{githubRepoFullName || savedRepoFullName}</p>
             </div>
           ) : (
             <div className="flex items-center gap-2 mt-1">

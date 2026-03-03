@@ -20,10 +20,13 @@ async function detectGitRemote(projectId: string, projectPath: string) {
   if (!url) return { remoteUrl: null, repoFullName: null, defaultBranch: null };
 
   const parsed = parseGitRemote(url);
-  const branch = await gitDefaultBranch(projectPath);
+  const gitBranch = await gitDefaultBranch(projectPath);
 
   const repoFullName = parsed ? `${parsed.owner}/${parsed.repo}` : null;
-  const defaultBranch = branch ?? "main";
+
+  // Prefer the user's saved override; only fall back to git-detected branch
+  const savedBranch = await repo.getProjectSetting(projectId, "github_default_branch");
+  const defaultBranch = savedBranch || gitBranch || "main";
 
   // Persist to project settings
   if (parsed) {
@@ -31,7 +34,9 @@ async function detectGitRemote(projectId: string, projectPath: string) {
     await repo.setProjectSetting(projectId, "github_repo_name", parsed.repo);
     await repo.setProjectSetting(projectId, "github_repo_full_name", repoFullName!);
   }
-  await repo.setProjectSetting(projectId, "github_default_branch", defaultBranch);
+  if (!savedBranch) {
+    await repo.setProjectSetting(projectId, "github_default_branch", defaultBranch);
+  }
 
   return { remoteUrl: url, repoFullName, defaultBranch };
 }

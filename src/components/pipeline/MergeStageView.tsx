@@ -51,6 +51,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const activeTask = useTaskStore((s) => s.activeTask);
   const executions = useTaskStore((s) => s.executions);
   const updateTask = useTaskStore((s) => s.updateTask);
+  const storeDefaultBranch = useGitHubStore((s) => s.defaultBranch);
   const loadExecutions = useTaskStore((s) => s.loadExecutions);
 
   const sk = activeTask ? stageKey(activeTask.id, stage.task_stage_id) : "";
@@ -80,7 +81,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const setFixCommitDiffStat = (v: string) => updateMergeState(sk, { fixCommitDiffStat: v });
 
   // Local-only state (OK to reset on navigation)
-  const [targetBranch, setTargetBranch] = useState<string>("main");
+  const [targetBranch, setTargetBranch] = useState<string>(storeDefaultBranch ?? "main");
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
@@ -88,6 +89,14 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const [fixCommitError, setFixCommitError] = useState<string | null>(null);
   const [targetIsDirty, setTargetIsDirty] = useState(false);
   const [dirtyStrategy, setDirtyStrategy] = useState<DirtyMergeStrategy>("stash_merge_pop");
+
+  // Keep local targetBranch in sync with the GitHub store so changes
+  // made via the BranchPicker in TaskOverview are reflected here.
+  useEffect(() => {
+    if (storeDefaultBranch) {
+      setTargetBranch(storeDefaultBranch);
+    }
+  }, [storeDefaultBranch]);
 
   // Check if this stage already has an approved execution
   const latestExecution = executions
@@ -256,7 +265,10 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
       if (activeTask.branch_name) {
         shouldDeleteBranch = await gitIsMerged(activeProject.path, activeTask.branch_name, targetBranch);
       }
-      await cleanupTaskWorktree(activeProject.path, activeTask, { deleteBranch: shouldDeleteBranch });
+      await cleanupTaskWorktree(activeProject.path, activeTask, {
+        deleteBranch: shouldDeleteBranch,
+        defaultBranch: targetBranch,
+      });
 
       await loadExecutions(activeProject.id, activeTask.id);
       setMergeState("success");
@@ -355,12 +367,13 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
       await gitCommit(workDir, fixCommitMessage);
       setMergeState("preview");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // "nothing to commit" is not an error — just proceed to preview
-      if (/nothing to commit|nothing added to commit|no changes added/i.test(msg)) {
+      const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+      const stillHasChanges = await hasUncommittedChanges(workDir).catch(() => false);
+      if (!stillHasChanges) {
+        // Working tree is clean — just proceed to preview
         setMergeState("preview");
       } else {
-        setFixCommitError(msg);
+        setFixCommitError(err instanceof Error ? err.message : String(err));
       }
     } finally {
       setFixCommitting(false);
@@ -391,7 +404,9 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
 
     sendNotification("Merge skipped", "Task completed without merging");
 
-    await cleanupTaskWorktree(activeProject.path, activeTask);
+    await cleanupTaskWorktree(activeProject.path, activeTask, {
+      defaultBranch: targetBranch,
+    });
 
     await loadExecutions(activeProject.id, activeTask.id);
     setMergeState("success");

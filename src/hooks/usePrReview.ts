@@ -149,7 +149,10 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
         }
 
         // Clean up worktree; delete branch only after merge (not close — a closed PR may be reopened)
-        await cleanupTaskWorktree(activeProject.path, task, { deleteBranch: !!prState.merged });
+        await cleanupTaskWorktree(activeProject.path, task, {
+          deleteBranch: !!prState.merged,
+          defaultBranch: useGitHubStore.getState().defaultBranch ?? undefined,
+        });
 
         // Mark task as completed
         await updateTask(activeProject.id, task.id, { status: "completed" });
@@ -555,7 +558,9 @@ Keep it under 72 characters for the first line.`,
       // Clean up worktree before marking completed. Don't delete the branch
       // here — the PR is still open and may receive more review comments.
       // Branch deletion happens in fetchReviews when the PR is detected as merged.
-      await cleanupTaskWorktree(activeProject.path, task);
+      await cleanupTaskWorktree(activeProject.path, task, {
+        defaultBranch: useGitHubStore.getState().defaultBranch ?? undefined,
+      });
 
       // Mark task as completed
       await updateTask(activeProject.id, task.id, { status: "completed" });

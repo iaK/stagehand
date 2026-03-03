@@ -69,24 +69,26 @@ export function ProjectRail() {
   const [showAppSettings, setShowAppSettings] = useState(false);
 
   return (
-    <div className="w-14 flex-shrink-0 border-r border-border bg-muted/50 flex flex-col items-center py-2">
-      {/* Stagehand logo — opens app settings */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setShowAppSettings(true)}
-            className="flex items-center justify-center h-8 w-8 mb-1 rounded-lg hover:bg-accent transition-colors"
-          >
-            <img src={logoSrc} alt="Stagehand" className="w-6 h-6" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Settings</TooltipContent>
-      </Tooltip>
+    <div className="w-14 flex-shrink-0 border-r border-border bg-muted/50 flex flex-col items-center">
+      {/* Stagehand logo — opens app settings, aligned with header bar */}
+      <div className="flex items-center justify-center h-[57px] shrink-0 w-full">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setShowAppSettings(true)}
+              className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-accent transition-colors"
+            >
+              <img src={logoSrc} alt="Stagehand" className="w-6 h-6" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Settings</TooltipContent>
+        </Tooltip>
+      </div>
 
-      <div className="w-7 h-px bg-border" />
+      <div className="w-6 h-px bg-border" />
 
       {/* Project avatars + add button */}
-      <div className="flex-1 overflow-y-auto flex flex-col items-center gap-5 py-3 px-1">
+      <div className="flex-1 overflow-y-auto flex flex-col items-center gap-5 pt-5 pb-3 px-1">
         {projects.map((p) => {
           const logo = projectLogos[p.id];
           if (!logo) return null;

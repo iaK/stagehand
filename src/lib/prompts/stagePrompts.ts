@@ -135,9 +135,8 @@ export const PR_PREPARATION_SCHEMA = JSON.stringify({
       properties: {
         title: { type: "string" },
         description: { type: "string" },
-        test_plan: { type: "string" },
       },
-      required: ["title", "description", "test_plan"],
+      required: ["title"],
     },
   },
   required: ["fields"],
@@ -412,7 +411,7 @@ export const SECOND_OPINION_PROMPT = `{{#if prior_attempt_output}}You are revisi
 
 Task: {{task_description}}
 
-Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan if needed.
+IMPORTANT: Before revising, retrieve BOTH the research output AND the plan using the get_stage_output MCP tool. You need the research to verify your revisions are consistent with the codebase analysis.
 
 ## Selected Concerns to Address
 
@@ -427,17 +426,18 @@ Output the revised plan as clear markdown.
 
 Task: {{task_description}}
 
-Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan.
+IMPORTANT: You MUST retrieve and read BOTH the research output AND the plan before reviewing. Call the get_stage_output MCP tool for the Research stage and the Planning stage. The research contains codebase analysis, relevant files, and architectural context that you need to verify the plan against.
 
 ## Review Dimensions
 
-Analyze the plan against each of these:
+Analyze the plan against each of these, using the research output as your source of truth about the codebase:
 
-1. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
-2. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
-3. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
-4. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
-5. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
+1. **Consistency with research** — Does the plan follow the research findings? Does it modify the correct files and use the right APIs/patterns identified in the research? Does it contradict or ignore any research recommendations?
+2. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
+3. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
+4. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
+5. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
+6. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
 
 Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
 
@@ -456,6 +456,5 @@ Review the completed stages in your system prompt for a summary of all work done
 Generate:
 1. A concise PR title
 2. A detailed description explaining the changes
-3. A test plan describing how to verify the changes
 
 Respond with a JSON object matching the output schema.`;

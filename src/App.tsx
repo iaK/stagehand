@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { ThemeProvider } from "next-themes";
 import { Layout } from "./components/layout/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SetupWizard } from "./components/onboarding/SetupWizard";
 import { checkAgentAvailable } from "./lib/agent";
+import { getSetting, setSetting } from "./lib/repositories";
+import { useProjectStore } from "./stores/projectStore";
 import { useOrphanedProcessCleanup } from "./hooks/useOrphanedProcessCleanup";
 import { requestNotificationPermission, registerNotificationClickHandler } from "./lib/notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +15,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   const [claudeError, setClaudeError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState<boolean | null>(null); // null = loading
   useOrphanedProcessCleanup();
 
   useEffect(() => {
@@ -20,10 +24,64 @@ function App() {
     checkAgentAvailable().catch((err) => {
       setClaudeError(String(err));
     });
+
+    // Check if we need to show the setup wizard
+    (async () => {
+      try {
+        const completed = await getSetting("setup_wizard_completed");
+        if (completed === "true") {
+          setShowWizard(false);
+          return;
+        }
+        // Not completed — check if there are existing projects (existing user)
+        await useProjectStore.getState().loadProjects();
+        const projects = useProjectStore.getState().projects;
+        if (projects.length > 0) {
+          // Existing user with projects — skip wizard, mark as done
+          await setSetting("setup_wizard_completed", "true");
+          setShowWizard(false);
+        } else {
+          setShowWizard(true);
+        }
+      } catch {
+        // If settings DB isn't ready yet, skip wizard
+        setShowWizard(false);
+      }
+    })();
+
     return () => {
       unregisterPromise.then((u) => u.unregister());
     };
   }, []);
+
+  const handleWizardComplete = async () => {
+    await setSetting("setup_wizard_completed", "true");
+    setShowWizard(false);
+  };
+
+  // Still loading — show nothing while we check
+  if (showWizard === null) {
+    return (
+      <ErrorBoundary>
+        <ThemeProvider attribute="class" defaultTheme="system" storageKey="stagehand-theme">
+          <div className="h-screen" />
+        </ThemeProvider>
+      </ErrorBoundary>
+    );
+  }
+
+  if (showWizard) {
+    return (
+      <ErrorBoundary>
+        <ThemeProvider attribute="class" defaultTheme="system" storageKey="stagehand-theme">
+          <TooltipProvider>
+            <SetupWizard onComplete={handleWizardComplete} />
+            <Toaster position="bottom-right" />
+          </TooltipProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <ErrorBoundary>

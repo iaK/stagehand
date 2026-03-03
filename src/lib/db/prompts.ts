@@ -136,11 +136,12 @@ export const PLANNING_PROMPT = `You are a senior software engineer creating a de
 
 Task: {{task_description}}
 
+{{#if user_decision}}
 Selected approach:
 {{user_decision}}
+{{/if}}
 
-Previous research and context:
-{{previous_output}}
+IMPORTANT: A thorough research stage has already been completed for this task. You MUST retrieve and use that research before planning. Start by calling the get_stage_output MCP tool for the Research stage to get the full findings — it contains codebase analysis, relevant files, and context that you should build your plan on. Do NOT re-do research that has already been done. Trust the research output and focus your effort on creating a concrete plan from it.
 
 {{#if user_input}}
 Developer's answers to your questions:
@@ -223,6 +224,5 @@ Full implementation details (for reference):
 Generate:
 1. A concise PR title
 2. A detailed description explaining the changes
-3. A test plan describing how to verify the changes
 
 Respond with a JSON object matching the output schema.`;

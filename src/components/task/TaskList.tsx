@@ -1,35 +1,34 @@
-import { useState, useCallback, memo } from "react";
+import { useCallback, useRef, useEffect, memo } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { Input } from "@/components/ui/input";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import { statusColors, pipelineColors } from "../../lib/taskStatus";
 import type { Task } from "../../lib/types";
 
-export function TaskList() {
+export function TaskList({ searchOpen, query, onQueryChange }: {
+  searchOpen: boolean;
+  query: string;
+  onQueryChange: (q: string) => void;
+}) {
   const tasks = useTaskStore((s) => s.tasks);
   const activeTask = useTaskStore((s) => s.activeTask);
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
-  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (searchOpen) searchRef.current?.focus();
+  }, [searchOpen]);
 
   const getTaskDotClass = (task: Task) => {
-    // Completed tasks always show green
     if (task.status === "completed") return statusColors.completed;
 
-    // For the active task, check processStore for live running state
     if (task.id === activeTask?.id && task.current_stage_id) {
       const sk = stageKey(task.id, task.current_stage_id);
       const stageState = useProcessStore.getState().stages[sk];
       if (stageState?.isRunning) return pipelineColors.running;
     }
 
-    // For all tasks, use the cached latest execution status — but only if
-    // it represents an active/ongoing state.  A stale "failed" execution
-    // should NOT paint the dot red when the task itself isn't failed (e.g.
-    // the user may have re-queued the task or it's still in_progress).
-    // Similarly, "approved" just means the last *stage* completed — if the
-    // task itself is still in_progress (more stages remain), it's awaiting
-    // user action on the next stage.
     const execStatus = taskExecStatuses[task.id];
     if (execStatus === "approved" && task.status === "in_progress") {
       return pipelineColors.awaiting_user;
@@ -37,7 +36,6 @@ export function TaskList() {
     if (execStatus && execStatus !== "failed" && execStatus !== "approved") {
       return pipelineColors[execStatus] ?? statusColors[task.status] ?? "bg-zinc-400";
     }
-    // Show execution "failed" only when the task itself is also failed
     if (execStatus === "failed" && task.status === "failed") {
       return pipelineColors.failed;
     }
@@ -56,16 +54,19 @@ export function TaskList() {
 
   return (
     <>
-    <div className="px-1 pb-2">
-      <Input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search tasks..."
-        className="h-7 text-xs"
-      />
-    </div>
-    <div className="space-y-1">
+    {searchOpen && (
+      <div className="px-1 pb-2">
+        <Input
+          ref={searchRef}
+          type="text"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search tasks..."
+          className="h-7 text-xs"
+        />
+      </div>
+    )}
+    <div className="space-y-0.5">
       {filtered.length === 0 && query ? (
         <p className="text-sm text-muted-foreground italic px-1 py-2">No matching tasks</p>
       ) : filtered.map((task) => {

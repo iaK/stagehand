@@ -14,7 +14,7 @@ import {
   LiveStreamBubble,
   ThinkingBubble,
 } from "./StageTimeline";
-import { gitAdd, gitCommit } from "../../lib/git";
+import { gitAdd, gitCommit, hasUncommittedChanges } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import { spawnAgent } from "../../lib/agent";
 import type { AgentStreamEvent } from "../../lib/types";
@@ -132,6 +132,19 @@ export function StageView({ stage, taskId }: StageViewProps) {
         await chooseNextStage(task, stage, nextId);
       }
     } catch (e) {
+      const workDirCheck = getTaskWorkingDir(task, activeProject.path);
+      const stillHasChanges = await hasUncommittedChanges(workDirCheck).catch(() => false);
+      if (!stillHasChanges) {
+        // Working tree is clean — changes were already committed or there were none.
+        // Just proceed with approval.
+        useProcessStore.getState().clearPendingCommit();
+        await approveStage(task, stage);
+        const nextId = isTerminalStage ? terminalNextTemplateId : effectiveNextTemplateId;
+        if (nextId !== null || isTerminalStage) {
+          await chooseNextStage(task, stage, nextId);
+        }
+        return;
+      }
       setCommitError(e instanceof Error ? e.message : String(e));
       // Re-check git status — if user committed externally, switch to continue button
       if (task && activeProject) {
@@ -428,57 +441,6 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
     }
   };
 
-  if (!activeProject || !task) return null;
-
-  // Ejected: full-screen overlay blocking all stage interaction
-  if (task.ejected) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full bg-background/80 backdrop-blur-sm">
-        <div className="text-center space-y-4 max-w-md">
-          <svg
-            className="w-12 h-12 mx-auto text-muted-foreground/50"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth={1.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M5 10l7-7m0 0l7 7m-7-7v18"
-            />
-          </svg>
-          <h2 className="text-lg font-semibold">Task Ejected</h2>
-          <p className="text-sm text-muted-foreground">
-            This task's branch is currently checked out in your main project
-            directory. Edit and test your code there, then click{" "}
-            <strong>Inject</strong> in the header to resume the pipeline.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Merge: custom rendering
-  if (stage.output_format === "merge") {
-    return <MergeStageView stage={stage} />;
-  }
-
-  // Interactive Terminal: self-contained PTY-based stage
-  if (stage.output_format === "interactive_terminal") {
-    return <InteractiveTerminalStageView stage={stage} taskId={taskId} />;
-  }
-
-  // PR Review: delegated to dedicated subcomponent
-  if (stage.output_format === "pr_review") {
-    return (
-      <PrReviewView
-        stage={stage}
-        task={task}
-      />
-    );
-  }
-
   // Pre-fetch next stage suggestion while user is reviewing output (awaiting_user).
   // Only fire when the output doesn't have interactive controls (e.g. question cards)
   // so we don't waste an agent call during the Q&A phase.
@@ -557,6 +519,57 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   const effectiveNextTemplateId = selectedNextTemplateId === FINISH_TASK_VALUE
     ? finishTemplateId
     : selectedNextTemplateId;
+
+  if (!activeProject || !task) return null;
+
+  // Ejected: full-screen overlay blocking all stage interaction
+  if (task.ejected) {
+    return (
+      <div className="flex-1 flex items-center justify-center h-full bg-background/80 backdrop-blur-sm">
+        <div className="text-center space-y-4 max-w-md">
+          <svg
+            className="w-12 h-12 mx-auto text-muted-foreground/50"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 10l7-7m0 0l7 7m-7-7v18"
+            />
+          </svg>
+          <h2 className="text-lg font-semibold">Task Ejected</h2>
+          <p className="text-sm text-muted-foreground">
+            This task's branch is currently checked out in your main project
+            directory. Edit and test your code there, then click{" "}
+            <strong>Inject</strong> in the header to resume the pipeline.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Merge: custom rendering
+  if (stage.output_format === "merge") {
+    return <MergeStageView stage={stage} />;
+  }
+
+  // Interactive Terminal: self-contained PTY-based stage
+  if (stage.output_format === "interactive_terminal") {
+    return <InteractiveTerminalStageView stage={stage} taskId={taskId} />;
+  }
+
+  // PR Review: delegated to dedicated subcomponent
+  if (stage.output_format === "pr_review") {
+    return (
+      <PrReviewView
+        stage={stage}
+        task={task}
+      />
+    );
+  }
 
   const nextStageSelectorNode = isTerminalStage ? null : (
     <div className="mb-3">
@@ -805,7 +818,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
               )}
 
               {/* Inline commit workflow — only for stages that modify files */}
-              {isCurrentStage && !!stage.commits_changes && (
+              {isCurrentStage && !hasPendingQuestions && !!stage.commits_changes && (
                 <CommitWorkflow
                   pendingCommit={pendingCommit}
                   stageId={sid}

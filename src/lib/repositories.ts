@@ -112,14 +112,15 @@ export async function createProject(name: string, path: string): Promise<Project
   const templates = getDefaultStageTemplates(id);
   for (const t of templates) {
     await projectDb.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent, commits_changes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
         t.allowed_tools, t.requires_user_input, t.agent ?? null,
+        t.commits_changes ?? 0,
       ],
     );
   }
@@ -296,14 +297,15 @@ export async function restoreDefaultTemplates(projectId: string): Promise<void> 
   const templates = getDefaultStageTemplates(projectId);
   for (const t of templates) {
     await db.execute(
-      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      `INSERT INTO stage_templates (id, project_id, name, description, sort_order, prompt_template, input_source, output_format, output_schema, gate_rules, persona_name, persona_system_prompt, persona_model, preparation_prompt, allowed_tools, requires_user_input, agent, commits_changes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         t.id, t.project_id, t.name, t.description, t.sort_order,
         t.prompt_template, t.input_source, t.output_format,
         t.output_schema, t.gate_rules, t.persona_name,
         t.persona_system_prompt, t.persona_model, t.preparation_prompt,
         t.allowed_tools, t.requires_user_input, t.agent ?? null,
+        t.commits_changes ?? 0,
       ],
     );
   }

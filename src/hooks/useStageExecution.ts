@@ -272,6 +272,7 @@ export function useStageExecution() {
         let rawOutput = "";
         let resultText = "";
         let thinkingText = "";
+        let resultSubtype: string | undefined;
         let usageData: {
           input_tokens?: number;
           output_tokens?: number;
@@ -318,6 +319,10 @@ export function useStageExecution() {
                     }
                   }
                 } else if (parsed.type === "result") {
+                  // Track error subtypes so finalizeExecution can treat them as failures
+                  if (parsed.subtype === "error_during_execution") {
+                    resultSubtype = parsed.subtype;
+                  }
                   // With --json-schema, the output is in structured_output, not result
                   const output = parsed.structured_output ?? parsed.result;
                   if (output != null && output !== "") {
@@ -395,6 +400,7 @@ export function useStageExecution() {
                 attemptNumber,
                 usageData,
                 !!priorAttemptOutput,
+                resultSubtype,
               );
               break;
             case "error":
@@ -561,6 +567,7 @@ export function useStageExecution() {
         num_turns?: number;
       } | null,
       isFindingsApply?: boolean,
+      resultSubtype?: string,
     ) => {
       if (!activeProject) return;
 
@@ -569,13 +576,21 @@ export function useStageExecution() {
 
       const savedThinking = thinkingText?.trim() || null;
 
-      if (wasKilled || (exitCode !== 0 && exitCode !== null)) {
+      // Treat error_during_execution as a failure even when exit code is 0,
+      // since the structured output is typically missing in this case.
+      const isCliError = resultSubtype === "error_during_execution";
+
+      if (wasKilled || (exitCode !== 0 && exitCode !== null) || isCliError) {
         await repo.updateStageExecution(activeProject.id, executionId, {
           status: "failed",
           raw_output: rawOutput,
           parsed_output: resultText,
           thinking_output: savedThinking,
-          error_message: wasKilled ? "Stopped by user" : `Process exited with code ${exitCode}`,
+          error_message: wasKilled
+            ? "Stopped by user"
+            : isCliError
+              ? "Agent encountered an error during execution"
+              : `Process exited with code ${exitCode}`,
           completed_at: new Date().toISOString(),
           ...(usageData ?? {}),
         });
@@ -711,7 +726,6 @@ export function useStageExecution() {
           if (fields.title) title = fields.title;
           const parts: string[] = [];
           if (fields.description) parts.push(fields.description);
-          if (fields.test_plan) parts.push(`## Test Plan\n\n${fields.test_plan}`);
           body = parts.join("\n\n");
         } catch {
           // Use defaults
@@ -765,7 +779,10 @@ export function useStageExecution() {
       {
         const project = useProjectStore.getState().activeProject;
         if (project) {
-          await cleanupTaskWorktree(project.path, task, { deleteBranch: true });
+          await cleanupTaskWorktree(project.path, task, {
+            deleteBranch: true,
+            defaultBranch: useGitHubStore.getState().defaultBranch ?? undefined,
+          });
         }
       }
     },

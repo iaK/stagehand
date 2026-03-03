@@ -26,12 +26,15 @@ import {
   gitAdd,
   gitCommit,
   gitDiffStat,
+  gitStash,
+  gitStashPop,
   ejectTaskToMainRepo,
   injectTaskFromMainRepo,
 } from "../../lib/git";
 import { updateTask as repoUpdateTask, getCommitPrefix } from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
+import { useGitHubStore } from "../../stores/githubStore";
 import type { TaskStageInstance } from "../../lib/types";
 
 export function PipelineView() {
@@ -51,7 +54,7 @@ export function PipelineView() {
   }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id, activeTaskStages]);
 
   const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
-  const [showOverview, setShowOverview] = useState(false);
+  const [showOverview, setShowOverview] = useState(true);
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
 
@@ -63,6 +66,7 @@ export function PipelineView() {
   const [ejectError, setEjectError] = useState<string | null>(null);
   const [injectError, setInjectError] = useState<string | null>(null);
   const [worktreeHasChanges, setWorktreeHasChanges] = useState(false);
+  const [mainRepoHasChanges, setMainRepoHasChanges] = useState(false);
   const [ejectCommitMessage, setEjectCommitMessage] = useState("");
   const [ejectDiffStat, setEjectDiffStat] = useState("");
   const [checkingChanges, setCheckingChanges] = useState(false);
@@ -79,6 +83,7 @@ export function PipelineView() {
     setCheckingChanges(true);
     setEjectError(null);
     setWorktreeHasChanges(false);
+    setMainRepoHasChanges(false);
     setEjectCommitMessage("");
     setEjectDiffStat("");
 
@@ -100,12 +105,7 @@ export function PipelineView() {
       // Check main repo for uncommitted changes
       const mainDirty = await hasUncommittedChanges(activeProject.path);
       if (mainDirty) {
-        setEjectError(
-          "Main repo has uncommitted changes. Please commit or stash them first.",
-        );
-        setEjectDialogOpen(true);
-        setCheckingChanges(false);
-        return;
+        setMainRepoHasChanges(true);
       }
 
       // Check worktree for uncommitted changes
@@ -134,11 +134,19 @@ export function PipelineView() {
         await gitAdd(activeTask.worktree_path);
         await gitCommit(activeTask.worktree_path, ejectCommitMessage);
       }
+      // Stash main repo changes if needed
+      if (mainRepoHasChanges) {
+        await gitStash(activeProject.path);
+      }
       await ejectTaskToMainRepo(
         activeProject.path,
         activeTask.worktree_path,
         activeTask.branch_name,
       );
+      // Pop stashed changes onto the ejected branch
+      if (mainRepoHasChanges) {
+        await gitStashPop(activeProject.path);
+      }
       await repoUpdateTask(activeProject.id, activeTask.id, {
         ejected: 1,
         worktree_path: null,
@@ -151,6 +159,7 @@ export function PipelineView() {
       });
       setEjectDialogOpen(false);
       setWorktreeHasChanges(false);
+      setMainRepoHasChanges(false);
       setEjectCommitMessage("");
       setEjectDiffStat("");
     } catch (err) {
@@ -180,6 +189,7 @@ export function PipelineView() {
         activeProject.path,
         worktreePath,
         activeTask.branch_name,
+        useGitHubStore.getState().defaultBranch ?? undefined,
       );
       await repoUpdateTask(activeProject.id, activeTask.id, {
         ejected: 0,
@@ -377,7 +387,7 @@ export function PipelineView() {
 
           {/* Overview panel (collapsible right side) */}
           {showOverview && (
-            <div className="w-[400px] shrink-0 border-l border-border overflow-y-auto">
+            <div className="w-[400px] shrink-0 border-l border-border flex flex-col min-h-0">
               <TaskOverview />
             </div>
           )}
@@ -392,10 +402,11 @@ export function PipelineView() {
             setEjectDialogOpen(false);
             setEjectError(null);
             setWorktreeHasChanges(false);
+            setMainRepoHasChanges(false);
           }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>Eject to Main Repo</AlertDialogTitle>
             <AlertDialogDescription>
@@ -415,6 +426,15 @@ export function PipelineView() {
             </Alert>
           )}
 
+          {mainRepoHasChanges && !ejectError && (
+            <Alert>
+              <AlertDescription>
+                Your main repo has uncommitted changes. They will be stashed
+                before ejecting and restored on the ejected branch.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {worktreeHasChanges && !ejectError && (
             <div className="space-y-3">
               <Alert>
@@ -424,7 +444,7 @@ export function PipelineView() {
                 </AlertDescription>
               </Alert>
               {ejectDiffStat && (
-                <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
                   {ejectDiffStat}
                 </pre>
               )}
@@ -448,13 +468,17 @@ export function PipelineView() {
                 }
               >
                 {ejecting && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                {worktreeHasChanges
-                  ? ejecting
+                {ejecting
+                  ? worktreeHasChanges
                     ? "Committing & Ejecting..."
-                    : "Commit & Eject"
-                  : ejecting
-                    ? "Ejecting..."
-                    : "Eject"}
+                    : mainRepoHasChanges
+                      ? "Stashing & Ejecting..."
+                      : "Ejecting..."
+                  : worktreeHasChanges
+                    ? "Commit & Eject"
+                    : mainRepoHasChanges
+                      ? "Stash & Eject"
+                      : "Eject"}
               </Button>
             )}
           </AlertDialogFooter>

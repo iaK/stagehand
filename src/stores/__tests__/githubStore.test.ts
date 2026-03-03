@@ -3,6 +3,7 @@ import { useGitHubStore } from "../githubStore";
 
 // Mock repositories
 vi.mock("../../lib/repositories", () => ({
+  getProjectSetting: vi.fn().mockResolvedValue(null),
   setProjectSetting: vi.fn(),
 }));
 
@@ -77,6 +78,19 @@ describe("githubStore", () => {
       await useGitHubStore.getState().loadForProject("p1", "/path");
 
       expect(useGitHubStore.getState().defaultBranch).toBe("main");
+    });
+
+    it("uses saved branch override from project settings", async () => {
+      vi.mocked(git.gitRemoteUrl).mockResolvedValue("git@github.com:owner/repo.git");
+      vi.mocked(git.parseGitRemote).mockReturnValue({ owner: "owner", repo: "repo" });
+      vi.mocked(git.gitDefaultBranch).mockResolvedValue("main");
+      vi.mocked(repo.getProjectSetting).mockResolvedValue("develop");
+
+      await useGitHubStore.getState().loadForProject("p1", "/path");
+
+      expect(useGitHubStore.getState().defaultBranch).toBe("develop");
+      // Should NOT overwrite the saved value
+      expect(repo.setProjectSetting).not.toHaveBeenCalledWith("p1", "github_default_branch", expect.anything());
     });
 
     it("sets error on failure", async () => {

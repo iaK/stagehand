@@ -519,9 +519,10 @@ export async function injectTaskFromMainRepo(
   projectPath: string,
   worktreePath: string,
   branchName: string,
+  defaultBranch?: string,
 ): Promise<void> {
-  const defaultBranch = await gitDefaultBranch(projectPath);
-  await gitCheckoutBranch(projectPath, defaultBranch ?? "main");
+  const branch = defaultBranch ?? await gitDefaultBranch(projectPath) ?? "main";
+  await gitCheckoutBranch(projectPath, branch);
   // Clean up any stale worktree entry before re-creating
   try {
     await gitWorktreeRemove(projectPath, worktreePath);

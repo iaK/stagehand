@@ -46,6 +46,8 @@ const MIGRATIONS: Migration[] = [
   { version: 19, name: "task_lifecycle", fn: migrateTaskLifecycle },
   { version: 20, name: "stage_suggestion_cache", fn: migrateStageSuggestionCache },
   { version: 21, name: "can_follow_graph", fn: migrateCanFollowGraph },
+  { version: 22, name: "planning_prompt_mcp_hint", fn: migratePlanningPromptMcpHint },
+  { version: 23, name: "fix_behavior_flags", fn: migrateFixBehaviorFlags },
 ];
 
 /**
@@ -217,39 +219,51 @@ export async function migrateBehaviorFlags(db: Database): Promise<void> {
 
   const now = new Date().toISOString();
 
-  // Implementation (sort_order 3): commits_changes, commit_prefix = "feat"
+  // Implementation: commits_changes, commit_prefix = "feat"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Implementation' AND sort_order = 3`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Implementation'`,
     [now],
   );
 
-  // Refinement (sort_order 4): commits_changes, commit_prefix = "fix"
+  // Guided Implementation: commits_changes, commit_prefix = "feat"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Refinement' AND sort_order = 4`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'feat', updated_at = $1 WHERE name = 'Guided Implementation'`,
     [now],
   );
 
-  // Security Review (sort_order 5): commits_changes, commit_prefix = "fix"
+  // Refinement: commits_changes, commit_prefix = "fix"
   await db.execute(
-    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Security Review' AND sort_order = 5`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Refinement'`,
     [now],
   );
 
-  // PR Preparation (sort_order 6): creates_pr
+  // Security Review: commits_changes, commit_prefix = "fix"
   await db.execute(
-    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation' AND sort_order = 6`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'fix', updated_at = $1 WHERE name = 'Security Review'`,
     [now],
   );
 
-  // Research (sort_order 0): triggers_stage_selection
+  // Documentation: commits_changes, commit_prefix = "docs"
   await db.execute(
-    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research' AND sort_order = 0`,
+    `UPDATE stage_templates SET commits_changes = 1, commit_prefix = 'docs', updated_at = $1 WHERE name = 'Documentation'`,
     [now],
   );
 
-  // PR Review (sort_order 7): is_terminal
+  // PR Preparation: creates_pr
   await db.execute(
-    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'PR Review' AND sort_order = 7`,
+    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation'`,
+    [now],
+  );
+
+  // Research: triggers_stage_selection
+  await db.execute(
+    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research'`,
+    [now],
+  );
+
+  // PR Review: is_terminal
+  await db.execute(
+    `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = 'PR Review'`,
     [now],
   );
 
@@ -599,7 +613,7 @@ const SECOND_OPINION_PROMPT = `{{#if prior_attempt_output}}You are revising an i
 
 Task: {{task_description}}
 
-Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan if needed.
+IMPORTANT: Before revising, retrieve BOTH the research output AND the plan using the get_stage_output MCP tool. You need the research to verify your revisions are consistent with the codebase analysis.
 
 ## Selected Concerns to Address
 
@@ -614,17 +628,18 @@ Output the revised plan as clear markdown.
 
 Task: {{task_description}}
 
-Review the completed stages in your system prompt for the plan. Use the get_stage_output MCP tool to retrieve the full plan.
+IMPORTANT: You MUST retrieve and read BOTH the research output AND the plan before reviewing. Call the get_stage_output MCP tool for the Research stage and the Planning stage. The research contains codebase analysis, relevant files, and architectural context that you need to verify the plan against.
 
 ## Review Dimensions
 
-Analyze the plan against each of these:
+Analyze the plan against each of these, using the research output as your source of truth about the codebase:
 
-1. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
-2. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
-3. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
-4. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
-5. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
+1. **Consistency with research** — Does the plan follow the research findings? Does it modify the correct files and use the right APIs/patterns identified in the research? Does it contradict or ignore any research recommendations?
+2. **Completeness** — Does the plan cover all aspects of the task? Are there missing steps, unhandled edge cases, or gaps in the approach?
+3. **Correctness** — Will the proposed approach actually work? Are there logical errors, wrong assumptions about APIs/libraries, or misunderstandings of the codebase?
+4. **Risk** — What could go wrong? Are there risky changes (data migrations, breaking changes, security implications) that aren't acknowledged?
+5. **Simplicity** — Is the plan over-engineered? Could the same goal be achieved with fewer changes or a simpler approach?
+6. **Ordering** — Are the steps in the right order? Are there dependency issues where step N requires something from step M that comes later?
 
 Be thorough and skeptical. Flag everything you notice — the developer will choose which concerns to address.
 
@@ -979,6 +994,72 @@ const CAN_FOLLOW_MAP: Record<string, string[] | null> = {
   "PR Review": ["PR Preparation"],
   "Merge": ["Implementation", "Guided Implementation", "Refinement", "Security Review", "Documentation"],
 };
+
+async function migratePlanningPromptMcpHint(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+
+  // The old Planning prompt used {{previous_output}} which is not a recognized
+  // template variable — it gets silently stripped, so the planning agent never
+  // sees the research output.  Replace with an explicit instruction to call
+  // the get_stage_output MCP tool.
+  await db.execute(
+    `UPDATE stage_templates SET prompt_template = $1, updated_at = $2
+     WHERE name = 'Planning' AND prompt_template LIKE '%{{previous_output}}%'`,
+    [PLANNING_PROMPT, now],
+  );
+
+  // The old Second Opinion prompt only told the agent to fetch the plan but
+  // not the research.  Update it to explicitly require reading both, so the
+  // reviewer can verify the plan is consistent with the research findings.
+  await db.execute(
+    `UPDATE stage_templates SET prompt_template = $1, updated_at = $2
+     WHERE name = 'Second Opinion'
+       AND prompt_template NOT LIKE '%research output AND the plan%'`,
+    [SECOND_OPINION_PROMPT, now],
+  );
+}
+
+/**
+ * Fix behavior flags that were never applied due to sort_order mismatch in v1 migration.
+ * Matches by name only (no sort_order constraint).
+ */
+async function migrateFixBehaviorFlags(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Stages that commit changes
+  for (const [name, prefix] of [
+    ["Implementation", "feat"],
+    ["Guided Implementation", "feat"],
+    ["Refinement", "fix"],
+    ["Security Review", "fix"],
+    ["Documentation", "docs"],
+  ] as const) {
+    await db.execute(
+      `UPDATE stage_templates SET commits_changes = 1, commit_prefix = $1, updated_at = $2 WHERE name = $3 AND (commits_changes IS NULL OR commits_changes = 0)`,
+      [prefix, now, name],
+    );
+  }
+
+  // PR Preparation: creates_pr
+  await db.execute(
+    `UPDATE stage_templates SET creates_pr = 1, updated_at = $1 WHERE name = 'PR Preparation' AND (creates_pr IS NULL OR creates_pr = 0)`,
+    [now],
+  );
+
+  // Research: triggers_stage_selection
+  await db.execute(
+    `UPDATE stage_templates SET triggers_stage_selection = 1, updated_at = $1 WHERE name = 'Research' AND (triggers_stage_selection IS NULL OR triggers_stage_selection = 0)`,
+    [now],
+  );
+
+  // Terminal stages
+  for (const name of ["PR Review", "Merge"]) {
+    await db.execute(
+      `UPDATE stage_templates SET is_terminal = 1, updated_at = $1 WHERE name = $2 AND (is_terminal IS NULL OR is_terminal = 0)`,
+      [now, name],
+    );
+  }
+}
 
 async function migrateCanFollowGraph(db: Database): Promise<void> {
   await db.execute(`ALTER TABLE stage_templates ADD COLUMN can_follow TEXT`).catch(() => {});

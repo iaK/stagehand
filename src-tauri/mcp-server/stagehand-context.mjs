@@ -80,30 +80,18 @@ server.tool(
   "Get the full output (stage_result) of a completed stage by name.",
   { stage_name: z.string().describe("The name of the stage to retrieve output for") },
   async ({ stage_name }) => {
-    // Research stages have task_stage_id IS NULL, handle separately
-    const row = stage_name === "Research"
-      ? db
-          .prepare(
-            `SELECT se.stage_result
-             FROM stage_executions se
-             WHERE se.task_id = ? AND se.task_stage_id IS NULL AND se.status = 'approved'
-               AND se.stage_result IS NOT NULL AND se.stage_result != ''
-             ORDER BY se.attempt_number DESC
-             LIMIT 1`,
-          )
-          .get(taskId)
-      : db
-          .prepare(
-            `SELECT se.stage_result
-             FROM stage_executions se
-             JOIN task_stages ts ON se.task_stage_id = ts.id
-             JOIN stage_templates st ON ts.stage_template_id = st.id
-             WHERE se.task_id = ? AND st.name = ? AND se.status = 'approved'
-               AND se.stage_result IS NOT NULL AND se.stage_result != ''
-             ORDER BY se.attempt_number DESC
-             LIMIT 1`,
-          )
-          .get(taskId, stage_name);
+    const row = db
+      .prepare(
+        `SELECT se.stage_result
+         FROM stage_executions se
+         JOIN task_stages ts ON se.task_stage_id = ts.id
+         JOIN stage_templates st ON ts.stage_template_id = st.id
+         WHERE se.task_id = ? AND st.name = ? AND se.status = 'approved'
+           AND se.stage_result IS NOT NULL AND se.stage_result != ''
+         ORDER BY se.attempt_number DESC
+         LIMIT 1`,
+      )
+      .get(taskId, stage_name);
 
     if (!row) {
       return {

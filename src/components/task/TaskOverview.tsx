@@ -11,6 +11,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { gitLog, gitLogBranchDiff, gitListBranches, gitDiffShortStatBranch, type GitCommit } from "../../lib/git";
 import { sendNotification } from "../../lib/notifications";
+import { toast } from "sonner";
 import { useProcessStore } from "../../stores/processStore";
 import { useGitHubStore } from "../../stores/githubStore";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
@@ -200,7 +201,10 @@ export function TaskOverview() {
 
   const confirmArchive = async () => {
     if (!activeProject || !activeTask) return;
-    await cleanupTaskWorktree(activeProject.path, activeTask, { deleteBranch: true });
+    await cleanupTaskWorktree(activeProject.path, activeTask, {
+      deleteBranch: true,
+      defaultBranch: defaultBranch ?? undefined,
+    });
     await updateTask(activeProject.id, activeTask.id, { lifecycle: "archived" });
     sendNotification("Task archived", activeTask.title, "success", { projectId: activeProject.id, taskId: activeTask.id });
     setArchiveDialogOpen(false);
@@ -215,54 +219,73 @@ export function TaskOverview() {
     : null;
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1 min-w-0">
-          {parentTask && (
-            <button
-              onClick={() => useTaskStore.getState().setActiveTask(parentTask)}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+    <>
+      {/* Fixed header bar — aligned with pipeline stepper and sidebar header */}
+      <div className="flex items-center px-4 h-[57px] shrink-0">
+        <Badge variant={status.variant}>{status.label}</Badge>
+        <div className="ml-auto flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="shrink-0"
+              onClick={() => {
+                navigator.clipboard.writeText(activeTask.title);
+              }}
             >
-              <span>&larr;</span> Parent: {parentTask.title}
-            </button>
-          )}
-          <h1 className="text-xl font-semibold truncate">{activeTask.title}</h1>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge variant={status.variant}>{status.label}</Badge>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setEditingTask(true)}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit task</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setArchiveDialogOpen(true)}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Archive task</TooltipContent>
-          </Tooltip>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Copy name</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setEditingTask(true)}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit task</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setArchiveDialogOpen(true)}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Archive task</TooltipContent>
+        </Tooltip>
         </div>
       </div>
 
-      <Separator />
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto pt-0 px-6 pb-6 space-y-4">
+      {/* Title */}
+      <div className="space-y-2">
+        {parentTask && (
+          <button
+            onClick={() => useTaskStore.getState().setActiveTask(parentTask)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <span>&larr;</span> Parent: {parentTask.title}
+          </button>
+        )}
+        <h1 className="text-xl font-semibold truncate">{activeTask.title}</h1>
+      </div>
 
       {/* Info Grid */}
       <div className="grid grid-cols-2 gap-4">
@@ -274,7 +297,19 @@ export function TaskOverview() {
         <div className="col-span-2 rounded-lg border border-border bg-card px-4 py-3">
           <span className="text-xs text-muted-foreground">Branch</span>
           <div className="flex items-center gap-2 text-sm font-medium font-mono mt-0.5">
-            <span className="truncate">{activeTask.branch_name ?? "No branch"}</span>
+            {activeTask.branch_name ? (
+              <button
+                className="truncate hover:text-blue-600 transition-colors text-left"
+                onClick={() => {
+                  navigator.clipboard.writeText(activeTask.branch_name!);
+                  toast.success("Branch name copied");
+                }}
+              >
+                {activeTask.branch_name}
+              </button>
+            ) : (
+              <span className="truncate">No branch</span>
+            )}
             <span className="text-muted-foreground shrink-0">&rarr;</span>
             <BranchPicker
               value={defaultBranch ?? "main"}
@@ -334,7 +369,6 @@ export function TaskOverview() {
 
       {activeTask.status === "split" && childTasks.length > 0 && (
         <>
-          <Separator />
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Subtasks ({childTasks.length})</CardTitle>
@@ -361,7 +395,6 @@ export function TaskOverview() {
       {/* Token Usage */}
       {tokenTotals && (
         <>
-          <Separator />
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Token Usage</CardTitle>
@@ -446,8 +479,6 @@ export function TaskOverview() {
         </>
       )}
 
-      <Separator />
-
       {/* Commits */}
       <Card>
         <CardHeader className="pb-0">
@@ -512,6 +543,7 @@ export function TaskOverview() {
         />
       )}
     </div>
+    </>
   );
 }
 
@@ -558,13 +590,24 @@ function BranchPicker({
   }, [open, onOpenChange]);
 
   return (
-    <div className="relative shrink-0" ref={containerRef}>
+    <div className="relative shrink-0 flex items-center gap-1" ref={containerRef}>
       <button
-        onClick={() => onOpenChange(!open)}
-        className="hover:text-blue-600 transition-colors text-left"
-        title="Click to change target branch"
+        className="hover:text-blue-600 transition-colors text-left truncate"
+        onClick={() => {
+          navigator.clipboard.writeText(value);
+          toast.success("Target branch copied");
+        }}
       >
         {value}
+      </button>
+      <button
+        onClick={() => onOpenChange(!open)}
+        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        title="Change target branch"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-popover shadow-md">

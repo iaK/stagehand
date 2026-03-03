@@ -2,7 +2,6 @@ import type { Task } from "./types";
 import {
   gitWorktreeRemove,
   gitDeleteBranch,
-  gitDefaultBranch,
   gitCheckoutBranch,
 } from "./git";
 
@@ -16,6 +15,8 @@ export function getTaskWorkingDir(task: Task, projectPath: string): string {
 
 export interface CleanupWorktreeOptions {
   deleteBranch?: boolean;
+  /** Override for the default branch to check out after cleanup (e.g. from project conventions). */
+  defaultBranch?: string;
 }
 
 /**
@@ -31,13 +32,12 @@ export async function cleanupTaskWorktree(
   task: Pick<Task, "worktree_path" | "branch_name" | "ejected">,
   options?: CleanupWorktreeOptions,
 ): Promise<void> {
-  const { deleteBranch = false } = options ?? {};
+  const { deleteBranch = false, defaultBranch } = options ?? {};
 
   // Ejected tasks run in the main project directory — checkout the default
   // branch so the task branch can be deleted.
   if (task.ejected && !task.worktree_path) {
     try {
-      const defaultBranch = await gitDefaultBranch(projectPath);
       await gitCheckoutBranch(projectPath, defaultBranch ?? "main");
     } catch {
       // Non-critical

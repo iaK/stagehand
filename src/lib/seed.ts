@@ -174,6 +174,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      commits_changes: 1,
       can_follow: JSON.stringify(["Planning", "Second Opinion", "Research", "Task Splitting"]),
     },
     {
@@ -195,6 +196,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null, // Full tool access
       requires_user_input: 0,
       agent: null,
+      commits_changes: 1,
       can_follow: JSON.stringify(["Planning", "Second Opinion", "Research", "Task Splitting"]),
     },
     {
@@ -216,6 +218,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      commits_changes: 1,
       can_follow: JSON.stringify(["Implementation", "Guided Implementation"]),
     },
     {
@@ -237,6 +240,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      commits_changes: 1,
       can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement"]),
     },
     {
@@ -258,6 +262,7 @@ export function getDefaultStageTemplates(
       allowed_tools: null,
       requires_user_input: 0,
       agent: null,
+      commits_changes: 1,
       can_follow: JSON.stringify(["Implementation", "Guided Implementation", "Refinement", "Security Review"]),
     },
     {
@@ -265,7 +270,7 @@ export function getDefaultStageTemplates(
       project_id: projectId,
       name: "PR Preparation",
       description:
-        "Generate a pull request title, description, and test plan.",
+        "Generate a pull request title and description.",
       sort_order: 10,
       prompt_template: PR_PREPARATION_PROMPT,
       input_source: "previous_stage",
@@ -273,7 +278,7 @@ export function getDefaultStageTemplates(
       output_schema: PR_PREPARATION_SCHEMA,
       gate_rules: JSON.stringify({
         type: "require_fields",
-        fields: ["title", "description"],
+        fields: ["title"],
       }),
       persona_name: null,
       persona_system_prompt: null,

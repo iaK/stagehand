@@ -13,7 +13,7 @@ import { logger } from "../../lib/logger";
 import { toast } from "sonner";
 import { XTerminal, type XTerminalHandle } from "./XTerminal";
 import { CommitWorkflow } from "./CommitWorkflow";
-import { gitAdd, gitCommit } from "../../lib/git";
+import { gitAdd, gitCommit, hasUncommittedChanges } from "../../lib/git";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -516,6 +516,14 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       });
       await handleApprove();
     } catch (e) {
+      const workDirCheck = getTaskWorkingDir(task, activeProject.path);
+      const stillHasChanges = await hasUncommittedChanges(workDirCheck).catch(() => false);
+      if (!stillHasChanges) {
+        // Working tree is clean — just proceed with approval
+        useProcessStore.getState().clearPendingCommit();
+        await handleApprove();
+        return;
+      }
       setCommitError(e instanceof Error ? e.message : String(e));
     } finally {
       setCommitting(false);
