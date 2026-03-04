@@ -4,8 +4,11 @@ set -e
 # Start dbus
 export DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address)
 
+# Set display for GTK/Tauri
+export DISPLAY=:1
+
 # Start VNC server
-vncserver :1 -geometry 1400x900 -depth 24 -localhost no &
+vncserver :1 -geometry 1400x900 -depth 24 -localhost no
 sleep 2
 
 # Start noVNC (browser-based VNC client)
@@ -20,9 +23,8 @@ echo "  VNC password: password"
 echo "============================================"
 echo ""
 echo "  To run the app:  cd /app && npm run tauri dev"
-echo "  To install Claude: curl -fsSL https://claude.ai/install.sh | sh"
 echo ""
 echo "============================================"
 
-# Drop into a shell
+# Drop into a shell with DISPLAY set
 exec bash

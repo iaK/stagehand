@@ -80,7 +80,7 @@ Every aspect of every stage is editable — prompt templates, output formats, ga
 
 **Tauri over Electron.** Tauri produces smaller binaries, uses less memory, and gives direct access to Rust's `tokio::process` for spawning and managing child processes — critical for streaming Claude Code's output in real time.
 
-**SQLite per project.** Each project gets its own database file (`~/.devflow/data/{project_id}.db`). This provides complete isolation, makes backup/migration trivial (copy a file), and eliminates the need for a database server.
+**SQLite per project.** Each project gets its own database file (`~/.stagehand/data/{project_id}.db`). This provides complete isolation, makes backup/migration trivial (copy a file), and eliminates the need for a database server.
 
 **Zustand over Redux/Context.** Three small stores (project, task, process) with no boilerplate. Actions are async functions that call repositories directly.
 
@@ -93,7 +93,7 @@ Every aspect of every stage is editable — prompt templates, output formats, ga
 ### Storage Layout
 
 ```
-~/.devflow/
+~/.stagehand/
 ├── app.db                    # Project registry
 └── data/
     ├── {project_id_1}.db     # Tasks, stage templates, executions
@@ -482,7 +482,7 @@ Produces a native `.app` bundle at `src-tauri/target/release/bundle/macos/stageh
 On first project creation, Stagehand creates:
 
 ```
-~/.devflow/
+~/.stagehand/
 ├── app.db          # Created on first getAppDb() call
 └── data/           # Created in Tauri setup hook
     └── *.db        # Created per-project

@@ -12,11 +12,9 @@ elif [ ! -f "$DB" ] && [ -f "$BAK" ]; then
   mv "$BAK" "$DB"
   echo "Restored app.db.bak → app.db (normal mode)"
 elif [ -f "$DB" ] && [ -f "$BAK" ]; then
-  echo "Both app.db and app.db.bak exist — resolving by swapping them"
-  mv "$DB" "$DB.tmp"
+  rm "$DB"
   mv "$BAK" "$DB"
-  mv "$DB.tmp" "$BAK"
-  echo "Swapped app.db ↔ app.db.bak"
+  echo "Removed app.db, restored app.db.bak → app.db"
 else
   echo "No app.db or app.db.bak found at ~/.stagehand/"
 fi

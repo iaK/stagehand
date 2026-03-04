@@ -32,7 +32,7 @@ RUN mkdir -p /root/.vnc && \
     chmod 600 /root/.vnc/passwd
 
 # VNC startup config
-RUN echo '#!/bin/sh\nstartxfce4 &' > /root/.vnc/xstartup && \
+RUN printf '#!/bin/sh\nexport DISPLAY=:1\nexec startxfce4\n' > /root/.vnc/xstartup && \
     chmod +x /root/.vnc/xstartup
 
 # Startup script

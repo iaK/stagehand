@@ -283,10 +283,10 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
       let mcpHint = "";
       try {
         const mcpServerPath = await invoke<string>("get_mcp_server_path");
-        const devflowDir = await invoke<string>("get_devflow_dir");
+        const stagehandDir = await invoke<string>("get_stagehand_dir");
         // Verify MCP server is available so we can hint the agent about it
         void mcpServerPath;
-        void devflowDir;
+        void stagehandDir;
         mcpHint =
           "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_description` tools to retrieve data from prior pipeline stages on demand.";
         systemPrompt = `${systemPrompt}\n\n${mcpHint}`;

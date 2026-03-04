@@ -14,10 +14,10 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn get_devflow_dir() -> Result<String, String> {
+fn get_stagehand_dir() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let devflow_dir = home.join(".devflow");
-    Ok(devflow_dir.to_string_lossy().to_string())
+    let stagehand_dir = home.join(".stagehand");
+    Ok(stagehand_dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -69,14 +69,14 @@ pub fn run() {
                 )?;
             }
 
-            // Create ~/.devflow/data/ directory
+            // Create ~/.stagehand/data/ directory
             if let Some(home) = dirs::home_dir() {
-                let devflow_dir = home.join(".devflow").join("data");
-                std::fs::create_dir_all(&devflow_dir).ok();
-                log::info!("DevFlow data dir: {:?}", devflow_dir);
+                let stagehand_dir = home.join(".stagehand").join("data");
+                std::fs::create_dir_all(&stagehand_dir).ok();
+                log::info!("Stagehand data dir: {:?}", stagehand_dir);
 
                 // Clean up stale temp dirs from crashed processes
-                let tmp_dir = home.join(".devflow").join("tmp");
+                let tmp_dir = home.join(".stagehand").join("tmp");
                 if tmp_dir.exists() {
                     std::fs::remove_dir_all(&tmp_dir).ok();
                     log::info!("Cleaned up stale temp dir: {:?}", tmp_dir);
@@ -87,7 +87,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
-            get_devflow_dir,
+            get_stagehand_dir,
             get_mcp_server_path,
             commands::process::spawn_agent,
             commands::process::kill_process,

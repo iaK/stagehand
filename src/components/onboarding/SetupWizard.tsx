@@ -106,15 +106,12 @@ function AgentStep({ onNext }: { onNext: () => void }) {
             Stagehand requires at least one AI coding agent. Checking what's installed…
           </p>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             {visibleAgents.map((agent) => {
               const status = agents[agent.value];
               return (
                 <div key={agent.value} className="flex items-center justify-between py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{agent.label}</span>
-                    <span className="text-xs text-muted-foreground">{agent.description}</span>
-                  </div>
+                  <span className="font-medium text-sm">{agent.label}</span>
                   {checking ? (
                     <Badge variant="secondary">Checking…</Badge>
                   ) : status?.available ? (

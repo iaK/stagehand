@@ -9,11 +9,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 /// Temporary directory context for a spawned agent process.
-/// Creates `~/.devflow/tmp/<process_id>/` for temp files (system prompt files,
+/// Creates `~/.stagehand/tmp/<process_id>/` for temp files (system prompt files,
 /// schema files, config files) and tracks working-directory files that need
 /// cleanup after the process exits.
 struct TempContext {
-    /// The per-process temp directory under ~/.devflow/tmp/
+    /// The per-process temp directory under ~/.stagehand/tmp/
     dir: PathBuf,
     /// Files written into the agent's working directory that must be cleaned up.
     workdir_files: Vec<PathBuf>,
@@ -22,7 +22,7 @@ struct TempContext {
 impl TempContext {
     fn new(process_id: &str) -> Result<Self, String> {
         let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        let dir = home.join(".devflow").join("tmp").join(process_id);
+        let dir = home.join(".stagehand").join("tmp").join(process_id);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temp dir {:?}: {}", dir, e))?;
         Ok(Self {
@@ -312,10 +312,10 @@ pub async fn spawn_agent(
     // Model override (persona_model)
     if let Some(ref model) = args.persona_model {
         match agent {
-            Agent::Codex | Agent::Gemini | Agent::Amp => {
+            Agent::Claude | Agent::Codex | Agent::Gemini | Agent::Amp => {
                 cmd.arg("--model").arg(model);
             }
-            _ => {} // Claude uses persona_model differently; OpenCode doesn't support --model
+            _ => {}
         }
     }
 

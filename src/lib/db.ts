@@ -3,13 +3,13 @@ import type { QueryResult } from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { initAppSchema, initProjectSchema } from "./db/schema";
 
-let devflowDir: string | null = null;
+let stagehandDir: string | null = null;
 
-async function getDevflowDir(): Promise<string> {
-  if (!devflowDir) {
-    devflowDir = await invoke<string>("get_devflow_dir");
+async function getStagehandDir(): Promise<string> {
+  if (!stagehandDir) {
+    stagehandDir = await invoke<string>("get_stagehand_dir");
   }
-  return devflowDir;
+  return stagehandDir;
 }
 
 /**
@@ -74,7 +74,7 @@ export async function getAppDb(): Promise<Database> {
   if (connections["app"]) return connections["app"] as unknown as Database;
   if (!connectionPromises["app"]) {
     connectionPromises["app"] = (async () => {
-      const dir = await getDevflowDir();
+      const dir = await getStagehandDir();
       const raw = await Database.load(`sqlite:${dir}/app.db`);
       const db = new SerializedDatabase(raw);
       // WAL mode persists on the DB file; busy_timeout is belt-and-suspenders
@@ -93,7 +93,7 @@ export async function getProjectDb(projectId: string): Promise<Database> {
   if (connections[key]) return connections[key] as unknown as Database;
   if (!connectionPromises[key]) {
     connectionPromises[key] = (async () => {
-      const dir = await getDevflowDir();
+      const dir = await getStagehandDir();
       const raw = await Database.load(`sqlite:${dir}/data/${projectId}.db`);
       const db = new SerializedDatabase(raw);
       await db.execute("PRAGMA journal_mode = WAL;", []);

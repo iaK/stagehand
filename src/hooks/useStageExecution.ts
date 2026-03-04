@@ -452,8 +452,8 @@ export function useStageExecution() {
         let mcpConfig: string | undefined;
         try {
           const mcpServerPath = await invoke<string>("get_mcp_server_path");
-          const devflowDir = await invoke<string>("get_devflow_dir");
-          const dbPath = `${devflowDir}/data/${activeProject.id}.db`;
+          const stagehandDir = await invoke<string>("get_stagehand_dir");
+          const dbPath = `${stagehandDir}/data/${activeProject.id}.db`;
           const config = {
             mcpServers: {
               "stagehand-context": {

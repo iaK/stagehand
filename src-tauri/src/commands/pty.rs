@@ -20,7 +20,7 @@ pub struct SpawnPtyArgs {
 /// Track files written into the working directory for PTY sessions, cleaned up on exit.
 struct PtyTempFiles {
     workdir_files: Vec<PathBuf>,
-    /// Temp dir under ~/.devflow/tmp/ for agent-specific temp files
+    /// Temp dir under ~/.stagehand/tmp/ for agent-specific temp files
     temp_dir: Option<PathBuf>,
 }
 
@@ -34,7 +34,7 @@ impl PtyTempFiles {
             return Ok(dir.clone());
         }
         let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        let dir = home.join(".devflow").join("tmp").join(format!("pty-{}", session_id));
+        let dir = home.join(".stagehand").join("tmp").join(format!("pty-{}", session_id));
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temp dir {:?}: {}", dir, e))?;
         self.temp_dir = Some(dir.clone());
