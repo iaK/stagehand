@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { readFileContents, writeFileContents, gitShowFile, gitDefaultBranch, gitDiffNameOnly, gitStatus } from "../lib/git";
+import { readFileContents, writeFileContents, gitShowFile, gitDefaultBranch, gitStatus, gitResetFile, runGit } from "../lib/git";
 import { useGitHubStore } from "./githubStore";
 import { useTaskStore } from "./taskStore";
 
@@ -77,6 +77,7 @@ interface EditorStore {
   saveTabsForTask: (taskId: string) => void;
   restoreTabsForTask: (taskId: string) => Promise<void>;
   clearSaveError: () => void;
+  resetFile: (filePath: string) => Promise<void>;
   promptUnsavedChanges: (fileKey: string, callback: (confirm: boolean) => void) => void;
   resolveUnsavedChanges: (confirmed: boolean) => void;
 
@@ -114,13 +115,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       ?? await gitDefaultBranch(worktreeRoot)
       ?? "main";
     const fileMap = new Map<string, ChangedFile["status"]>();
+    // Use working-tree diff against target branch so that reset files
+    // (matching target) disappear even if commits on the branch touched them.
     try {
-      for (const f of await gitDiffNameOnly(worktreeRoot, target)) {
-        fileMap.set(f, "M");
+      const raw = await runGit(worktreeRoot, "diff", "--name-status", target);
+      for (const line of raw.trim().split("\n")) {
+        if (!line) continue;
+        const parts = line.split("\t");
+        if (parts.length < 2) continue;
+        const code = parts[0][0];
+        const filePath = parts.length >= 3 ? parts[2] : parts[1]; // renamed: use new path
+        if (code === "A") fileMap.set(filePath, "A");
+        else if (code === "D") fileMap.set(filePath, "D");
+        else fileMap.set(filePath, "M");
       }
     } catch {
       // No common ancestor or branch doesn't exist
     }
+    // Overlay untracked / conflict status from git status
     try {
       const raw = await gitStatus(worktreeRoot);
       for (let line of raw.trim().split("\n")) {
@@ -132,14 +144,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const xy = line.slice(0, 2);
         const filePath = line.slice(3).trim();
         if (!filePath) continue;
-        if (xy === "??" || xy[0] === "A" || xy[1] === "A") {
+        if (xy === "??") {
           fileMap.set(filePath, "A");
-        } else if (xy[0] === "D" || xy[1] === "D") {
-          fileMap.set(filePath, "D");
         } else if (xy === "UU" || xy[0] === "U" || xy[1] === "U") {
           fileMap.set(filePath, "U");
-        } else if (!fileMap.has(filePath)) {
-          fileMap.set(filePath, "M");
         }
       }
     } catch {
@@ -441,6 +449,30 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         get().fetchOriginalContent(file.path);
       }
     }
+  },
+
+  resetFile: async (filePath: string) => {
+    const { worktreeRoot, targetBranch } = get();
+    if (!worktreeRoot) return;
+    const ref = targetBranch ?? "main";
+    const relativePath = filePath.startsWith(worktreeRoot + "/")
+      ? filePath.slice(worktreeRoot.length + 1)
+      : filePath;
+    await gitResetFile(worktreeRoot, relativePath, ref);
+    // Close the diff tab if open
+    const diffKey = `diff:${filePath}`;
+    set((s) => {
+      const filtered = s.openFiles.filter((f) => f.key !== diffKey);
+      let nextActive = s.activeFileKey;
+      if (s.activeFileKey === diffKey) {
+        nextActive = filtered.length > 0 ? filtered[filtered.length - 1].key : null;
+      }
+      // Also clear original content cache for this path
+      const { [filePath]: _, ...restOriginal } = s.originalContent;
+      return { openFiles: filtered, activeFileKey: nextActive, originalContent: restOriginal };
+    });
+    // Refresh changed files list
+    get().loadChangedFiles();
   },
 
   clearSaveError: () => set({ saveError: null }),

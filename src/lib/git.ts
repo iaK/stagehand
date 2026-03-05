@@ -614,9 +614,32 @@ export async function injectTaskFromMainRepo(
   await gitWorktreeAdd(projectPath, worktreePath, branchName, false);
 }
 
+/**
+ * Reset a file to its state on a given ref (e.g. target branch).
+ * For files that exist on the ref, checks them out. For new files (not on ref), deletes them.
+ */
+export async function gitResetFile(workingDir: string, relativePath: string, ref: string): Promise<void> {
+  try {
+    // Try to restore from the ref — works for M and D files
+    await runGit(workingDir, "checkout", ref, "--", relativePath);
+  } catch {
+    // File doesn't exist on the ref (new/added file) — remove it
+    try {
+      await runGit(workingDir, "rm", "-f", "--", relativePath);
+    } catch {
+      // If git rm fails (untracked), try clean
+      await runGit(workingDir, "clean", "-f", "--", relativePath);
+    }
+  }
+}
+
 export async function gitShowFile(workingDir: string, filePath: string, ref = "HEAD"): Promise<string> {
   try {
-    return await runGit(workingDir, "show", `${ref}:${filePath}`);
+    const content = await runGit(workingDir, "show", `${ref}:${filePath}`);
+    // runGit trims stdout, but file content typically ends with a newline.
+    // Restore it so the diff view doesn't show a phantom trailing newline.
+    if (content.length > 0) return content + "\n";
+    return content;
   } catch {
     return "";
   }

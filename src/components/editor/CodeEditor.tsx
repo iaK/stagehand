@@ -1,26 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import { KeyMod, KeyCode } from "monaco-editor";
 import { useTheme } from "next-themes";
-import { X, Lock, RefreshCw, GitCommitHorizontal, Loader2 } from "lucide-react";
+import { X, Lock, RefreshCw } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
 import { useProcessStore } from "../../stores/processStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProjectStore } from "../../stores/projectStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { gitAdd, gitCommit, gitDiffFileStatsUnstaged, type DiffFileStat } from "../../lib/git";
-import { getCommitPrefix } from "../../lib/repositories";
-import { DiffFileList } from "../pipeline/DiffFileList";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   // JavaScript / TypeScript
@@ -241,66 +227,6 @@ export function CodeEditor() {
     );
   });
 
-  const worktreeRoot = useEditorStore((s) => s.worktreeRoot);
-  const projectId = useProjectStore((s) => s.activeProject?.id);
-
-  // Commit dialog state
-  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
-  const [commitError, setCommitError] = useState<string | null>(null);
-  const [committing, setCommitting] = useState(false);
-  const [commitFileStats, setCommitFileStats] = useState<DiffFileStat[]>([]);
-  const [loadingStats, setLoadingStats] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
-
-  // Load uncommitted file stats when dialog opens
-  useEffect(() => {
-    if (!commitDialogOpen || !worktreeRoot) {
-      clearInterval(intervalRef.current);
-      return;
-    }
-    let cancelled = false;
-    setLoadingStats(true);
-    const load = () => {
-      gitDiffFileStatsUnstaged(worktreeRoot)
-        .then((stats) => { if (!cancelled) { setCommitFileStats(stats); setLoadingStats(false); } })
-        .catch(() => { if (!cancelled) setLoadingStats(false); });
-    };
-    load();
-    intervalRef.current = setInterval(load, 5_000);
-    return () => { cancelled = true; clearInterval(intervalRef.current); };
-  }, [commitDialogOpen, worktreeRoot]);
-
-  // Pre-fill commit message with prefix when opening
-  const handleOpenCommitDialog = async () => {
-    setCommitError(null);
-    setCommitMessage("");
-    setCommitFileStats([]);
-    if (projectId) {
-      const prefix = await getCommitPrefix(projectId).catch(() => "feat");
-      setCommitMessage(`${prefix}: `);
-    }
-    setCommitDialogOpen(true);
-  };
-
-  const handleCommit = async () => {
-    if (!worktreeRoot || !commitMessage.trim()) return;
-    setCommitting(true);
-    setCommitError(null);
-    try {
-      await gitAdd(worktreeRoot);
-      await gitCommit(worktreeRoot, commitMessage);
-      setCommitDialogOpen(false);
-      setCommitMessage("");
-      // Refresh changed files list
-      useEditorStore.getState().loadChangedFiles();
-    } catch (err) {
-      setCommitError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCommitting(false);
-    }
-  };
-
   const activeFile = openFiles.find((f) => f.key === activeFileKey);
   const monacoTheme = resolvedTheme === "dark" ? "vs-dark" : "vs";
 
@@ -370,15 +296,6 @@ export function CodeEditor() {
             );
           })}
         </div>
-        {worktreeRoot && (
-          <button
-            className="shrink-0 px-2 py-1 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors rounded-sm mx-1"
-            onClick={handleOpenCommitDialog}
-            title="Commit changes"
-          >
-            <GitCommitHorizontal className="w-3.5 h-3.5" />
-          </button>
-        )}
       </div>
 
       {/* Read-only banner when agent is running */}
@@ -490,62 +407,6 @@ export function CodeEditor() {
         )
       )}
 
-      {/* Commit Dialog */}
-      <Dialog open={commitDialogOpen} onOpenChange={setCommitDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Commit Changes</DialogTitle>
-            <DialogDescription>
-              This shows uncommitted changes only. The Changes tab in the sidebar shows all changes (committed and uncommitted) compared to the target branch.
-            </DialogDescription>
-          </DialogHeader>
-
-          {loadingStats ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading changes...
-            </div>
-          ) : commitFileStats.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-2">
-              No uncommitted changes to commit.
-            </div>
-          ) : (
-            <>
-              <DiffFileList files={commitFileStats} />
-              <Textarea
-                value={commitMessage}
-                onChange={(e) => setCommitMessage(e.target.value)}
-                placeholder="Commit message..."
-                rows={3}
-                className="font-mono resize-none"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    handleCommit();
-                  }
-                }}
-              />
-
-              {commitError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{commitError}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleCommit}
-                  disabled={committing || !commitMessage.trim()}
-                  size="sm"
-                >
-                  {committing && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {committing ? "Committing..." : "Commit"}
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
