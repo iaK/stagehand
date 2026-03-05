@@ -5,6 +5,7 @@ import { useProcessStore, stageKey } from "../../stores/processStore";
 import { PipelineStepper } from "./PipelineStepper";
 import { StageView } from "./StageView";
 import { InteractiveTerminalStageView } from "./InteractiveTerminalStageView";
+import { IntegratedTerminal } from "./IntegratedTerminal";
 import { TaskOverview } from "../task/TaskOverview";
 import { ProjectOverview } from "../project/ProjectOverview";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,8 @@ export function PipelineView() {
   const [showOverview, setShowOverview] = useState(true);
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
+  const terminalOpen = useProcessStore((s) => s.terminalOpen);
+  const terminalSessions = useProcessStore((s) => s.terminalSessions);
 
   // Eject/Inject state
   const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
@@ -323,6 +326,20 @@ export function PipelineView() {
               <Button
                 variant="ghost"
                 size="icon-xs"
+                onClick={() => useProcessStore.getState().toggleTerminal()}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{terminalOpen ? "Hide Terminal" : "Show Terminal"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => setShowOverview((v) => !v)}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -340,6 +357,24 @@ export function PipelineView() {
         <div className="flex-1 flex min-h-0">
           {/* Pipeline (always visible) */}
           <div className="flex-1 overflow-y-auto relative">
+            {/* Layer 0: Integrated terminal overlay — replaces pipeline content */}
+            {terminalOpen && activeTaskId && (
+              <div className="absolute inset-0 z-20 flex flex-col bg-background">
+                <IntegratedTerminal taskId={activeTaskId} isVisible={true} />
+              </div>
+            )}
+
+            {/* Hidden integrated terminals for tasks with active sessions (keep xterm alive) */}
+            {Object.entries(terminalSessions)
+              .filter(([tid, session]) =>
+                session.status === "running" && (tid !== activeTaskId || !terminalOpen)
+              )
+              .map(([tid]) => (
+                <div key={`iterm-${tid}`} className="absolute inset-0" style={{ display: "none" }}>
+                  <IntegratedTerminal taskId={tid} isVisible={false} />
+                </div>
+              ))}
+
             {/* Layer 1: Persistent interactive terminals — survive navigation */}
             {(() => {
               const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();

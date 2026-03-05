@@ -63,6 +63,18 @@ export interface StageSuggestion {
   reason: string | null;
 }
 
+export interface TerminalSession {
+  ptyId: string | null;
+  status: "idle" | "running" | "exited";
+  agent: string | null;
+}
+
+export const DEFAULT_TERMINAL_SESSION: TerminalSession = {
+  ptyId: null,
+  status: "idle",
+  agent: null,
+};
+
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
   mergeStages: Record<string, MergeStageState>;
@@ -75,6 +87,8 @@ interface ProcessStore {
   commitMessageLoadingStageId: string | null;
   commitGenerationNonce: number;
   noChangesStageId: string | null; // stage with no uncommitted changes to commit
+  terminalOpen: boolean;
+  terminalSessions: Record<string, TerminalSession>; // keyed by taskId
 
   appendOutput: (stageId: string, line: string) => void;
   clearOutput: (stageId: string) => void;
@@ -93,6 +107,11 @@ interface ProcessStore {
   clearMergeState: (key: string) => void;
   registerPtySession: (key: string, taskId: string, stageId: string, stage: TaskStageInstance) => void;
   unregisterPtySession: (key: string) => void;
+  toggleTerminal: () => void;
+  setTerminalOpen: (open: boolean) => void;
+  getTerminalSession: (taskId: string) => TerminalSession;
+  updateTerminalSession: (taskId: string, patch: Partial<TerminalSession>) => void;
+  removeTerminalSession: (taskId: string) => void;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
@@ -111,6 +130,8 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
   commitMessageLoadingStageId: null,
   commitGenerationNonce: 0,
   noChangesStageId: null,
+  terminalOpen: false,
+  terminalSessions: {},
 
   appendOutput: (stageId, line) =>
     set((state) => {
@@ -236,5 +257,25 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
     set((state) => {
       const { [key]: _, ...rest } = state.activePtySessions;
       return { activePtySessions: rest };
+    }),
+
+  toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
+
+  setTerminalOpen: (open) => set({ terminalOpen: open }),
+
+  getTerminalSession: (taskId) => get().terminalSessions[taskId] ?? DEFAULT_TERMINAL_SESSION,
+
+  updateTerminalSession: (taskId, patch) =>
+    set((state) => ({
+      terminalSessions: {
+        ...state.terminalSessions,
+        [taskId]: { ...(state.terminalSessions[taskId] ?? DEFAULT_TERMINAL_SESSION), ...patch },
+      },
+    })),
+
+  removeTerminalSession: (taskId) =>
+    set((state) => {
+      const { [taskId]: _, ...rest } = state.terminalSessions;
+      return { terminalSessions: rest };
     }),
 }));
