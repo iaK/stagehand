@@ -8,10 +8,12 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
+import { useProcessStore } from "../stores/processStore";
 
 export interface NotificationContext {
   projectId?: string;
   taskId?: string;
+  openTerminal?: boolean;
 }
 
 export async function requestNotificationPermission() {
@@ -78,6 +80,10 @@ export async function registerNotificationClickHandler() {
       if (task) {
         useTaskStore.getState().setActiveTask(task);
       }
+    }
+
+    if (extra.openTerminal) {
+      useProcessStore.getState().setTerminalOpen(true);
     }
   });
 }
