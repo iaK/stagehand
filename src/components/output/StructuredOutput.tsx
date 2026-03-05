@@ -38,7 +38,24 @@ export function StructuredOutput({
     );
   }
 
-  const [fields, setFields] = useState<Record<string, string>>(initialFields);
+  // Only show fields defined in the output schema (if any) to avoid the agent
+  // injecting unexpected fields (e.g. a test plan box in PR preparation).
+  let schemaFields: string[] | null = null;
+  try {
+    const schema = JSON.parse(stage.output_schema ?? "");
+    const props = schema?.properties?.fields?.properties;
+    if (props && typeof props === "object") {
+      schemaFields = Object.keys(props);
+    }
+  } catch {
+    // no schema or unparseable — show all fields
+  }
+
+  const filteredInitial = schemaFields
+    ? Object.fromEntries(Object.entries(initialFields).filter(([k]) => schemaFields!.includes(k)))
+    : initialFields;
+
+  const [fields, setFields] = useState<Record<string, string>>(filteredInitial);
 
   let requiredFields: string[] = [];
   try {

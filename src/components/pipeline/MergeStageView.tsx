@@ -135,7 +135,8 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         // If the in-memory store thinks merge succeeded but we're re-mounting,
         // verify against git before trusting the cached state.
         if (mergeState === "completed" || mergeState === "success") {
-          const defaultBr = useGitHubStore.getState().defaultBranch
+          const defaultBr = activeTask.target_branch
+            ?? useGitHubStore.getState().defaultBranch
             ?? await gitDefaultBranch(activeProject.path)
             ?? "main";
           const actuallyMerged = await gitIsMerged(activeProject.path, branchName, defaultBr).catch(() => false);
@@ -148,7 +149,8 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         const workDir = getTaskWorkingDir(activeTask, activeProject.path);
         const remote = await gitHasRemote(activeProject.path);
 
-        const defaultBr = useGitHubStore.getState().defaultBranch
+        const defaultBr = activeTask.target_branch
+          ?? useGitHubStore.getState().defaultBranch
           ?? await gitDefaultBranch(activeProject.path)
           ?? "main";
         setTargetBranch(defaultBr);

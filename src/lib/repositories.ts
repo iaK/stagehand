@@ -1,4 +1,4 @@
-import { getAppDb, getProjectDb } from "./db";
+import { getAppDb, getProjectDb, getStagehandDir } from "./db";
 
 import { getDefaultStageTemplates } from "./seed";
 import type {
@@ -59,6 +59,14 @@ export async function setProjectSetting(projectId: string, key: string, value: s
 export async function deleteProjectSetting(projectId: string, key: string): Promise<void> {
   const db = await getProjectDb(projectId);
   await db.execute("DELETE FROM settings WHERE key = $1", [key]);
+}
+
+// === Worktree Location ===
+
+export async function getWorktreeBaseDir(projectId: string): Promise<string> {
+  const custom = await getProjectSetting(projectId, "worktree_location");
+  if (custom) return custom;
+  return `${await getStagehandDir()}/worktrees`;
 }
 
 // === Per-Agent Model Lists ===
@@ -466,6 +474,7 @@ export async function createTask(
     worktree_path: worktreePath ?? null,
     pr_url: null,
     parent_task_id: parentTaskId ?? null,
+    target_branch: null,
     ejected: 0,
     lifecycle: "active",
     diff_insertions: null,
@@ -501,7 +510,7 @@ export async function getChildTasks(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "ejected" | "diff_insertions" | "diff_deletions">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "target_branch" | "ejected" | "diff_insertions" | "diff_deletions">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];

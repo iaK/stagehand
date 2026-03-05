@@ -1,13 +1,19 @@
 import { create } from "zustand";
 import { readFileContents, writeFileContents, gitShowFile, gitDefaultBranch, gitDiffNameOnly, gitStatus } from "../lib/git";
+import { useGitHubStore } from "./githubStore";
+import { useTaskStore } from "./taskStore";
 
 export interface OpenFile {
   /** Unique tab key: path for normal, "diff:"+path for diff view */
   key: string;
   path: string;
   content: string;
+  /** Last known content read from disk (used to detect external changes) */
+  diskContent: string;
   isDirty: boolean;
   isDiff: boolean;
+  /** True when the file changed on disk while the user has unsaved edits */
+  diskChanged: boolean;
 }
 
 export interface ChangedFile {
@@ -46,6 +52,9 @@ interface EditorStore {
   setActiveFile: (key: string) => void;
   updateFileContent: (key: string, content: string) => void;
   saveFile: (key: string) => Promise<void>;
+  refreshOpenFiles: () => Promise<void>;
+  reloadFileFromDisk: (key: string) => Promise<void>;
+  dismissDiskChanged: (key: string) => void;
   resetForTask: () => void;
   clearSaveError: () => void;
   promptUnsavedChanges: (fileKey: string, callback: (confirm: boolean) => void) => void;
@@ -80,7 +89,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   loadChangedFiles: async () => {
     const { worktreeRoot } = get();
     if (!worktreeRoot) return;
-    const target = await gitDefaultBranch(worktreeRoot) ?? "main";
+    const target = useTaskStore.getState().activeTask?.target_branch
+      ?? useGitHubStore.getState().defaultBranch
+      ?? await gitDefaultBranch(worktreeRoot)
+      ?? "main";
     const fileMap = new Map<string, ChangedFile["status"]>();
     try {
       for (const f of await gitDiffNameOnly(worktreeRoot, target)) {
@@ -155,7 +167,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (content === null) return;
 
     set((s) => ({
-      openFiles: [...s.openFiles, { key, path, content, isDirty: false, isDiff: false }],
+      openFiles: [...s.openFiles, { key, path, content, diskContent: content, isDirty: false, isDiff: false, diskChanged: false }],
       activeFileKey: key,
     }));
   },
@@ -185,7 +197,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     await get().fetchOriginalContent(path);
 
     set((s) => ({
-      openFiles: [...s.openFiles, { key, path, content, isDirty: false, isDiff: true }],
+      openFiles: [...s.openFiles, { key, path, content, diskContent: content, isDirty: false, isDiff: true, diskChanged: false }],
       activeFileKey: key,
     }));
   },
@@ -217,9 +229,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   updateFileContent: (key: string, content: string) => {
     set((s) => ({
-      openFiles: s.openFiles.map((f) =>
-        f.key === key ? { ...f, content, isDirty: true } : f,
-      ),
+      openFiles: s.openFiles.map((f) => {
+        if (f.key !== key) return f;
+        // Compare against disk content to determine dirty state.
+        // This prevents refreshes from marking files dirty, and also
+        // correctly clears dirty if the user edits back to the disk version.
+        const isDirty = content !== f.diskContent;
+        return { ...f, content, isDirty };
+      }),
     }));
   },
 
@@ -235,7 +252,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         saveError: null,
         isSaving: false,
         openFiles: s.openFiles.map((f) =>
-          f.key === key ? { ...f, isDirty: false } : f,
+          f.key === key ? { ...f, isDirty: false, diskContent: f.content, diskChanged: false } : f,
         ),
       }));
       // Refresh changed files list after save
@@ -244,6 +261,70 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const message = err instanceof Error ? err.message : String(err);
       set({ saveError: message, isSaving: false });
     }
+  },
+
+  refreshOpenFiles: async () => {
+    const { openFiles, worktreeRoot } = get();
+    if (!worktreeRoot || openFiles.length === 0) return;
+
+    const updates: Array<{ key: string; newDiskContent: string }> = [];
+
+    await Promise.all(
+      openFiles.map(async (file) => {
+        try {
+          const currentDisk = await readFileContents(file.path, worktreeRoot);
+          if (currentDisk !== null && currentDisk !== file.diskContent) {
+            updates.push({ key: file.key, newDiskContent: currentDisk });
+          }
+        } catch {
+          // File may have been deleted — ignore
+        }
+      }),
+    );
+
+    if (updates.length === 0) return;
+
+    set((s) => ({
+      openFiles: s.openFiles.map((f) => {
+        const update = updates.find((u) => u.key === f.key);
+        if (!update) return f;
+        if (!f.isDirty) {
+          // Not dirty: silently update content to match disk
+          return { ...f, content: update.newDiskContent, diskContent: update.newDiskContent };
+        } else {
+          // Dirty: flag that disk changed, don't touch user's content
+          return { ...f, diskContent: update.newDiskContent, diskChanged: true };
+        }
+      }),
+    }));
+  },
+
+  reloadFileFromDisk: async (key: string) => {
+    const { openFiles, worktreeRoot } = get();
+    const file = openFiles.find((f) => f.key === key);
+    if (!file || !worktreeRoot) return;
+
+    try {
+      const content = await readFileContents(file.path, worktreeRoot);
+      if (content === null) return;
+      set((s) => ({
+        openFiles: s.openFiles.map((f) =>
+          f.key === key
+            ? { ...f, content, diskContent: content, isDirty: false, diskChanged: false }
+            : f,
+        ),
+      }));
+    } catch {
+      // ignore
+    }
+  },
+
+  dismissDiskChanged: (key: string) => {
+    set((s) => ({
+      openFiles: s.openFiles.map((f) =>
+        f.key === key ? { ...f, diskChanged: false } : f,
+      ),
+    }));
   },
 
   resetForTask: () => {

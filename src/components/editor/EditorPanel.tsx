@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTaskStore } from "../../stores/taskStore";
+import { useProjectStore } from "../../stores/projectStore";
 import { useEditorStore } from "../../stores/editorStore";
 import { FileTree } from "./FileTree";
 import { ChangedFilesList } from "./ChangedFilesList";
@@ -19,7 +20,8 @@ import { Button } from "@/components/ui/button";
 
 export function EditorPanel() {
   const activeTask = useTaskStore((s) => s.activeTask);
-  const worktreePath = activeTask?.worktree_path;
+  const projectPath = useProjectStore((s) => s.activeProject?.path);
+  const worktreePath = activeTask?.worktree_path ?? (activeTask?.ejected ? projectPath : undefined);
   const taskId = activeTask?.id;
   const prevTaskIdRef = useRef(taskId);
 
@@ -43,6 +45,15 @@ export function EditorPanel() {
     const id = setInterval(() => {
       useEditorStore.getState().loadChangedFiles();
     }, 10_000);
+    return () => clearInterval(id);
+  }, [worktreePath]);
+
+  // Poll for open file changes on disk every 3s
+  useEffect(() => {
+    if (!worktreePath) return;
+    const id = setInterval(() => {
+      useEditorStore.getState().refreshOpenFiles();
+    }, 3_000);
     return () => clearInterval(id);
   }, [worktreePath]);
 
@@ -70,8 +81,8 @@ export function EditorPanel() {
     <>
       <div className={`flex-1 flex min-h-0 ${editorSidebarPosition === "right" ? "flex-row-reverse" : ""}`}>
         {/* Sidebar */}
-        <div className={`w-[200px] shrink-0 flex flex-col ${editorSidebarPosition === "right" ? "border-l border-border" : "border-r border-border"}`} style={{ fontSize: `${editorFontSize}px` }}>
-          <div className="flex items-center shrink-0 border-b border-border bg-muted/30">
+        <div className={`w-[200px] shrink-0 flex flex-col ${editorSidebarPosition === "right" ? "border-l border-border" : "border-r border-border"}`}>
+          <div className="flex items-center shrink-0 border-b border-border bg-muted/30 text-xs">
             <button
               className={`flex-1 px-3 py-1.5 text-center transition-colors border-b-2 -mb-px ${
                 sidebarView === "files"
@@ -93,7 +104,7 @@ export function EditorPanel() {
               Changes
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" style={{ fontSize: `${editorFontSize}px` }}>
             {sidebarView === "changes" ? (
               <ChangedFilesList workingDir={worktreePath} />
             ) : (

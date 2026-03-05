@@ -63,7 +63,6 @@ export function PipelineView() {
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
   const terminalOpen = useProcessStore((s) => s.terminalOpen);
-  const terminalSessions = useProcessStore((s) => s.terminalSessions);
 
   // Eject/Inject state
   const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
@@ -377,21 +376,16 @@ export function PipelineView() {
           ) : (
             /* Pipeline (default view) */
             <div className="flex-1 overflow-y-auto relative">
-              {/* Layer 0: Integrated terminal overlay — replaces pipeline content */}
+              {/* Layer 0: Integrated terminal overlay — replaces pipeline content.
+                  key={activeTaskId} forces a fresh XTerminal per task so buffered
+                  output replays correctly via ptyRouter. PTY sessions survive
+                  task/project switches — the router buffers output while no
+                  terminal component is mounted for that task. */}
               {terminalOpen && activeTaskId && (
                 <div className="absolute inset-0 z-20 flex flex-col bg-background">
-                  <IntegratedTerminal taskId={activeTaskId} isVisible={true} />
+                  <IntegratedTerminal key={activeTaskId} taskId={activeTaskId} isVisible={true} />
                 </div>
               )}
-
-              {/* Hidden integrated terminals for tasks with active sessions (keep xterm alive) */}
-              {Object.entries(terminalSessions)
-                .filter(([_, session]) => session.status === "running")
-                .map(([tid]) => (
-                  <div key={`iterm-${tid}`} className="absolute inset-0" style={{ display: "none" }}>
-                    <IntegratedTerminal taskId={tid} isVisible={false} />
-                  </div>
-                ))}
 
               {/* Layer 1: Persistent interactive terminals — survive navigation */}
               {(() => {

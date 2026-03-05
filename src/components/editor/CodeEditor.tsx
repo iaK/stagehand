@@ -1,11 +1,26 @@
+import { useState, useEffect, useRef } from "react";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import { KeyMod, KeyCode } from "monaco-editor";
 import { useTheme } from "next-themes";
-import { X, Lock } from "lucide-react";
+import { X, Lock, RefreshCw, GitCommitHorizontal, Loader2 } from "lucide-react";
 import { useEditorStore } from "../../stores/editorStore";
 import { useProcessStore } from "../../stores/processStore";
 import { useTaskStore } from "../../stores/taskStore";
+import { useProjectStore } from "../../stores/projectStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { gitAdd, gitCommit, gitDiffFileStatsUnstaged, type DiffFileStat } from "../../lib/git";
+import { getCommitPrefix } from "../../lib/repositories";
+import { DiffFileList } from "../pipeline/DiffFileList";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   // JavaScript / TypeScript
@@ -212,6 +227,9 @@ export function CodeEditor() {
   const isSaving = useEditorStore((s) => s.isSaving);
   const originalContent = useEditorStore((s) => s.originalContent);
 
+  const reloadFileFromDisk = useEditorStore((s) => s.reloadFileFromDisk);
+  const dismissDiskChanged = useEditorStore((s) => s.dismissDiskChanged);
+
   const editorFontSize = useSettingsStore((s) => s.editorFontSize);
   const diffViewMode = useSettingsStore((s) => s.diffViewMode);
 
@@ -222,6 +240,66 @@ export function CodeEditor() {
       ([key, state]) => key.startsWith(`${activeTaskId}:`) && state.isRunning,
     );
   });
+
+  const worktreeRoot = useEditorStore((s) => s.worktreeRoot);
+  const projectId = useProjectStore((s) => s.activeProject?.id);
+
+  // Commit dialog state
+  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [committing, setCommitting] = useState(false);
+  const [commitFileStats, setCommitFileStats] = useState<DiffFileStat[]>([]);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  // Load uncommitted file stats when dialog opens
+  useEffect(() => {
+    if (!commitDialogOpen || !worktreeRoot) {
+      clearInterval(intervalRef.current);
+      return;
+    }
+    let cancelled = false;
+    setLoadingStats(true);
+    const load = () => {
+      gitDiffFileStatsUnstaged(worktreeRoot)
+        .then((stats) => { if (!cancelled) { setCommitFileStats(stats); setLoadingStats(false); } })
+        .catch(() => { if (!cancelled) setLoadingStats(false); });
+    };
+    load();
+    intervalRef.current = setInterval(load, 5_000);
+    return () => { cancelled = true; clearInterval(intervalRef.current); };
+  }, [commitDialogOpen, worktreeRoot]);
+
+  // Pre-fill commit message with prefix when opening
+  const handleOpenCommitDialog = async () => {
+    setCommitError(null);
+    setCommitMessage("");
+    setCommitFileStats([]);
+    if (projectId) {
+      const prefix = await getCommitPrefix(projectId).catch(() => "feat");
+      setCommitMessage(`${prefix}: `);
+    }
+    setCommitDialogOpen(true);
+  };
+
+  const handleCommit = async () => {
+    if (!worktreeRoot || !commitMessage.trim()) return;
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      await gitAdd(worktreeRoot);
+      await gitCommit(worktreeRoot, commitMessage);
+      setCommitDialogOpen(false);
+      setCommitMessage("");
+      // Refresh changed files list
+      useEditorStore.getState().loadChangedFiles();
+    } catch (err) {
+      setCommitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCommitting(false);
+    }
+  };
 
   const activeFile = openFiles.find((f) => f.key === activeFileKey);
   const monacoTheme = resolvedTheme === "dark" ? "vs-dark" : "vs";
@@ -292,6 +370,15 @@ export function CodeEditor() {
             );
           })}
         </div>
+        {worktreeRoot && (
+          <button
+            className="shrink-0 px-2 py-1 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors rounded-sm mx-1"
+            onClick={handleOpenCommitDialog}
+            title="Commit changes"
+          >
+            <GitCommitHorizontal className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Read-only banner when agent is running */}
@@ -307,6 +394,28 @@ export function CodeEditor() {
         <div className="flex items-center gap-2 px-3 py-1.5 text-xs bg-destructive/10 text-destructive border-b border-destructive/20">
           <span className="truncate">Save failed: {saveError}</span>
           <button className="ml-auto shrink-0 hover:underline" onClick={clearSaveError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Disk changed banner */}
+      {activeFile?.diskChanged && (
+        <div className="flex items-center gap-2 px-3 py-1.5 text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400 border-b border-orange-500/20">
+          <RefreshCw className="w-3 h-3 shrink-0" />
+          <span className="truncate">
+            This file changed on disk. You have unsaved edits — save to keep your version, or reload to use the disk version.
+          </span>
+          <button
+            className="ml-auto shrink-0 hover:underline font-medium"
+            onClick={() => activeFileKey && reloadFileFromDisk(activeFileKey)}
+          >
+            Reload
+          </button>
+          <button
+            className="shrink-0 hover:underline"
+            onClick={() => activeFileKey && dismissDiskChanged(activeFileKey)}
+          >
             Dismiss
           </button>
         </div>
@@ -380,6 +489,63 @@ export function CodeEditor() {
           />
         )
       )}
+
+      {/* Commit Dialog */}
+      <Dialog open={commitDialogOpen} onOpenChange={setCommitDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Commit Changes</DialogTitle>
+            <DialogDescription>
+              This shows uncommitted changes only. The Changes tab in the sidebar shows all changes (committed and uncommitted) compared to the target branch.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingStats ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading changes...
+            </div>
+          ) : commitFileStats.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-2">
+              No uncommitted changes to commit.
+            </div>
+          ) : (
+            <>
+              <DiffFileList files={commitFileStats} />
+              <Textarea
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                placeholder="Commit message..."
+                rows={3}
+                className="font-mono resize-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    handleCommit();
+                  }
+                }}
+              />
+
+              {commitError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{commitError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleCommit}
+                  disabled={committing || !commitMessage.trim()}
+                  size="sm"
+                >
+                  {committing && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {committing ? "Committing..." : "Commit"}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -16,6 +16,29 @@ export interface NotificationContext {
   openTerminal?: boolean;
 }
 
+async function navigateToContext(context: NotificationContext) {
+  if (!context.projectId) return;
+
+  const { projects, setActiveProject } = useProjectStore.getState();
+  const project = projects.find((p) => p.id === context.projectId);
+  if (!project) return;
+
+  setActiveProject(project);
+
+  if (context.taskId) {
+    await useTaskStore.getState().loadTasks(context.projectId);
+    const tasks = useTaskStore.getState().tasks;
+    const task = tasks.find((t) => t.id === context.taskId);
+    if (task) {
+      useTaskStore.getState().setActiveTask(task);
+    }
+  }
+
+  if (context.openTerminal) {
+    useProcessStore.getState().setTerminalOpen(true);
+  }
+}
+
 export async function requestNotificationPermission() {
   let granted = await isPermissionGranted();
   if (!granted) {
@@ -32,7 +55,11 @@ export async function sendNotification(
   context?: NotificationContext,
 ) {
   const showToast = () => {
-    const opts = { description: body };
+    const opts: Record<string, unknown> = { description: body };
+    if (context?.projectId) {
+      opts.onClick = () => navigateToContext(context);
+      opts.className = "cursor-pointer";
+    }
     switch (type) {
       case "success":
         return toast.success(title, opts);
@@ -66,24 +93,6 @@ export async function registerNotificationClickHandler() {
     if (!extra?.projectId) return;
 
     await getCurrentWindow().setFocus();
-
-    const { projects, setActiveProject } = useProjectStore.getState();
-    const project = projects.find((p) => p.id === extra.projectId);
-    if (!project) return;
-
-    setActiveProject(project);
-
-    if (extra.taskId) {
-      await useTaskStore.getState().loadTasks(extra.projectId);
-      const tasks = useTaskStore.getState().tasks;
-      const task = tasks.find((t) => t.id === extra.taskId);
-      if (task) {
-        useTaskStore.getState().setActiveTask(task);
-      }
-    }
-
-    if (extra.openTerminal) {
-      useProcessStore.getState().setTerminalOpen(true);
-    }
+    await navigateToContext(extra);
   });
 }

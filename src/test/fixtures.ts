@@ -28,6 +28,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
     worktree_path: null,
     pr_url: null,
     parent_task_id: null,
+    target_branch: null,
     ejected: 0,
     lifecycle: "active",
     diff_insertions: null,

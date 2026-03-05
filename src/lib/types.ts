@@ -68,6 +68,7 @@ export interface Task {
   worktree_path: string | null;
   pr_url: string | null;
   parent_task_id: string | null;
+  target_branch: string | null;
   ejected: number;
   lifecycle: TaskLifecycle;
   diff_insertions: number | null;

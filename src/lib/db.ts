@@ -5,7 +5,7 @@ import { initAppSchema, initProjectSchema } from "./db/schema";
 
 let stagehandDir: string | null = null;
 
-async function getStagehandDir(): Promise<string> {
+export async function getStagehandDir(): Promise<string> {
   if (!stagehandDir) {
     stagehandDir = await invoke<string>("get_stagehand_dir");
   }

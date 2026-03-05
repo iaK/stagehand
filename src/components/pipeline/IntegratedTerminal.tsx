@@ -4,8 +4,8 @@ import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore } from "../../stores/processStore";
 import { spawnPty, writeToPty, resizePty, killPty, checkAgentAvailable } from "../../lib/agent";
 import { getTaskWorkingDir } from "../../lib/worktree";
+import { registerPtyWriter, unregisterPtyWriter, routePtyOutput, clearPtyRoute } from "../../lib/ptyRouter";
 import * as repo from "../../lib/repositories";
-import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
 import { XTerminal, type XTerminalHandle } from "./XTerminal";
@@ -26,7 +26,6 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
   const tasks = useTaskStore((s) => s.tasks);
   const task = tasks.find((t) => t.id === taskId) ?? null;
   const terminalSession = useProcessStore((s) => s.getTerminalSession(taskId));
-  const terminalOpen = useProcessStore((s) => s.terminalOpen);
 
   const [availableAgents, setAvailableAgents] = useState<string[]>([]);
   const [checkingAgents, setCheckingAgents] = useState(true);
@@ -58,6 +57,20 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
     return () => { cancelled = true; };
   }, []);
 
+  // Sync ptyIdRef from the store so input/resize work after remount
+  useEffect(() => {
+    ptyIdRef.current = terminalSession.ptyId;
+  }, [terminalSession.ptyId]);
+
+  // Register this component's XTerminal as the writer for this task.
+  // On mount, any buffered output from while no writer was active is replayed.
+  // On unmount, the writer is removed so output is buffered again.
+  // The PTY is NOT killed — it keeps running in the background.
+  useEffect(() => {
+    registerPtyWriter(taskId, (data) => xtermRef.current?.write(data));
+    return () => { unregisterPtyWriter(taskId); };
+  }, [taskId]);
+
   // Scroll/refit when visibility changes
   useEffect(() => {
     if (isVisible) {
@@ -65,21 +78,11 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
     }
   }, [isVisible]);
 
-  // Cleanup on unmount — kill PTY if running
-  useEffect(() => {
-    return () => {
-      const ptyId = ptyIdRef.current;
-      if (ptyId) {
-        killPty(ptyId).catch(() => {});
-        ptyIdRef.current = null;
-      }
-      useProcessStore.getState().removeTerminalSession(taskId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
-  }, []);
-
   const handleSpawn = useCallback(async (agent: string) => {
-    if (!activeProject || !task) return;
+    if (!activeProject || !task) {
+      logger.warn("IntegratedTerminal handleSpawn: no activeProject or task", { activeProject: !!activeProject, task: !!task });
+      return;
+    }
     setSpawning(true);
     setError(null);
 
@@ -116,6 +119,9 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
         agent,
       });
 
+      // Capture taskId for the callback closure (stable for this spawn)
+      const spawnTaskId = taskId;
+
       await spawnPty(
         {
           agent,
@@ -126,29 +132,31 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
           switch (event.type) {
             case "started":
               ptyIdRef.current = event.id;
-              useProcessStore.getState().updateTerminalSession(taskId, { ptyId: event.id, status: "running" });
+              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: event.id, status: "running" });
               break;
             case "output":
-              xtermRef.current?.write(event.data);
+              // Route through ptyRouter so output reaches whatever terminal
+              // is currently displaying this task (survives task switches)
+              routePtyOutput(spawnTaskId, event.data);
               break;
             case "exited": {
               ptyIdRef.current = null;
-              useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "exited" });
+              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: null, status: "exited" });
               const state = useProcessStore.getState();
-              const isCurrentlyVisible = state.terminalOpen && useTaskStore.getState().activeTask?.id === taskId;
+              const isCurrentlyVisible = state.terminalOpen && useTaskStore.getState().activeTask?.id === spawnTaskId;
               if (!isCurrentlyVisible && activeProject) {
                 sendNotification(
                   "Terminal session ended",
                   task?.title ?? "Terminal session ended",
                   "info",
-                  { projectId: activeProject.id, taskId, openTerminal: true },
+                  { projectId: activeProject.id, taskId: spawnTaskId, openTerminal: true },
                 );
               }
               break;
             }
             case "error":
               setError(event.message);
-              useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
+              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: null, status: "idle" });
               break;
           }
         },
@@ -164,15 +172,18 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
   }, [activeProject, task, taskId]);
 
   const handleKill = useCallback(async () => {
-    if (ptyIdRef.current) {
-      await killPty(ptyIdRef.current).catch(() => {});
+    const ptyId = ptyIdRef.current ?? useProcessStore.getState().getTerminalSession(taskId).ptyId;
+    if (ptyId) {
+      await killPty(ptyId).catch(() => {});
       ptyIdRef.current = null;
     }
+    clearPtyRoute(taskId);
     useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
   }, [taskId]);
 
   const handleRestart = useCallback(() => {
     setError(null);
+    clearPtyRoute(taskId);
     useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
   }, [taskId]);
 

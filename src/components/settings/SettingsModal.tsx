@@ -185,6 +185,11 @@ function ProjectSettings({ projectId }: { projectId: string }) {
   const [name, setName] = useState(activeProject?.name ?? "");
   const nameChanged = name.trim() !== "" && name.trim() !== activeProject?.name;
 
+  // Worktree location
+  const [worktreeLocation, setWorktreeLocation] = useState<string>("");
+  const [worktreeDefault, setWorktreeDefault] = useState<string>("");
+  const [worktreeChanged, setWorktreeChanged] = useState(false);
+
   // Logo settings
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoColor, setLogoColor] = useState<string | null>(null);
@@ -195,17 +200,22 @@ function ProjectSettings({ projectId }: { projectId: string }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [url, color, initials, owner] = await Promise.all([
+      const [url, color, initials, owner, wtLoc, wtDefault] = await Promise.all([
         repo.getProjectSetting(projectId, "logo_url"),
         repo.getProjectSetting(projectId, "logo_color"),
         repo.getProjectSetting(projectId, "logo_initials"),
         repo.getProjectSetting(projectId, "github_repo_owner"),
+        repo.getProjectSetting(projectId, "worktree_location"),
+        repo.getWorktreeBaseDir(projectId),
       ]);
       if (cancelled) return;
       setLogoUrl(url);
       setLogoColor(color);
       setLogoInitials(initials ?? "");
       setGithubOwner(owner);
+      setWorktreeLocation(wtLoc ?? "");
+      setWorktreeDefault(wtDefault);
+      setWorktreeChanged(false);
     })();
     return () => { cancelled = true; };
   }, [projectId]);
@@ -295,6 +305,39 @@ function ProjectSettings({ projectId }: { projectId: string }) {
           />
           {nameChanged && (
             <Button size="sm" onClick={handleRename}>
+              Save
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Worktree location */}
+      <div className="border border-border rounded-md p-4 space-y-1 mb-4">
+        <p className="text-sm font-medium text-foreground">Worktree Location</p>
+        <p className="text-xs text-muted-foreground mb-2">
+          Base directory for git worktrees. Leave empty to use the default.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={worktreeLocation}
+            onChange={(e) => { setWorktreeLocation(e.target.value); setWorktreeChanged(true); }}
+            placeholder={worktreeDefault}
+            className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          {worktreeChanged && (
+            <Button
+              size="sm"
+              onClick={async () => {
+                const trimmed = worktreeLocation.trim();
+                if (trimmed) {
+                  await repo.setProjectSetting(projectId, "worktree_location", trimmed);
+                } else {
+                  await repo.deleteProjectSetting(projectId, "worktree_location");
+                }
+                setWorktreeChanged(false);
+              }}
+            >
               Save
             </Button>
           )}

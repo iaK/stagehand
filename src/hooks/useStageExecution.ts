@@ -738,7 +738,7 @@ export function useStageExecution() {
       await gitPush(workDir, task.branch_name);
 
       // Determine base branch
-      const baseBranch = useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(activeProject.path) ?? undefined;
+      const baseBranch = task.target_branch ?? useGitHubStore.getState().defaultBranch ?? await gitDefaultBranch(activeProject.path) ?? undefined;
 
       // Create the PR
       const prUrl = await ghCreatePr(workDir, title, body, baseBranch);
@@ -1081,7 +1081,8 @@ export async function createWorktreeForTask(
   const gitRepo = await isGitRepo(projectPath);
   if (!gitRepo) return task;
 
-  const worktreePath = `${projectPath}/.stagehand-worktrees/${branchName.replace(/\//g, "--")}`;
+  const baseDir = await repo.getWorktreeBaseDir(projectId);
+  const worktreePath = `${baseDir}/${projectId}/${branchName.replace(/\//g, "--")}--${task.id}`;
   const exists = await gitBranchExists(projectPath, branchName);
 
   // Clean up stale worktree if directory already exists
@@ -1098,9 +1099,10 @@ export async function createWorktreeForTask(
   await useTaskStore.getState().updateTask(projectId, task.id, {
     branch_name: branchName,
     worktree_path: worktreePath,
+    target_branch: baseBranch,
   });
 
-  return { ...task, branch_name: branchName, worktree_path: worktreePath };
+  return { ...task, branch_name: branchName, worktree_path: worktreePath, target_branch: baseBranch };
 }
 
 /** Generate a pending commit for a stage that just finished. Returns early if no changes. */
