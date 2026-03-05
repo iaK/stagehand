@@ -366,9 +366,7 @@ export function PipelineView() {
 
             {/* Hidden integrated terminals for tasks with active sessions (keep xterm alive) */}
             {Object.entries(terminalSessions)
-              .filter(([tid, session]) =>
-                session.status === "running" && (tid !== activeTaskId || !terminalOpen)
-              )
+              .filter(([_, session]) => session.status === "running")
               .map(([tid]) => (
                 <div key={`iterm-${tid}`} className="absolute inset-0" style={{ display: "none" }}>
                   <IntegratedTerminal taskId={tid} isVisible={false} />

@@ -99,33 +99,14 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
         systemPrompt = `${systemPrompt}\n\n${stageContext}`;
       }
 
-      // Build MCP config and add hint to system prompt
-      let mcpConfig: string | undefined;
+      // Add MCP tools hint to system prompt
       try {
-        const mcpServerPath = await invoke<string>("get_mcp_server_path");
-        const stagehandDir = await invoke<string>("get_stagehand_dir");
-        const dbPath = `${stagehandDir}/data/${activeProject.id}.db`;
-        const config = {
-          mcpServers: {
-            "stagehand-context": {
-              command: "node",
-              args: [mcpServerPath],
-              env: {
-                STAGEHAND_DB_PATH: dbPath,
-                STAGEHAND_TASK_ID: taskId,
-              },
-            },
-          },
-        };
-        mcpConfig = JSON.stringify(config);
         const mcpHint =
           "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_title` tools to retrieve data from prior pipeline stages on demand.";
         systemPrompt = `${systemPrompt}\n\n${mcpHint}`;
       } catch {
         // MCP unavailable — continue without it
       }
-
-      void mcpConfig; // stored for future use if SpawnPtyArgs gains mcpConfig support
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
@@ -191,6 +172,7 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
   }, [taskId]);
 
   const handleRestart = useCallback(() => {
+    setError(null);
     useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
   }, [taskId]);
 
@@ -232,7 +214,12 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
         {/* XTerminal — always mounted once running/exited to preserve output */}
         <div
           className="absolute inset-0 p-2"
-          style={{ display: status === "idle" ? "none" : "flex", flexDirection: "column" }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            visibility: status === "idle" ? "hidden" : "visible",
+            pointerEvents: status === "idle" ? "none" : "auto",
+          }}
         >
           <XTerminal
             ref={xtermRef}
