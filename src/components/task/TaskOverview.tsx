@@ -9,7 +9,24 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { gitLog, gitLogBranchDiff, gitListBranches, gitDiffShortStatBranch, type GitCommit } from "../../lib/git";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
+import {
+  gitLog,
+  gitLogBranchDiff,
+  gitListBranches,
+  gitDiffShortStatBranch,
+  hasUncommittedChanges,
+  gitAdd,
+  gitCommit,
+  gitDiffStat,
+  gitStash,
+  gitStashPop,
+  ejectTaskToMainRepo,
+  injectTaskFromMainRepo,
+  type GitCommit,
+} from "../../lib/git";
 import { sendNotification } from "../../lib/notifications";
 import { toast } from "sonner";
 import { useProcessStore } from "../../stores/processStore";
@@ -90,6 +107,26 @@ export function TaskOverview() {
   const [diffStats, setDiffStats] = useState<{ insertions: number; deletions: number } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(false);
+
+  // Eject/Inject state
+  const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
+  const [injectDialogOpen, setInjectDialogOpen] = useState(false);
+  const [ejecting, setEjecting] = useState(false);
+  const [injecting, setInjecting] = useState(false);
+  const [ejectError, setEjectError] = useState<string | null>(null);
+  const [injectError, setInjectError] = useState<string | null>(null);
+  const [worktreeHasChanges, setWorktreeHasChanges] = useState(false);
+  const [mainRepoHasChanges, setMainRepoHasChanges] = useState(false);
+  const [ejectCommitMessage, setEjectCommitMessage] = useState("");
+  const [ejectDiffStat, setEjectDiffStat] = useState("");
+  const [checkingChanges, setCheckingChanges] = useState(false);
+
+  const isAnyStageRunning = useProcessStore((s) => {
+    if (!activeTask) return false;
+    return Object.entries(s.stages).some(
+      ([key, state]) => key.startsWith(`${activeTask.id}:`) && state.isRunning,
+    );
+  });
 
   useEffect(() => {
     if (activeTask?.status !== "split" || !activeProject) {
@@ -211,6 +248,132 @@ export function TaskOverview() {
     setActiveTask(null);
   };
 
+  const handleEjectClick = async () => {
+    if (!activeProject || !activeTask?.worktree_path || !activeTask?.branch_name) return;
+    setCheckingChanges(true);
+    setEjectError(null);
+    setWorktreeHasChanges(false);
+    setMainRepoHasChanges(false);
+    setEjectCommitMessage("");
+    setEjectDiffStat("");
+
+    try {
+      // Check if another task is already ejected
+      const allTasks = useTaskStore.getState().tasks;
+      const alreadyEjected = allTasks.find(
+        (t) => t.id !== activeTask.id && t.ejected === 1,
+      );
+      if (alreadyEjected) {
+        setEjectError(
+          `Task "${alreadyEjected.title}" is currently ejected. Only one task can be ejected at a time. Inject it back first.`,
+        );
+        setEjectDialogOpen(true);
+        setCheckingChanges(false);
+        return;
+      }
+
+      // Check main repo for uncommitted changes
+      const mainDirty = await hasUncommittedChanges(activeProject.path);
+      if (mainDirty) {
+        setMainRepoHasChanges(true);
+      }
+
+      // Check worktree for uncommitted changes
+      const worktreeDirty = await hasUncommittedChanges(activeTask.worktree_path);
+      if (worktreeDirty) {
+        setWorktreeHasChanges(true);
+        const stat = await gitDiffStat(activeTask.worktree_path).catch(() => "");
+        setEjectDiffStat(stat);
+        const prefix = await repo.getCommitPrefix(activeProject.id).catch(() => "feat");
+        setEjectCommitMessage(`${prefix}: ${activeTask.branch_name}`);
+      }
+    } catch (err) {
+      setEjectError(err instanceof Error ? err.message : String(err));
+    }
+
+    setCheckingChanges(false);
+    setEjectDialogOpen(true);
+  };
+
+  const handleEjectConfirm = async () => {
+    if (!activeProject || !activeTask?.worktree_path || !activeTask?.branch_name) return;
+    setEjecting(true);
+    setEjectError(null);
+    try {
+      if (worktreeHasChanges) {
+        await gitAdd(activeTask.worktree_path);
+        await gitCommit(activeTask.worktree_path, ejectCommitMessage);
+      }
+      if (mainRepoHasChanges) {
+        await gitStash(activeProject.path);
+      }
+      await ejectTaskToMainRepo(
+        activeProject.path,
+        activeTask.worktree_path,
+        activeTask.branch_name,
+      );
+      if (mainRepoHasChanges) {
+        await gitStashPop(activeProject.path);
+      }
+      await repo.updateTask(activeProject.id, activeTask.id, {
+        ejected: 1,
+        worktree_path: null,
+      });
+      await useTaskStore.getState().loadTasks(activeProject.id);
+      sendNotification("Task ejected", "Branch checked out in main repo", "success", {
+        projectId: activeProject.id,
+        taskId: activeTask.id,
+      });
+      setEjectDialogOpen(false);
+      setWorktreeHasChanges(false);
+      setMainRepoHasChanges(false);
+      setEjectCommitMessage("");
+      setEjectDiffStat("");
+    } catch (err) {
+      setEjectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEjecting(false);
+    }
+  };
+
+  const handleInjectConfirm = async () => {
+    if (!activeProject || !activeTask?.branch_name) return;
+    setInjecting(true);
+    setInjectError(null);
+    try {
+      const mainDirty = await hasUncommittedChanges(activeProject.path);
+      if (mainDirty) {
+        setInjectError(
+          "Your main project directory has uncommitted changes. Please commit or stash them before injecting back.",
+        );
+        setInjecting(false);
+        return;
+      }
+
+      const worktreePath = `${activeProject.path}/.stagehand-worktrees/${activeTask.branch_name.replace(/\//g, "--")}`;
+      await injectTaskFromMainRepo(
+        activeProject.path,
+        worktreePath,
+        activeTask.branch_name,
+        defaultBranch ?? undefined,
+      );
+      await repo.updateTask(activeProject.id, activeTask.id, {
+        ejected: 0,
+        worktree_path: worktreePath,
+      });
+      await useTaskStore.getState().loadTasks(activeProject.id);
+      sendNotification("Task injected", "Branch moved back to worktree", "success", {
+        projectId: activeProject.id,
+        taskId: activeTask.id,
+      });
+      setInjectDialogOpen(false);
+    } catch (err) {
+      setInjectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInjecting(false);
+    }
+  };
+
   if (!activeTask) return null;
 
   const status = statusConfig[activeTask.status] ?? statusConfig.pending;
@@ -255,6 +418,47 @@ export function TaskOverview() {
           </TooltipTrigger>
           <TooltipContent>Edit task</TooltipContent>
         </Tooltip>
+        {activeTask.branch_name && (
+          activeTask.ejected ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setInjectDialogOpen(true)}
+                  disabled={isAnyStageRunning}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Inject back to worktree</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span title={!activeTask.worktree_path ? "Run a pipeline stage first to create the worktree" : undefined}>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleEjectClick}
+                    disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
+                  >
+                    {checkingChanges ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                      </svg>
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Eject to main repo</TooltipContent>
+            </Tooltip>
+          )
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -515,6 +719,134 @@ export function TaskOverview() {
           )}
         </CardContent>
       </Card>
+
+      {/* Eject Confirmation Dialog */}
+      <AlertDialog
+        open={ejectDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEjectDialogOpen(false);
+            setEjectError(null);
+            setWorktreeHasChanges(false);
+            setMainRepoHasChanges(false);
+          }
+        }}
+      >
+        <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eject to Main Repo</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will check out the{" "}
+              <code className="px-1 py-0.5 rounded bg-muted text-xs">
+                {activeTask.branch_name}
+              </code>{" "}
+              branch in your main project directory so you can edit and test with
+              your normal tools. The Stagehand pipeline will be paused until you
+              inject back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {ejectError && (
+            <Alert variant="destructive">
+              <AlertDescription>{ejectError}</AlertDescription>
+            </Alert>
+          )}
+
+          {mainRepoHasChanges && !ejectError && (
+            <Alert>
+              <AlertDescription>
+                Your main repo has uncommitted changes. They will be stashed
+                before ejecting and restored on the ejected branch.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {worktreeHasChanges && !ejectError && (
+            <div className="space-y-3">
+              <Alert>
+                <AlertDescription>
+                  The worktree has uncommitted changes that need to be committed
+                  before ejecting.
+                </AlertDescription>
+              </Alert>
+              {ejectDiffStat && (
+                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
+                  {ejectDiffStat}
+                </pre>
+              )}
+              <Textarea
+                value={ejectCommitMessage}
+                onChange={(e) => setEjectCommitMessage(e.target.value)}
+                placeholder="Commit message..."
+                rows={2}
+              />
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {!ejectError && (
+              <Button
+                onClick={handleEjectConfirm}
+                disabled={
+                  ejecting ||
+                  (worktreeHasChanges && !ejectCommitMessage.trim())
+                }
+              >
+                {ejecting && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+                {ejecting
+                  ? worktreeHasChanges
+                    ? "Committing & Ejecting..."
+                    : mainRepoHasChanges
+                      ? "Stashing & Ejecting..."
+                      : "Ejecting..."
+                  : worktreeHasChanges
+                    ? "Commit & Eject"
+                    : mainRepoHasChanges
+                      ? "Stash & Eject"
+                      : "Eject"}
+              </Button>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Inject Confirmation Dialog */}
+      <AlertDialog
+        open={injectDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInjectDialogOpen(false);
+            setInjectError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Inject Back to Worktree</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will move the{" "}
+              <code className="px-1 py-0.5 rounded bg-muted text-xs">
+                {activeTask.branch_name}
+              </code>{" "}
+              branch back to a worktree so Stagehand can resume the pipeline.
+              Make sure you've committed any changes you want to keep.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {injectError && (
+            <Alert variant="destructive">
+              <AlertDescription>{injectError}</AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button onClick={handleInjectConfirm} disabled={injecting}>
+              {injecting && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+              {injecting ? "Injecting..." : "Inject"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Archive Confirmation Dialog */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={(open) => !open && setArchiveDialogOpen(false)}>

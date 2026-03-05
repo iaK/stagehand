@@ -4,8 +4,8 @@ describe("getDefaultStageTemplates", () => {
   const projectId = "test-project-id";
   const templates = getDefaultStageTemplates(projectId);
 
-  it("returns 13 stage templates", () => {
-    expect(templates).toHaveLength(13);
+  it("returns 11 stage templates", () => {
+    expect(templates).toHaveLength(11);
   });
 
   it("all templates have the correct project_id", () => {
@@ -16,7 +16,7 @@ describe("getDefaultStageTemplates", () => {
 
   it("sort orders are sequential integers", () => {
     const sortOrders = templates.map((t) => t.sort_order);
-    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(sortOrders).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
   it("each template has the expected name", () => {
@@ -27,11 +27,9 @@ describe("getDefaultStageTemplates", () => {
       "High-Level Approaches",
       "Planning",
       "Second Opinion",
-      "Guided Implementation",
       "Implementation",
       "Refinement",
       "Security Review",
-      "Documentation",
       "PR Preparation",
       "PR Review",
       "Merge",
@@ -43,7 +41,6 @@ describe("getDefaultStageTemplates", () => {
 
     expect(byName["Research"].output_format).toBe("research");
     expect(byName["Task Splitting"].output_format).toBe("task_splitting");
-    expect(byName["Guided Implementation"].output_format).toBe("interactive_terminal");
     expect(byName["PR Preparation"].output_format).toBe("pr_preparation");
     expect(byName["PR Review"].output_format).toBe("pr_review");
     expect(byName["Merge"].output_format).toBe("merge");

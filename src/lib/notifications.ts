@@ -35,7 +35,7 @@ async function navigateToContext(context: NotificationContext) {
   }
 
   if (context.openTerminal) {
-    useProcessStore.getState().setTerminalOpen(true);
+    useProcessStore.getState().setActiveView("terminal");
   }
 }
 

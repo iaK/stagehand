@@ -81,7 +81,7 @@ export function StructuredOutput({
       <div className="space-y-4">
         {Object.entries(fields).map(([key, value]) => {
           const isRequired = requiredFields.includes(key);
-          const isLong = value.length > 100;
+          const isLong = (filteredInitial[key] ?? "").length > 100;
           const label = key
             .replace(/_/g, " ")
             .replace(/\b\w/g, (c) => c.toUpperCase());

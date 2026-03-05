@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
@@ -10,33 +10,10 @@ import { TaskOverview } from "../task/TaskOverview";
 import { ProjectOverview } from "../project/ProjectOverview";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Code2 } from "lucide-react";
-import {
-  hasUncommittedChanges,
-  gitAdd,
-  gitCommit,
-  gitDiffStat,
-  gitStash,
-  gitStashPop,
-  ejectTaskToMainRepo,
-  injectTaskFromMainRepo,
-} from "../../lib/git";
-import { updateTask as repoUpdateTask, getCommitPrefix } from "../../lib/repositories";
-import { sendNotification } from "../../lib/notifications";
+import { Code2, Terminal, GitBranch, Info } from "lucide-react";
 import { logger } from "../../lib/logger";
-import { useGitHubStore } from "../../stores/githubStore";
 import { useEditorStore } from "../../stores/editorStore";
+import { useNavigationStore } from "../../stores/navigationStore";
 import { EditorPanel } from "../editor/EditorPanel";
 import type { TaskStageInstance } from "../../lib/types";
 
@@ -49,6 +26,9 @@ export function PipelineView() {
   const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
   const taskStagesMap = useTaskStore((s) => s.taskStages);
 
+  // Stable primitive values for effect dependencies
+  const projectId = activeProject?.id;
+
   // Compute filtered stages from stable selectors
   const activeTaskId = activeTask?.id;
   const activeTaskStages = activeTaskId ? taskStagesMap[activeTaskId] : undefined;
@@ -56,167 +36,60 @@ export function PipelineView() {
     return getActiveTaskStageInstances();
   }, [getActiveTaskStageInstances, activeTaskId, activeTask?.current_stage_id, activeTaskStages]);
 
-  const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
-  const [showOverview, setShowOverview] = useState(true);
-  const isEditorOpen = useEditorStore((s) => s.isEditorOpen);
-  const toggleEditor = useEditorStore((s) => s.toggleEditor);
+  const [viewingStage, setViewingStageRaw] = useState<TaskStageInstance | null>(null);
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
-  const terminalOpen = useProcessStore((s) => s.terminalOpen);
+  const activeView = useProcessStore((s) => s.activeView);
+  const showOverview = useProcessStore((s) => s.overviewOpen);
+  const terminalTabOrder = useProcessStore((s) => s.terminalTabOrder);
 
-  // Eject/Inject state
-  const [ejectDialogOpen, setEjectDialogOpen] = useState(false);
-  const [injectDialogOpen, setInjectDialogOpen] = useState(false);
-  const [ejecting, setEjecting] = useState(false);
-  const [injecting, setInjecting] = useState(false);
-  const [ejectError, setEjectError] = useState<string | null>(null);
-  const [injectError, setInjectError] = useState<string | null>(null);
-  const [worktreeHasChanges, setWorktreeHasChanges] = useState(false);
-  const [mainRepoHasChanges, setMainRepoHasChanges] = useState(false);
-  const [ejectCommitMessage, setEjectCommitMessage] = useState("");
-  const [ejectDiffStat, setEjectDiffStat] = useState("");
-  const [checkingChanges, setCheckingChanges] = useState(false);
-
-  const isAnyStageRunning = useProcessStore((s) => {
-    if (!activeTask) return false;
-    return Object.entries(s.stages).some(
-      ([key, state]) => key.startsWith(`${activeTask.id}:`) && state.isRunning,
+  // Task IDs that need a mounted IntegratedTerminal (have tabs or are active)
+  const terminalTaskIds = useMemo(() => {
+    const ids = new Set<string>(
+      Object.entries(terminalTabOrder)
+        .filter(([, tabs]) => tabs.length > 0)
+        .map(([tid]) => tid),
     );
-  });
+    if (activeTaskId) ids.add(activeTaskId);
+    return Array.from(ids);
+  }, [terminalTabOrder, activeTaskId]);
 
-  const handleEjectClick = async () => {
-    if (!activeProject || !activeTask?.worktree_path || !activeTask?.branch_name) return;
-    setCheckingChanges(true);
-    setEjectError(null);
-    setWorktreeHasChanges(false);
-    setMainRepoHasChanges(false);
-    setEjectCommitMessage("");
-    setEjectDiffStat("");
+  // Track whether we've restored view state for this task (avoid overwriting with auto-select)
+  const restoredTaskRef = useRef<string | null>(null);
 
-    try {
-      // Check if another task is already ejected
-      const allTasks = useTaskStore.getState().tasks;
-      const alreadyEjected = allTasks.find(
-        (t) => t.id !== activeTask.id && t.ejected === 1,
-      );
-      if (alreadyEjected) {
-        setEjectError(
-          `Task "${alreadyEjected.title}" is currently ejected. Only one task can be ejected at a time. Inject it back first.`,
-        );
-        setEjectDialogOpen(true);
-        setCheckingChanges(false);
-        return;
+  // --- Navigation persistence helpers ---
+  const persistViewPatch = useCallback(
+    (patch: Partial<{ stageId: string | null; activeView: "pipeline" | "editor" | "terminal"; overview: boolean }>) => {
+      if (projectId && activeTaskId) {
+        useNavigationStore.getState().persistTaskViewState(projectId, activeTaskId, patch);
       }
+    },
+    [projectId, activeTaskId],
+  );
 
-      // Check main repo for uncommitted changes
-      const mainDirty = await hasUncommittedChanges(activeProject.path);
-      if (mainDirty) {
-        setMainRepoHasChanges(true);
+  const setViewingStage = useCallback(
+    (stage: TaskStageInstance | null) => {
+      setViewingStageRaw(stage);
+      if (stage && projectId && activeTaskId) {
+        useNavigationStore.getState().persistTaskViewState(projectId, activeTaskId, {
+          stageId: stage.task_stage_id,
+        });
       }
+    },
+    [projectId, activeTaskId],
+  );
 
-      // Check worktree for uncommitted changes
-      const worktreeDirty = await hasUncommittedChanges(activeTask.worktree_path);
-      if (worktreeDirty) {
-        setWorktreeHasChanges(true);
-        const stat = await gitDiffStat(activeTask.worktree_path).catch(() => "");
-        setEjectDiffStat(stat);
-        const prefix = await getCommitPrefix(activeProject.id).catch(() => "feat");
-        setEjectCommitMessage(`${prefix}: ${activeTask.branch_name}`);
-      }
-    } catch (err) {
-      setEjectError(err instanceof Error ? err.message : String(err));
-    }
+  const switchView = useCallback((view: "pipeline" | "editor" | "terminal") => {
+    useProcessStore.getState().setActiveView(view);
+    persistViewPatch({ activeView: view });
+  }, [persistViewPatch]);
 
-    setCheckingChanges(false);
-    setEjectDialogOpen(true);
-  };
+  const handleToggleOverview = useCallback(() => {
+    const next = !useProcessStore.getState().overviewOpen;
+    useProcessStore.getState().toggleOverview();
+    persistViewPatch({ overview: next });
+  }, [persistViewPatch]);
 
-  const handleEjectConfirm = async () => {
-    if (!activeProject || !activeTask?.worktree_path || !activeTask?.branch_name) return;
-    setEjecting(true);
-    setEjectError(null);
-    try {
-      if (worktreeHasChanges) {
-        await gitAdd(activeTask.worktree_path);
-        await gitCommit(activeTask.worktree_path, ejectCommitMessage);
-      }
-      // Stash main repo changes if needed
-      if (mainRepoHasChanges) {
-        await gitStash(activeProject.path);
-      }
-      await ejectTaskToMainRepo(
-        activeProject.path,
-        activeTask.worktree_path,
-        activeTask.branch_name,
-      );
-      // Pop stashed changes onto the ejected branch
-      if (mainRepoHasChanges) {
-        await gitStashPop(activeProject.path);
-      }
-      await repoUpdateTask(activeProject.id, activeTask.id, {
-        ejected: 1,
-        worktree_path: null,
-      });
-      // Refresh task store
-      await useTaskStore.getState().loadTasks(activeProject.id);
-      sendNotification("Task ejected", "Branch checked out in main repo", "success", {
-        projectId: activeProject.id,
-        taskId: activeTask.id,
-      });
-      setEjectDialogOpen(false);
-      setWorktreeHasChanges(false);
-      setMainRepoHasChanges(false);
-      setEjectCommitMessage("");
-      setEjectDiffStat("");
-    } catch (err) {
-      setEjectError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setEjecting(false);
-    }
-  };
-
-  const handleInjectConfirm = async () => {
-    if (!activeProject || !activeTask?.branch_name) return;
-    setInjecting(true);
-    setInjectError(null);
-    try {
-      // Check main repo for uncommitted changes
-      const mainDirty = await hasUncommittedChanges(activeProject.path);
-      if (mainDirty) {
-        setInjectError(
-          "Your main project directory has uncommitted changes. Please commit or stash them before injecting back.",
-        );
-        setInjecting(false);
-        return;
-      }
-
-      const worktreePath = `${activeProject.path}/.stagehand-worktrees/${activeTask.branch_name.replace(/\//g, "--")}`;
-      await injectTaskFromMainRepo(
-        activeProject.path,
-        worktreePath,
-        activeTask.branch_name,
-        useGitHubStore.getState().defaultBranch ?? undefined,
-      );
-      await repoUpdateTask(activeProject.id, activeTask.id, {
-        ejected: 0,
-        worktree_path: worktreePath,
-      });
-      // Refresh task store
-      await useTaskStore.getState().loadTasks(activeProject.id);
-      sendNotification("Task injected", "Branch moved back to worktree", "success", {
-        projectId: activeProject.id,
-        taskId: activeTask.id,
-      });
-      setInjectDialogOpen(false);
-    } catch (err) {
-      setInjectError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setInjecting(false);
-    }
-  };
-
-  // Stable primitive values for effect dependencies
-  const projectId = activeProject?.id;
   const currentStageId = activeTask?.current_stage_id;
 
   // Load executions and task stages when task changes
@@ -231,19 +104,56 @@ export function PipelineView() {
     }
   }, [projectId, activeTaskId, loadExecutions, loadTaskStages]);
 
-  // Auto-select current stage when it advances (approval, auto-start, task change)
+  // Restore persisted view state when task changes, then auto-select stage
   useEffect(() => {
-    if (currentStageId && filteredStages.length > 0) {
-      const current = filteredStages.find(
-        (s) => s.task_stage_id === currentStageId,
-      );
-      setViewingStage(current ?? filteredStages[0]);
-    } else if (filteredStages.length > 0) {
-      setViewingStage(filteredStages[0]);
-    } else {
-      setViewingStage(null);
+    if (!activeTaskId || filteredStages.length === 0) {
+      setViewingStageRaw(null);
+      return;
     }
-  }, [activeTaskId, currentStageId, filteredStages]);
+
+    // If we already restored for this task, just follow current_stage_id changes
+    if (restoredTaskRef.current === activeTaskId) {
+      if (currentStageId) {
+        const current = filteredStages.find((s) => s.task_stage_id === currentStageId);
+        setViewingStageRaw(current ?? filteredStages[0]);
+      }
+      return;
+    }
+
+    // First time seeing this task — restore persisted state
+    restoredTaskRef.current = activeTaskId;
+
+    if (!projectId) {
+      // Fallback: use current stage
+      const current = filteredStages.find((s) => s.task_stage_id === currentStageId);
+      setViewingStageRaw(current ?? filteredStages[0]);
+      return;
+    }
+
+    const nav = useNavigationStore.getState();
+    nav.getPersistedTaskViewState(projectId, activeTaskId).then((viewState) => {
+      // Only apply if we're still on the same task
+      if (useTaskStore.getState().activeTask?.id !== activeTaskId) return;
+
+      // Restore panel states
+      useProcessStore.getState().setActiveView(viewState.activeView);
+      useEditorStore.getState().setSidebarView(viewState.editorSidebarView);
+      useProcessStore.getState().setOverviewOpen(viewState.overview);
+
+      // Restore viewing stage
+      if (viewState.stageId) {
+        const persisted = filteredStages.find((s) => s.task_stage_id === viewState.stageId);
+        if (persisted) {
+          setViewingStageRaw(persisted);
+          return;
+        }
+      }
+
+      // Fallback to current stage
+      const current = filteredStages.find((s) => s.task_stage_id === currentStageId);
+      setViewingStageRaw(current ?? filteredStages[0]);
+    });
+  }, [activeTaskId, currentStageId, filteredStages, projectId]);
 
   // Sync viewed stage to process store so TerminalView can show the right output
   useEffect(() => {
@@ -282,84 +192,54 @@ export function PipelineView() {
           executions={executions}
           onStageClick={setViewingStage}
         />
-        <div className="ml-auto pr-4 flex items-center gap-1">
-          {activeTask?.branch_name && (
-            activeTask.ejected ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setInjectDialogOpen(true)}
-                    disabled={isAnyStageRunning}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Inject back to worktree</TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span title={!activeTask.worktree_path ? "Run a pipeline stage first to create the worktree" : undefined}>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={handleEjectClick}
-                      disabled={isAnyStageRunning || !activeTask.worktree_path || checkingChanges}
-                    >
-                      {checkingChanges ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                        </svg>
-                      )}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>Eject to main repo</TooltipContent>
-              </Tooltip>
-            )
-          )}
+        <div className="ml-auto pl-4 pr-4 flex items-center gap-1 shrink-0">
+          {/* View switcher */}
+          <div className="flex items-center rounded-md border border-border bg-muted/40 p-0.5 gap-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeView === "pipeline" ? "secondary" : "ghost"}
+                  size="icon-xs"
+                  onClick={() => switchView("pipeline")}
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Pipeline</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeView === "editor" ? "secondary" : "ghost"}
+                  size="icon-xs"
+                  onClick={() => switchView("editor")}
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Editor</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeView === "terminal" ? "secondary" : "ghost"}
+                  size="icon-xs"
+                  onClick={() => switchView("terminal")}
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Terminal</TooltipContent>
+            </Tooltip>
+          </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                variant={isEditorOpen ? "secondary" : "ghost"}
+                variant={showOverview ? "secondary" : "ghost"}
                 size="icon-xs"
-                onClick={toggleEditor}
+                onClick={handleToggleOverview}
               >
-                <Code2 className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{isEditorOpen ? "Hide Editor" : "Show Editor"}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => useProcessStore.getState().toggleTerminal()}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{terminalOpen ? "Hide Terminal" : "Show Terminal"}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setShowOverview((v) => !v)}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <Info className="w-3.5 h-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{showOverview ? "Hide Overview" : "Show Overview"}</TooltipContent>
@@ -368,207 +248,81 @@ export function PipelineView() {
       </div>
 
       {/* Content */}
-      {showPlaceholder ? null : (
-        <div className="flex-1 flex min-h-0">
-          {isEditorOpen ? (
-            /* Editor panel replaces stage output when toggled */
-            <EditorPanel />
-          ) : (
-            /* Pipeline (default view) */
-            <div className="flex-1 overflow-y-auto relative">
-              {/* Layer 0: Integrated terminal overlay — replaces pipeline content.
-                  key={activeTaskId} forces a fresh XTerminal per task so buffered
-                  output replays correctly via ptyRouter. PTY sessions survive
-                  task/project switches — the router buffers output while no
-                  terminal component is mounted for that task. */}
-              {terminalOpen && activeTaskId && (
-                <div className="absolute inset-0 z-20 flex flex-col bg-background">
-                  <IntegratedTerminal key={activeTaskId} taskId={activeTaskId} isVisible={true} />
-                </div>
-              )}
+      <div className="flex-1 flex min-h-0" style={{ display: showPlaceholder ? "none" : undefined }}>
+        {activeView === "editor" ? (
+          <EditorPanel />
+        ) : activeView === "pipeline" ? (
+          /* Pipeline (default view) */
+          <div className="flex-1 overflow-y-auto relative">
 
-              {/* Layer 1: Persistent interactive terminals — survive navigation */}
-              {(() => {
-                const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
+            {/* Layer 1: Persistent interactive terminals — survive navigation */}
+            {(() => {
+              const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
 
-                for (const [key, session] of Object.entries(activePtySessions)) {
-                  persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
+              for (const [key, session] of Object.entries(activePtySessions)) {
+                persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
+              }
+
+              if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
+                const key = stageKey(activeTaskId, viewingStage.task_stage_id);
+                if (!persistentTerminals.has(key)) {
+                  persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
                 }
+              }
 
-                if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
-                  const key = stageKey(activeTaskId, viewingStage.task_stage_id);
-                  if (!persistentTerminals.has(key)) {
-                    persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
-                  }
-                }
+              const currentKey = activeTaskId && viewingStage
+                ? stageKey(activeTaskId, viewingStage.task_stage_id)
+                : null;
 
-                const currentKey = activeTaskId && viewingStage
-                  ? stageKey(activeTaskId, viewingStage.task_stage_id)
-                  : null;
+              return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
+                const isVisible = key === currentKey;
+                return (
+                  <div
+                    key={`pty-${key}`}
+                    className="absolute inset-0"
+                    style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
+                  >
+                    <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
+                  </div>
+                );
+              });
+            })()}
 
-                return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
-                  const isVisible = key === currentKey;
-                  return (
-                    <div
-                      key={`pty-${key}`}
-                      className="absolute inset-0"
-                      style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
-                    >
-                      <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
-                    </div>
-                  );
-                });
-              })()}
-
-              {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
-              {viewingStage ? (
-                viewingStage.output_format !== "interactive_terminal" ? (
-                  <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
-                ) : null
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-muted-foreground">No stage selected</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Overview panel (collapsible right side) */}
-          {showOverview && (
-            <div className="w-[400px] shrink-0 border-l border-border flex flex-col min-h-0">
-              <TaskOverview />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Eject Confirmation Dialog */}
-      <AlertDialog
-        open={ejectDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEjectDialogOpen(false);
-            setEjectError(null);
-            setWorktreeHasChanges(false);
-            setMainRepoHasChanges(false);
-          }
-        }}
-      >
-        <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eject to Main Repo</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will check out the{" "}
-              <code className="px-1 py-0.5 rounded bg-muted text-xs">
-                {activeTask?.branch_name}
-              </code>{" "}
-              branch in your main project directory so you can edit and test with
-              your normal tools. The Stagehand pipeline will be paused until you
-              inject back.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {ejectError && (
-            <Alert variant="destructive">
-              <AlertDescription>{ejectError}</AlertDescription>
-            </Alert>
-          )}
-
-          {mainRepoHasChanges && !ejectError && (
-            <Alert>
-              <AlertDescription>
-                Your main repo has uncommitted changes. They will be stashed
-                before ejecting and restored on the ejected branch.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {worktreeHasChanges && !ejectError && (
-            <div className="space-y-3">
-              <Alert>
-                <AlertDescription>
-                  The worktree has uncommitted changes that need to be committed
-                  before ejecting.
-                </AlertDescription>
-              </Alert>
-              {ejectDiffStat && (
-                <pre className="text-xs bg-muted p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
-                  {ejectDiffStat}
-                </pre>
-              )}
-              <Textarea
-                value={ejectCommitMessage}
-                onChange={(e) => setEjectCommitMessage(e.target.value)}
-                placeholder="Commit message..."
-                rows={2}
-              />
-            </div>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {!ejectError && (
-              <Button
-                onClick={handleEjectConfirm}
-                disabled={
-                  ejecting ||
-                  (worktreeHasChanges && !ejectCommitMessage.trim())
-                }
-              >
-                {ejecting && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                {ejecting
-                  ? worktreeHasChanges
-                    ? "Committing & Ejecting..."
-                    : mainRepoHasChanges
-                      ? "Stashing & Ejecting..."
-                      : "Ejecting..."
-                  : worktreeHasChanges
-                    ? "Commit & Eject"
-                    : mainRepoHasChanges
-                      ? "Stash & Eject"
-                      : "Eject"}
-              </Button>
+            {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
+            {viewingStage ? (
+              viewingStage.output_format !== "interactive_terminal" ? (
+                <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
+              ) : null
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-muted-foreground">No stage selected</p>
+              </div>
             )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          </div>
+        ) : null}
 
-      {/* Inject Confirmation Dialog */}
-      <AlertDialog
-        open={injectDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setInjectDialogOpen(false);
-            setInjectError(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Inject Back to Worktree</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will move the{" "}
-              <code className="px-1 py-0.5 rounded bg-muted text-xs">
-                {activeTask?.branch_name}
-              </code>{" "}
-              branch back to a worktree so Stagehand can resume the pipeline.
-              Make sure you've committed any changes you want to keep.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {injectError && (
-            <Alert variant="destructive">
-              <AlertDescription>{injectError}</AlertDescription>
-            </Alert>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button onClick={handleInjectConfirm} disabled={injecting}>
-              {injecting && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              {injecting ? "Injecting..." : "Inject"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Integrated terminals — always mounted, survive project/task switches */}
+        {terminalTaskIds.map((tid) => {
+          const termVisible = activeView === "terminal" && tid === activeTaskId;
+          return (
+            <div
+              key={`term-${tid}`}
+              className="flex-1 flex flex-col min-h-0"
+              style={{ display: termVisible ? "flex" : "none" }}
+            >
+              <IntegratedTerminal taskId={tid} isVisible={termVisible} />
+            </div>
+          );
+        })}
+
+        {/* Overview panel (collapsible right side) */}
+        {showOverview && (
+          <div className="w-[400px] shrink-0 border-l border-border flex flex-col min-h-0">
+            <TaskOverview />
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

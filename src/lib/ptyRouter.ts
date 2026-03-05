@@ -45,6 +45,11 @@ export function routePtyOutput(taskId: string, data: string): void {
   }
 }
 
+/** Clear buffered output only (keeps writer registered). */
+export function clearPtyBuffer(taskId: string): void {
+  buffers.delete(taskId);
+}
+
 /** Clear buffered output and writer for a task (called on session end / kill). */
 export function clearPtyRoute(taskId: string): void {
   buffers.delete(taskId);

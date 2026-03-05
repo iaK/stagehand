@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEditorStore } from "../../stores/editorStore";
+import { useNavigationStore } from "../../stores/navigationStore";
 import { FileTree } from "./FileTree";
 import { ChangedFilesList } from "./ChangedFilesList";
 import { CodeEditor } from "./CodeEditor";
@@ -25,18 +26,36 @@ export function EditorPanel() {
   const taskId = activeTask?.id;
   const prevTaskIdRef = useRef(taskId);
 
-  const [sidebarView, setSidebarView] = useState<"files" | "changes">("files");
+  const projectId = useProjectStore((s) => s.activeProject?.id);
+  const sidebarView = useEditorStore((s) => s.sidebarView);
+  const setSidebarViewRaw = useEditorStore((s) => s.setSidebarView);
   const editorSidebarPosition = useSettingsStore((s) => s.editorSidebarPosition);
+
+  const setSidebarView = useCallback((view: "files" | "changes") => {
+    setSidebarViewRaw(view);
+    if (projectId && taskId) {
+      useNavigationStore.getState().persistTaskViewState(projectId, taskId, { editorSidebarView: view });
+    }
+  }, [setSidebarViewRaw, projectId, taskId]);
   const editorFontSize = useSettingsStore((s) => s.editorFontSize);
   const unsavedChangesDialogOpen = useEditorStore((s) => s.unsavedChangesDialogOpen);
   const resolveUnsavedChanges = useEditorStore((s) => s.resolveUnsavedChanges);
 
   useEffect(() => {
-    if (prevTaskIdRef.current !== taskId) {
+    const isTaskSwitch = prevTaskIdRef.current !== taskId;
+    if (isTaskSwitch) {
+      // Save tabs for the outgoing task before resetting
+      if (prevTaskIdRef.current) {
+        useEditorStore.getState().saveTabsForTask(prevTaskIdRef.current);
+      }
       useEditorStore.getState().resetForTask();
       prevTaskIdRef.current = taskId;
     }
     useEditorStore.getState().setWorktreeRoot(worktreePath ?? null);
+    // Restore tabs for the incoming task (only on task switch, after worktreeRoot is set)
+    if (isTaskSwitch && taskId && worktreePath) {
+      useEditorStore.getState().restoreTabsForTask(taskId);
+    }
   }, [taskId, worktreePath]);
 
   // Poll for git changes every 10s while the editor is open

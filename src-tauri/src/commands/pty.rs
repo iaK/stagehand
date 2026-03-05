@@ -62,8 +62,7 @@ pub async fn spawn_pty(
     let agent = args
         .agent
         .as_deref()
-        .and_then(Agent::from_str_opt)
-        .unwrap_or(Agent::Claude);
+        .and_then(Agent::from_str_opt);
 
     let cols = args.cols.unwrap_or(120);
     let rows = args.rows.unwrap_or(24);
@@ -80,41 +79,51 @@ pub async fn spawn_pty(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let mut cmd = CommandBuilder::new(agent.binary());
+    let label: &str = if agent.is_some() { "agent" } else { "shell" };
 
-    if let Some(flag) = agent.auto_approve_flag() {
-        cmd.arg(flag);
-    }
+    let mut cmd = if let Some(agent) = agent {
+        let mut c = CommandBuilder::new(agent.binary());
 
-    // System prompt — per-agent mechanism
-    if let Some(ref system_prompt) = args.append_system_prompt {
-        match agent {
-            Agent::Claude | Agent::Amp => {
-                cmd.arg("--append-system-prompt");
-                cmd.arg(system_prompt);
-            }
-            Agent::Codex => {
-                // Write AGENTS.md in the working directory
-                if let Some(ref dir) = args.working_directory {
-                    let path = Path::new(dir).join("AGENTS.md");
+        if let Some(flag) = agent.auto_approve_flag() {
+            c.arg(flag);
+        }
+
+        // System prompt — per-agent mechanism
+        if let Some(ref system_prompt) = args.append_system_prompt {
+            match agent {
+                Agent::Claude | Agent::Amp => {
+                    c.arg("--append-system-prompt");
+                    c.arg(system_prompt);
+                }
+                Agent::Codex => {
+                    // Write AGENTS.md in the working directory
+                    if let Some(ref dir) = args.working_directory {
+                        let path = Path::new(dir).join("AGENTS.md");
+                        std::fs::write(&path, system_prompt)
+                            .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
+                        temp_files.workdir_files.push(path);
+                    }
+                }
+                Agent::Gemini => {
+                    // Write system prompt to temp file and set env var
+                    let temp_dir = temp_files.ensure_temp_dir(&session_id)?;
+                    let path = temp_dir.join("system_prompt.md");
                     std::fs::write(&path, system_prompt)
-                        .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
-                    temp_files.workdir_files.push(path);
+                        .map_err(|e| format!("Failed to write Gemini system prompt: {}", e))?;
+                    c.env("GEMINI_SYSTEM_MD", path.to_string_lossy().as_ref());
+                }
+                Agent::OpenCode => {
+                    // No system prompt support
                 }
             }
-            Agent::Gemini => {
-                // Write system prompt to temp file and set env var
-                let temp_dir = temp_files.ensure_temp_dir(&session_id)?;
-                let path = temp_dir.join("system_prompt.md");
-                std::fs::write(&path, system_prompt)
-                    .map_err(|e| format!("Failed to write Gemini system prompt: {}", e))?;
-                cmd.env("GEMINI_SYSTEM_MD", path.to_string_lossy().as_ref());
-            }
-            Agent::OpenCode => {
-                // No system prompt support
-            }
         }
-    }
+
+        c
+    } else {
+        // Raw shell — use $SHELL or fall back to /bin/zsh
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        CommandBuilder::new(shell)
+    };
 
     if let Some(ref dir) = args.working_directory {
         cmd.cwd(dir);
@@ -123,7 +132,7 @@ pub async fn spawn_pty(
     let child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn {} in PTY: {}", agent.binary(), e))?;
+        .map_err(|e| format!("Failed to spawn {} in PTY: {}", label, e))?;
 
     // Drop the slave side — the child owns it now
     drop(pair.slave);

@@ -25,8 +25,26 @@ function fileKey(path: string, isDiff: boolean): string {
   return isDiff ? `diff:${path}` : path;
 }
 
+/** Descriptor for a cached tab. Holds dirty content if the file had unsaved edits. */
+interface TabDescriptor {
+  path: string;
+  isDiff: boolean;
+  /** Non-null when the tab had unsaved edits at the time of caching */
+  dirtyContent: string | null;
+}
+
+interface SavedTabState {
+  tabs: TabDescriptor[];
+  activeFileKey: string | null;
+}
+
+/** In-memory per-task tab cache. Survives task switches within a session. */
+const tabCache: Record<string, SavedTabState> = {};
+
+export type EditorSidebarView = "files" | "changes";
+
 interface EditorStore {
-  isEditorOpen: boolean;
+  sidebarView: EditorSidebarView;
   openFiles: OpenFile[];
   /** Key of the active tab (path or "diff:"+path) */
   activeFileKey: string | null;
@@ -42,8 +60,8 @@ interface EditorStore {
   quickOpenVisible: boolean;
 
   loadChangedFiles: () => Promise<void>;
+  setSidebarView: (view: EditorSidebarView) => void;
   fetchOriginalContent: (path: string) => Promise<void>;
-  toggleEditor: () => void;
   setQuickOpen: (open: boolean) => void;
   setWorktreeRoot: (root: string | null) => void;
   openFile: (path: string) => Promise<void>;
@@ -56,6 +74,8 @@ interface EditorStore {
   reloadFileFromDisk: (key: string) => Promise<void>;
   dismissDiskChanged: (key: string) => void;
   resetForTask: () => void;
+  saveTabsForTask: (taskId: string) => void;
+  restoreTabsForTask: (taskId: string) => Promise<void>;
   clearSaveError: () => void;
   promptUnsavedChanges: (fileKey: string, callback: (confirm: boolean) => void) => void;
   resolveUnsavedChanges: (confirmed: boolean) => void;
@@ -65,7 +85,7 @@ interface EditorStore {
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
-  isEditorOpen: false,
+  sidebarView: "files" as EditorSidebarView,
   openFiles: [],
   activeFileKey: null,
   worktreeRoot: null,
@@ -143,7 +163,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((s) => ({ originalContent: { ...s.originalContent, [path]: content } }));
   },
 
-  toggleEditor: () => set((s) => ({ isEditorOpen: !s.isEditorOpen })),
+  setSidebarView: (view) => set({ sidebarView: view }),
   setQuickOpen: (open: boolean) => set({ quickOpenVisible: open }),
 
   setWorktreeRoot: (root: string | null) => set({ worktreeRoot: root }),
@@ -341,6 +361,86 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       unsavedChangesDialogCallback: null,
       quickOpenVisible: false,
     });
+  },
+
+  saveTabsForTask: (taskId) => {
+    const { openFiles, activeFileKey } = get();
+    if (openFiles.length === 0) {
+      delete tabCache[taskId];
+      return;
+    }
+    tabCache[taskId] = {
+      tabs: openFiles.map((f) => ({
+        path: f.path,
+        isDiff: f.isDiff,
+        dirtyContent: f.isDirty ? f.content : null,
+      })),
+      activeFileKey,
+    };
+  },
+
+  restoreTabsForTask: async (taskId) => {
+    const saved = tabCache[taskId];
+    if (!saved || saved.tabs.length === 0) return;
+
+    const { worktreeRoot } = get();
+    if (!worktreeRoot) return;
+
+    // Load current changed files so we can validate diff tabs
+    await get().loadChangedFiles();
+    const { changedFiles } = get();
+    const changedPaths = new Set(changedFiles.map((f) => f.path));
+
+    // Re-open each tab by reading content from disk
+    const opened: OpenFile[] = [];
+    for (const tab of saved.tabs) {
+      if (tab.isDiff) {
+        // Skip diff tabs whose file is no longer in the changed list
+        const relative = tab.path.startsWith(worktreeRoot + "/")
+          ? tab.path.slice(worktreeRoot.length + 1)
+          : tab.path;
+        if (!changedPaths.has(relative)) continue;
+      }
+
+      let diskContent: string | null = null;
+      try {
+        diskContent = await readFileContents(tab.path, worktreeRoot);
+      } catch {
+        // File gone from disk — skip
+      }
+      if (diskContent === null && !tab.isDiff) continue;
+      if (diskContent === null) diskContent = "";
+
+      // If the tab had unsaved edits, restore them; otherwise use disk content
+      const hasDirtyContent = tab.dirtyContent !== null;
+      const content = hasDirtyContent ? tab.dirtyContent! : diskContent;
+
+      opened.push({
+        key: fileKey(tab.path, tab.isDiff),
+        path: tab.path,
+        content,
+        diskContent,
+        isDirty: hasDirtyContent && content !== diskContent,
+        isDiff: tab.isDiff,
+        diskChanged: false,
+      });
+    }
+
+    if (opened.length === 0) return;
+
+    // Resolve active key: use saved if it still exists, else last tab
+    const activeKey = opened.find((f) => f.key === saved.activeFileKey)
+      ? saved.activeFileKey
+      : opened[opened.length - 1].key;
+
+    set({ openFiles: opened, activeFileKey: activeKey });
+
+    // For diff tabs, ensure original content is fetched
+    for (const file of opened) {
+      if (file.isDiff) {
+        get().fetchOriginalContent(file.path);
+      }
+    }
   },
 
   clearSaveError: () => set({ saveError: null }),

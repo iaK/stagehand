@@ -51,7 +51,7 @@ export function PipelineStepper({
   }, [stages, executions, currentStageId, isTaskCompleted]);
 
   return (
-    <div className="flex items-center gap-1 px-6 py-4 overflow-x-auto">
+    <div className="flex items-center gap-1 px-6 py-4 overflow-x-auto min-w-0">
       {stages.map((stage, i) => (
         <PipelineStep
           key={stage.task_stage_id}

@@ -6,6 +6,7 @@ import * as repo from "../lib/repositories";
 import { aggregateProjectDotClass } from "../lib/taskStatus";
 import { scanRepository } from "../lib/repoScanner";
 import { gitRemoteUrl, parseGitRemote, gitDefaultBranch } from "../lib/git";
+import { useNavigationStore } from "./navigationStore";
 import { logger } from "../lib/logger";
 
 interface ProjectStore {
@@ -42,13 +43,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ loading: true });
     const projects = await repo.listProjects();
     const current = get().activeProject;
-    set({
-      projects,
-      loading: false,
-      activeProject: current
-        ? projects.find((p) => p.id === current.id) ?? projects[0] ?? null
-        : projects[0] ?? null,
-    });
+
+    let activeProject: Project | null = null;
+    if (current) {
+      activeProject = projects.find((p) => p.id === current.id) ?? projects[0] ?? null;
+    } else {
+      // First load: restore persisted project
+      const nav = useNavigationStore.getState();
+      const persistedId = await nav.getPersistedProjectId();
+      if (persistedId) {
+        activeProject = projects.find((p) => p.id === persistedId) ?? projects[0] ?? null;
+      } else {
+        activeProject = projects[0] ?? null;
+      }
+    }
+
+    set({ projects, loading: false, activeProject });
   },
 
   loadArchivedProjects: async () => {
@@ -99,7 +109,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ projectLogos: Object.fromEntries(entries) });
   },
 
-  setActiveProject: (project) => set({ activeProject: project }),
+  setActiveProject: (project) => {
+    set({ activeProject: project });
+    if (project) {
+      useNavigationStore.getState().persistActiveProject(project.id);
+    }
+  },
 
   setShowArchived: (show) => {
     set({ showArchived: show });

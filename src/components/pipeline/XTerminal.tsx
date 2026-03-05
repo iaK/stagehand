@@ -1,11 +1,34 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
-import { Terminal } from "@xterm/xterm";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useSettingsStore } from "@/stores/settingsStore";
 
+const DARK_THEME: ITheme = {
+  background: "#09090b",
+  foreground: "#fafafa",
+  cursor: "#fafafa",
+  selectionBackground: "#3f3f46",
+};
+
+const LIGHT_THEME: ITheme = {
+  background: "#ffffff",
+  foreground: "#09090b",
+  cursor: "#09090b",
+  selectionBackground: "#d4d4d8",
+};
+
+function isDarkMode(): boolean {
+  return document.documentElement.classList.contains("dark");
+}
+
+function getTheme(): ITheme {
+  return isDarkMode() ? DARK_THEME : LIGHT_THEME;
+}
+
 export interface XTerminalHandle {
   write: (data: string) => void;
+  clear: () => void;
   focus: () => void;
 }
 
@@ -22,9 +45,22 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     const fitRef = useRef<FitAddon | null>(null);
     const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
 
+    const syncTheme = useCallback(() => {
+      if (termRef.current) {
+        const theme = getTheme();
+        termRef.current.options.theme = theme;
+        if (containerRef.current) {
+          containerRef.current.style.backgroundColor = theme.background!;
+        }
+      }
+    }, []);
+
     useImperativeHandle(ref, () => ({
       write(data: string) {
         termRef.current?.write(data);
+      },
+      clear() {
+        termRef.current?.clear();
       },
       focus() {
         termRef.current?.focus();
@@ -34,16 +70,13 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     useEffect(() => {
       if (!containerRef.current) return;
 
+      const theme = getTheme();
+
       const term = new Terminal({
         cursorBlink: true,
         fontSize: useSettingsStore.getState().terminalFontSize,
         fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
-        theme: {
-          background: "#09090b",
-          foreground: "#fafafa",
-          cursor: "#fafafa",
-          selectionBackground: "#3f3f46",
-        },
+        theme,
         convertEol: true,
         scrollback: 10000,
       });
@@ -68,6 +101,10 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
       });
       observer.observe(containerRef.current);
 
+      // Watch for dark/light class changes on <html>
+      const classObserver = new MutationObserver(() => syncTheme());
+      classObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
       const onVisibilityChange = () => {
         if (document.visibilityState === "visible") {
           try {
@@ -82,6 +119,7 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
 
       return () => {
         observer.disconnect();
+        classObserver.disconnect();
         document.removeEventListener("visibilitychange", onVisibilityChange);
         term.dispose();
         termRef.current = null;
@@ -117,8 +155,8 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     return (
       <div
         ref={containerRef}
-        className="w-full h-full min-h-[300px] rounded-lg overflow-hidden border border-border px-3 py-2"
-        style={{ backgroundColor: "#09090b" }}
+        className="w-full h-full min-h-[300px] overflow-hidden px-3 py-2"
+        style={{ backgroundColor: getTheme().background }}
       />
     );
   },

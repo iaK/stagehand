@@ -1,17 +1,17 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { useProcessStore } from "../../stores/processStore";
-import { spawnPty, writeToPty, resizePty, killPty, checkAgentAvailable } from "../../lib/agent";
+import { useProcessStore, type TerminalTab } from "../../stores/processStore";
+import { spawnPty, killPty, checkAgentAvailable } from "../../lib/agent";
 import { getTaskWorkingDir } from "../../lib/worktree";
-import { registerPtyWriter, unregisterPtyWriter, routePtyOutput, clearPtyRoute } from "../../lib/ptyRouter";
+import { routePtyOutput, clearPtyBuffer } from "../../lib/ptyRouter";
 import * as repo from "../../lib/repositories";
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
-import { XTerminal, type XTerminalHandle } from "./XTerminal";
+import { TerminalTabPanel } from "./TerminalTabPanel";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, TerminalSquare } from "lucide-react";
+import { Loader2, TerminalSquare, Plus, X } from "lucide-react";
 import type { PtyEvent } from "../../lib/types";
 
 interface Props {
@@ -21,19 +21,32 @@ interface Props {
 
 const AGENTS_TO_CHECK = ["claude", "codex"] as const;
 
+function tabLabel(agent: string): string {
+  if (agent === "shell") return "Terminal";
+  return agent.charAt(0).toUpperCase() + agent.slice(1);
+}
+
 export function IntegratedTerminal({ taskId, isVisible }: Props) {
   const activeProject = useProjectStore((s) => s.activeProject);
   const tasks = useTaskStore((s) => s.tasks);
   const task = tasks.find((t) => t.id === taskId) ?? null;
-  const terminalSession = useProcessStore((s) => s.getTerminalSession(taskId));
+
+  const tabOrder = useProcessStore((s) => s.terminalTabOrder[taskId]);
+  const allTabs = useProcessStore((s) => s.terminalTabs);
+  const activeTabId = useProcessStore((s) => s.activeTerminalTabId[taskId] ?? null);
+
+  const tabs = useMemo(() => {
+    if (!tabOrder) return [];
+    return tabOrder.map((id) => allTabs[id]).filter(Boolean);
+  }, [tabOrder, allTabs]);
 
   const [availableAgents, setAvailableAgents] = useState<string[]>([]);
   const [checkingAgents, setCheckingAgents] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [spawning, setSpawning] = useState(false);
 
-  const xtermRef = useRef<XTerminalHandle | null>(null);
-  const ptyIdRef = useRef<string | null>(null);
+  // Track spawned tabIds so we can reference them in PTY callbacks
+  const tabPtyIds = useRef<Map<string, string>>(new Map());
 
   // Detect available agents on mount
   useEffect(() => {
@@ -57,27 +70,6 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Sync ptyIdRef from the store so input/resize work after remount
-  useEffect(() => {
-    ptyIdRef.current = terminalSession.ptyId;
-  }, [terminalSession.ptyId]);
-
-  // Register this component's XTerminal as the writer for this task.
-  // On mount, any buffered output from while no writer was active is replayed.
-  // On unmount, the writer is removed so output is buffered again.
-  // The PTY is NOT killed — it keeps running in the background.
-  useEffect(() => {
-    registerPtyWriter(taskId, (data) => xtermRef.current?.write(data));
-    return () => { unregisterPtyWriter(taskId); };
-  }, [taskId]);
-
-  // Scroll/refit when visibility changes
-  useEffect(() => {
-    if (isVisible) {
-      xtermRef.current?.focus();
-    }
-  }, [isVisible]);
-
   const handleSpawn = useCallback(async (agent: string) => {
     if (!activeProject || !task) {
       logger.warn("IntegratedTerminal handleSpawn: no activeProject or task", { activeProject: !!activeProject, task: !!task });
@@ -86,77 +78,69 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
     setSpawning(true);
     setError(null);
 
+    const isRawShell = agent === "shell";
+
     try {
-      // Build system prompt from approved stage outputs
-      const approvedOutputs = await repo.getApprovedStageOutputs(activeProject.id, taskId);
+      let systemPrompt: string | undefined;
 
-      let systemPrompt =
-        "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
+      if (!isRawShell) {
+        const approvedOutputs = await repo.getApprovedStageOutputs(activeProject.id, taskId);
 
-      if (approvedOutputs.length > 0) {
-        const stageLines = approvedOutputs
-          .map((s) => `### ${s.stage_name}\n${s.stage_summary || "(no summary)"}`)
-          .join("\n\n");
-        const stageContext =
-          `## Completed Pipeline Stages\nThe following stages have been completed for this task. Use the \`get_stage_output\` MCP tool to retrieve the full output of any stage if you need more detail.\n\n${stageLines}`;
-        systemPrompt = `${systemPrompt}\n\n${stageContext}`;
-      }
+        systemPrompt =
+          "IMPORTANT: Do NOT run git add, git commit, or any git commands that stage or commit changes. The user will review and commit changes separately after this stage completes.";
 
-      // Add MCP tools hint to system prompt
-      try {
+        if (approvedOutputs.length > 0) {
+          const stageLines = approvedOutputs
+            .map((s) => `### ${s.stage_name}\n${s.stage_summary || "(no summary)"}`)
+            .join("\n\n");
+          const stageContext =
+            `## Completed Pipeline Stages\nThe following stages have been completed for this task. Use the \`get_stage_output\` MCP tool to retrieve the full output of any stage if you need more detail.\n\n${stageLines}`;
+          systemPrompt = `${systemPrompt}\n\n${stageContext}`;
+        }
+
         const mcpHint =
           "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_title` tools to retrieve data from prior pipeline stages on demand.";
         systemPrompt = `${systemPrompt}\n\n${mcpHint}`;
-      } catch {
-        // MCP unavailable — continue without it
       }
 
       const workDir = getTaskWorkingDir(task, activeProject.path);
 
-      useProcessStore.getState().updateTerminalSession(taskId, {
-        ptyId: null,
-        status: "running",
-        agent,
-      });
-
-      // Capture taskId for the callback closure (stable for this spawn)
-      const spawnTaskId = taskId;
+      // Create the tab in the store (status: running, ptyId: null until started event)
+      const tabId = useProcessStore.getState().addTerminalTab(taskId, agent);
 
       await spawnPty(
         {
-          agent,
+          agent: isRawShell ? undefined : agent,
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
         },
         (event: PtyEvent) => {
           switch (event.type) {
             case "started":
-              ptyIdRef.current = event.id;
-              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: event.id, status: "running" });
+              tabPtyIds.current.set(tabId, event.id);
+              useProcessStore.getState().updateTerminalTab(tabId, { ptyId: event.id });
               break;
             case "output":
-              // Route through ptyRouter so output reaches whatever terminal
-              // is currently displaying this task (survives task switches)
-              routePtyOutput(spawnTaskId, event.data);
+              routePtyOutput(tabId, event.data);
               break;
             case "exited": {
-              ptyIdRef.current = null;
-              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: null, status: "exited" });
+              tabPtyIds.current.delete(tabId);
+              useProcessStore.getState().updateTerminalTab(tabId, { ptyId: null, status: "exited" });
               const state = useProcessStore.getState();
-              const isCurrentlyVisible = state.terminalOpen && useTaskStore.getState().activeTask?.id === spawnTaskId;
+              const isCurrentlyVisible = state.activeView === "terminal" && useTaskStore.getState().activeTask?.id === taskId;
               if (!isCurrentlyVisible && activeProject) {
                 sendNotification(
                   "Terminal session ended",
                   task?.title ?? "Terminal session ended",
                   "info",
-                  { projectId: activeProject.id, taskId: spawnTaskId, openTerminal: true },
+                  { projectId: activeProject.id, taskId, openTerminal: true },
                 );
               }
               break;
             }
             case "error":
               setError(event.message);
-              useProcessStore.getState().updateTerminalSession(spawnTaskId, { ptyId: null, status: "idle" });
+              useProcessStore.getState().removeTerminalTab(taskId, tabId);
               break;
           }
         },
@@ -164,96 +148,119 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
-      useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
       logger.error("IntegratedTerminal spawn failed", err);
     } finally {
       setSpawning(false);
     }
   }, [activeProject, task, taskId]);
 
-  const handleKill = useCallback(async () => {
-    const ptyId = ptyIdRef.current ?? useProcessStore.getState().getTerminalSession(taskId).ptyId;
+  const handleCloseTab = useCallback(async (tab: TerminalTab) => {
+    // Kill PTY if running
+    const ptyId = tab.ptyId ?? tabPtyIds.current.get(tab.id);
     if (ptyId) {
       await killPty(ptyId).catch(() => {});
-      ptyIdRef.current = null;
+      tabPtyIds.current.delete(tab.id);
     }
-    clearPtyRoute(taskId);
-    useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
+    clearPtyBuffer(tab.id);
+    useProcessStore.getState().removeTerminalTab(taskId, tab.id);
   }, [taskId]);
 
-  const handleRestart = useCallback(() => {
-    setError(null);
-    clearPtyRoute(taskId);
-    useProcessStore.getState().updateTerminalSession(taskId, { ptyId: null, status: "idle" });
-  }, [taskId]);
+  const [showNewTabPicker, setShowNewTabPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
-  const handleData = useCallback((data: string) => {
-    if (ptyIdRef.current) {
-      writeToPty(ptyIdRef.current, data).catch(() => {});
+  // Close picker on outside click
+  useEffect(() => {
+    if (!showNewTabPicker) return;
+    function onClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowNewTabPicker(false);
+      }
     }
-  }, []);
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showNewTabPicker]);
 
-  const handleResize = useCallback((cols: number, rows: number) => {
-    if (ptyIdRef.current) {
-      resizePty(ptyIdRef.current, cols, rows).catch(() => {});
-    }
-  }, []);
+  const spawnAndClosePicker = useCallback((agent: string) => {
+    setShowNewTabPicker(false);
+    handleSpawn(agent);
+  }, [handleSpawn]);
 
   const hasWorktree = !!task?.worktree_path;
-  const status = terminalSession.status;
+  const hasTabs = tabs.length > 0;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <TerminalSquare className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Terminal</span>
-          {terminalSession.agent && status !== "idle" && (
-            <span className="text-xs text-muted-foreground">({terminalSession.agent})</span>
-          )}
-        </div>
-        {status === "running" && (
-          <Button variant="ghost" size="sm" onClick={handleKill} className="h-7 text-xs text-destructive hover:text-destructive">
-            Kill
-          </Button>
+      {/* Tab bar */}
+      <div className="flex items-center px-2 py-1.5 border-b border-border shrink-0 gap-1 min-h-[41px]">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`group flex items-center gap-1 px-2.5 py-1 rounded-md text-xs cursor-pointer select-none transition-colors ${
+              tab.id === activeTabId
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            } ${tab.status === "exited" ? "opacity-60" : ""}`}
+            onClick={() => useProcessStore.getState().setActiveTerminalTab(taskId, tab.id)}
+          >
+            <TerminalSquare className="w-3 h-3 shrink-0" />
+            <span>{tabLabel(tab.agent)}</span>
+            <button
+              className="ml-0.5 p-0.5 rounded hover:bg-foreground/10 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); handleCloseTab(tab); }}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+
+        {/* New tab button */}
+        {hasWorktree && !checkingAgents && (
+          <div className="relative" ref={pickerRef}>
+            <button
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              disabled={spawning}
+              onClick={() => setShowNewTabPicker((v) => !v)}
+            >
+              {spawning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            </button>
+            {showNewTabPicker && (
+              <div className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[120px]">
+                <button
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                  onClick={() => spawnAndClosePicker("shell")}
+                >
+                  Terminal
+                </button>
+                {availableAgents.map((agent) => (
+                  <button
+                    key={agent}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+                    onClick={() => spawnAndClosePicker(agent)}
+                  >
+                    {tabLabel(agent)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       {/* Terminal area */}
       <div className="flex-1 relative min-h-0">
-        {/* XTerminal — always mounted once running/exited to preserve output */}
-        <div
-          className="absolute inset-0 p-2"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            visibility: status === "idle" ? "hidden" : "visible",
-            pointerEvents: status === "idle" ? "none" : "auto",
-          }}
-        >
-          <XTerminal
-            ref={xtermRef}
-            onData={handleData}
-            onResize={handleResize}
-            isVisible={isVisible && status !== "idle"}
-          />
-        </div>
-
-        {/* Exited overlay */}
-        {status === "exited" && (
-          <div className="absolute inset-0 flex items-end justify-center pb-8 pointer-events-none">
-            <div className="pointer-events-auto bg-background/90 border border-border rounded-lg px-4 py-3 flex flex-col items-center gap-2 shadow-lg">
-              <p className="text-sm text-muted-foreground">Session ended</p>
-              <Button size="sm" onClick={handleRestart}>
-                Restart
-              </Button>
-            </div>
+        {/* Render all tab panels — hidden unless active */}
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className="absolute inset-0"
+            style={{ display: tab.id === activeTabId ? "flex" : "none", flexDirection: "column" }}
+          >
+            <TerminalTabPanel tabId={tab.id} isVisible={isVisible && tab.id === activeTabId} />
           </div>
-        )}
+        ))}
 
-        {/* Idle — agent selection */}
-        {status === "idle" && (
+        {/* Empty state — no tabs */}
+        {!hasTabs && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4 max-w-sm text-center">
               <TerminalSquare className="w-10 h-10 text-muted-foreground/40" />
@@ -270,14 +277,19 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
                 </p>
               ) : checkingAgents ? (
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              ) : availableAgents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No supported agents found. Install Claude or Codex to use the terminal.
-                </p>
               ) : (
                 <div className="flex flex-col items-center gap-3">
-                  <p className="text-sm text-muted-foreground">Spawn an agent session</p>
-                  <div className="flex gap-2">
+                  <p className="text-sm text-muted-foreground">Spawn a session</p>
+                  <div className="flex gap-2 flex-wrap justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={spawning}
+                      onClick={() => handleSpawn("shell")}
+                    >
+                      {spawning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                      Terminal
+                    </Button>
                     {availableAgents.map((agent) => (
                       <Button
                         key={agent}
@@ -286,10 +298,8 @@ export function IntegratedTerminal({ taskId, isVisible }: Props) {
                         disabled={spawning}
                         onClick={() => handleSpawn(agent)}
                       >
-                        {spawning ? (
-                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                        ) : null}
-                        Spawn {agent.charAt(0).toUpperCase() + agent.slice(1)}
+                        {spawning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                        {tabLabel(agent)}
                       </Button>
                     ))}
                   </div>

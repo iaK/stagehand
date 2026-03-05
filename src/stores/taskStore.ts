@@ -4,6 +4,7 @@ import * as repo from "../lib/repositories";
 import { listProcessesDetailed, type ProcessInfo } from "../lib/agent";
 import { useProcessStore, stageKey } from "./processStore";
 import { useProjectStore } from "./projectStore";
+import { useNavigationStore } from "./navigationStore";
 import { logger } from "../lib/logger";
 
 const INITIAL_INPUT_PREFIX = "stagehand:initialInput:";
@@ -252,6 +253,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       useProcessStore.setState({ committedStages: {}, mergeStages: {} });
     }
     set({ activeTask: task, executions: [] });
+
+    // Persist active task selection
+    const projectId = useProjectStore.getState().activeProject?.id;
+    if (projectId && task) {
+      useNavigationStore.getState().persistActiveTask(projectId, task.id);
+    }
   },
 
   consumeInitialInput: (taskId) => {

@@ -63,17 +63,12 @@ export interface StageSuggestion {
   reason: string | null;
 }
 
-export interface TerminalSession {
+export interface TerminalTab {
+  id: string;
   ptyId: string | null;
-  status: "idle" | "running" | "exited";
-  agent: string | null;
+  status: "running" | "exited";
+  agent: string; // "shell", "claude", "codex", etc.
 }
-
-export const DEFAULT_TERMINAL_SESSION: TerminalSession = {
-  ptyId: null,
-  status: "idle",
-  agent: null,
-};
 
 interface ProcessStore {
   stages: Record<string, StageProcessState>;
@@ -87,8 +82,11 @@ interface ProcessStore {
   commitMessageLoadingStageId: string | null;
   commitGenerationNonce: number;
   noChangesStageId: string | null; // stage with no uncommitted changes to commit
-  terminalOpen: boolean;
-  terminalSessions: Record<string, TerminalSession>; // keyed by taskId
+  activeView: "pipeline" | "editor" | "terminal";
+  overviewOpen: boolean;
+  terminalTabs: Record<string, TerminalTab>;         // tabId → tab
+  terminalTabOrder: Record<string, string[]>;         // taskId → [tabId, ...]
+  activeTerminalTabId: Record<string, string | null>; // taskId → active tabId
 
   appendOutput: (stageId: string, line: string) => void;
   clearOutput: (stageId: string) => void;
@@ -107,11 +105,15 @@ interface ProcessStore {
   clearMergeState: (key: string) => void;
   registerPtySession: (key: string, taskId: string, stageId: string, stage: TaskStageInstance) => void;
   unregisterPtySession: (key: string) => void;
-  toggleTerminal: () => void;
-  setTerminalOpen: (open: boolean) => void;
-  getTerminalSession: (taskId: string) => TerminalSession;
-  updateTerminalSession: (taskId: string, patch: Partial<TerminalSession>) => void;
-  removeTerminalSession: (taskId: string) => void;
+  setActiveView: (view: "pipeline" | "editor" | "terminal") => void;
+  toggleOverview: () => void;
+  setOverviewOpen: (open: boolean) => void;
+  addTerminalTab: (taskId: string, agent: string) => string;
+  removeTerminalTab: (taskId: string, tabId: string) => void;
+  setActiveTerminalTab: (taskId: string, tabId: string) => void;
+  updateTerminalTab: (tabId: string, patch: Partial<TerminalTab>) => void;
+  getTerminalTabsForTask: (taskId: string) => TerminalTab[];
+  getActiveTerminalTabId: (taskId: string) => string | null;
 }
 
 function getStage(stages: Record<string, StageProcessState>, id: string): StageProcessState {
@@ -130,8 +132,11 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
   commitMessageLoadingStageId: null,
   commitGenerationNonce: 0,
   noChangesStageId: null,
-  terminalOpen: false,
-  terminalSessions: {},
+  activeView: "pipeline" as "pipeline" | "editor" | "terminal",
+  overviewOpen: true,
+  terminalTabs: {},
+  terminalTabOrder: {},
+  activeTerminalTabId: {},
 
   appendOutput: (stageId, line) =>
     set((state) => {
@@ -259,23 +264,60 @@ export const useProcessStore = create<ProcessStore>((set, get) => ({
       return { activePtySessions: rest };
     }),
 
-  toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
+  setActiveView: (view) => set({ activeView: view }),
 
-  setTerminalOpen: (open) => set({ terminalOpen: open }),
+  toggleOverview: () => set((state) => ({ overviewOpen: !state.overviewOpen })),
 
-  getTerminalSession: (taskId) => get().terminalSessions[taskId] ?? DEFAULT_TERMINAL_SESSION,
+  setOverviewOpen: (open) => set({ overviewOpen: open }),
 
-  updateTerminalSession: (taskId, patch) =>
+  addTerminalTab: (taskId, agent) => {
+    const id = crypto.randomUUID();
+    const tab: TerminalTab = { id, ptyId: null, status: "running", agent };
+    set((state) => {
+      const order = state.terminalTabOrder[taskId] ?? [];
+      return {
+        terminalTabs: { ...state.terminalTabs, [id]: tab },
+        terminalTabOrder: { ...state.terminalTabOrder, [taskId]: [...order, id] },
+        activeTerminalTabId: { ...state.activeTerminalTabId, [taskId]: id },
+      };
+    });
+    return id;
+  },
+
+  removeTerminalTab: (taskId, tabId) =>
+    set((state) => {
+      const { [tabId]: _, ...restTabs } = state.terminalTabs;
+      const order = (state.terminalTabOrder[taskId] ?? []).filter((id) => id !== tabId);
+      const activeId = state.activeTerminalTabId[taskId];
+      let newActive: string | null = activeId === tabId
+        ? (order[order.length - 1] ?? null)
+        : activeId ?? null;
+      return {
+        terminalTabs: restTabs,
+        terminalTabOrder: { ...state.terminalTabOrder, [taskId]: order },
+        activeTerminalTabId: { ...state.activeTerminalTabId, [taskId]: newActive },
+      };
+    }),
+
+  setActiveTerminalTab: (taskId, tabId) =>
     set((state) => ({
-      terminalSessions: {
-        ...state.terminalSessions,
-        [taskId]: { ...(state.terminalSessions[taskId] ?? DEFAULT_TERMINAL_SESSION), ...patch },
-      },
+      activeTerminalTabId: { ...state.activeTerminalTabId, [taskId]: tabId },
     })),
 
-  removeTerminalSession: (taskId) =>
+  updateTerminalTab: (tabId, patch) =>
     set((state) => {
-      const { [taskId]: _, ...rest } = state.terminalSessions;
-      return { terminalSessions: rest };
+      const existing = state.terminalTabs[tabId];
+      if (!existing) return {};
+      return {
+        terminalTabs: { ...state.terminalTabs, [tabId]: { ...existing, ...patch } },
+      };
     }),
+
+  getTerminalTabsForTask: (taskId) => {
+    const state = get();
+    const order = state.terminalTabOrder[taskId] ?? [];
+    return order.map((id) => state.terminalTabs[id]).filter(Boolean);
+  },
+
+  getActiveTerminalTabId: (taskId) => get().activeTerminalTabId[taskId] ?? null,
 }));

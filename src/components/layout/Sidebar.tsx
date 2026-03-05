@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useLinearStore } from "../../stores/linearStore";
 import { useGitHubStore } from "../../stores/githubStore";
+import { useNavigationStore } from "../../stores/navigationStore";
 import { TaskList } from "../task/TaskList";
 import { TaskCreate } from "../task/TaskCreate";
 import { LinearImport } from "../linear/LinearImport";
@@ -35,17 +36,42 @@ export function Sidebar() {
       .catch((err) => logger.error("Failed to load projects:", err));
   }, [loadProjects, loadProjectLogos]);
 
+  // Track previous project to detect actual project switches
+  const prevProjectIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (activeProject) {
-      loadTasks(activeProject.id)
+      const projectId = activeProject.id;
+      const isSwitch = prevProjectIdRef.current !== null && prevProjectIdRef.current !== projectId;
+      prevProjectIdRef.current = projectId;
+
+      loadTasks(projectId)
+        .then(async () => {
+          // Restore the last active task for this project
+          const nav = useNavigationStore.getState();
+          const persistedTaskId = await nav.getPersistedTaskId(projectId);
+          if (persistedTaskId) {
+            const tasks = useTaskStore.getState().tasks;
+            const found = tasks.find((t) => t.id === persistedTaskId);
+            if (found) {
+              useTaskStore.getState().setActiveTask(found);
+            } else if (isSwitch) {
+              // Persisted task no longer exists and we switched projects — clear
+              useTaskStore.getState().setActiveTask(null);
+            }
+          } else if (isSwitch) {
+            // No persisted task for this project — clear
+            useTaskStore.getState().setActiveTask(null);
+          }
+        })
         .catch((err) => logger.error("Failed to load tasks:", err));
-      loadStageTemplates(activeProject.id).catch((err) =>
+      loadStageTemplates(projectId).catch((err) =>
         logger.error("Failed to load stage templates:", err),
       );
-      loadLinearForProject(activeProject.id).catch((err) =>
+      loadLinearForProject(projectId).catch((err) =>
         logger.error("Failed to load Linear settings:", err),
       );
-      loadGitHubForProject(activeProject.id, activeProject.path).catch((err) =>
+      loadGitHubForProject(projectId, activeProject.path).catch((err) =>
         logger.error("Failed to load GitHub settings:", err),
       );
     }

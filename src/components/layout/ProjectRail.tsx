@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useProjectStore } from "../../stores/projectStore";
-import { useTaskStore } from "../../stores/taskStore";
 import { ProjectCreate } from "../project/ProjectCreate";
 import { AppSettingsModal } from "../settings/AppSettingsModal";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -98,7 +97,6 @@ export function ProjectRail() {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => {
-                    useTaskStore.getState().setActiveTask(null);
                     setActiveProject(p);
                   }}
                   className="flex-shrink-0 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
