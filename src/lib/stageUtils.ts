@@ -89,59 +89,74 @@ export function extractStageOutput(
     ? detectInteractionType(raw, "auto")
     : stage.output_format;
 
+  let result: string;
+
   switch (format) {
     case "research": {
       // Extract the markdown research text from the JSON envelope
       try {
         const data = JSON.parse(raw);
-        if (data.research) return data.research;
+        result = data.research ?? raw;
       } catch {
-        // fall through
+        result = raw;
       }
-      return raw;
+      break;
     }
     case "plan": {
       // Extract the plan text from the JSON envelope
       try {
         const data = JSON.parse(raw);
-        if (data.plan) return data.plan;
+        result = data.plan ?? raw;
       } catch {
-        // fall through
+        result = raw;
       }
-      return raw;
+      break;
     }
     case "options": {
       // The stage's value is the user's selection, not the full options list
-      if (decision) return formatSelectedApproach(decision);
-      return raw;
+      result = decision ? formatSelectedApproach(decision) : raw;
+      break;
     }
     case "findings": {
       // Phase 1 (skip all): extract summary from JSON
       // Phase 2 (applied fixes): raw text output
       try {
         const data = JSON.parse(raw);
-        if (data.summary) return data.summary;
+        result = data.summary ?? raw;
       } catch {
         // Parse failed — this is phase 2 text output
+        result = raw;
       }
-      return raw;
+      break;
     }
     case "task_splitting": {
       try {
         const data = JSON.parse(raw);
-        if (data.reasoning) return data.reasoning;
-      } catch { /* fall through */ }
-      return raw;
+        result = data.reasoning ?? raw;
+      } catch {
+        result = raw;
+      }
+      break;
     }
     case "pr_review":
-      return raw || "PR Review completed";
+      result = raw || "PR Review completed";
+      break;
     case "merge":
-      return raw || "Branch merged successfully";
+      result = raw || "Branch merged successfully";
+      break;
     case "interactive_terminal":
-      return raw || "Interactive session completed";
+      result = raw || "Interactive session completed";
+      break;
     default:
-      return raw;
+      result = raw;
   }
+
+  // Append user's Q&A answers so downstream stages see the decisions made
+  if (execution.user_input) {
+    result += "\n\n## Developer Decisions\n\n" + execution.user_input;
+  }
+
+  return result;
 }
 
 export function formatSelectedApproach(decision: string): string {

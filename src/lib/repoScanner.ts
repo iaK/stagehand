@@ -90,7 +90,7 @@ export async function scanRepository(
   // Helper to read a file relative to project root
   const readFile = async (relativePath: string): Promise<string | null> => {
     const fullPath = await path.join(projectPath, relativePath);
-    return readFileContents(fullPath);
+    return readFileContents(fullPath, projectPath);
   };
 
   // Scan all convention files in parallel

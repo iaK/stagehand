@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { Loader2, Code2 } from "lucide-react";
 import {
   hasUncommittedChanges,
   gitAdd,
@@ -35,6 +35,8 @@ import { updateTask as repoUpdateTask, getCommitPrefix } from "../../lib/reposit
 import { sendNotification } from "../../lib/notifications";
 import { logger } from "../../lib/logger";
 import { useGitHubStore } from "../../stores/githubStore";
+import { useEditorStore } from "../../stores/editorStore";
+import { EditorPanel } from "../editor/EditorPanel";
 import type { TaskStageInstance } from "../../lib/types";
 
 export function PipelineView() {
@@ -55,6 +57,8 @@ export function PipelineView() {
 
   const [viewingStage, setViewingStage] = useState<TaskStageInstance | null>(null);
   const [showOverview, setShowOverview] = useState(true);
+  const isEditorOpen = useEditorStore((s) => s.isEditorOpen);
+  const toggleEditor = useEditorStore((s) => s.toggleEditor);
 
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
 
@@ -321,6 +325,18 @@ export function PipelineView() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                variant={isEditorOpen ? "secondary" : "ghost"}
+                size="icon-xs"
+                onClick={toggleEditor}
+              >
+                <Code2 className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isEditorOpen ? "Hide Editor" : "Show Editor"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setShowOverview((v) => !v)}
@@ -338,52 +354,57 @@ export function PipelineView() {
       {/* Content */}
       {showPlaceholder ? null : (
         <div className="flex-1 flex min-h-0">
-          {/* Pipeline (always visible) */}
-          <div className="flex-1 overflow-y-auto relative">
-            {/* Layer 1: Persistent interactive terminals — survive navigation */}
-            {(() => {
-              const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
+          {isEditorOpen ? (
+            /* Editor panel replaces stage output when toggled */
+            <EditorPanel />
+          ) : (
+            /* Pipeline (default view) */
+            <div className="flex-1 overflow-y-auto relative">
+              {/* Layer 1: Persistent interactive terminals — survive navigation */}
+              {(() => {
+                const persistentTerminals = new Map<string, { taskId: string; stage: TaskStageInstance }>();
 
-              for (const [key, session] of Object.entries(activePtySessions)) {
-                persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
-              }
-
-              if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
-                const key = stageKey(activeTaskId, viewingStage.task_stage_id);
-                if (!persistentTerminals.has(key)) {
-                  persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
+                for (const [key, session] of Object.entries(activePtySessions)) {
+                  persistentTerminals.set(key, { taskId: session.taskId, stage: session.stage });
                 }
-              }
 
-              const currentKey = activeTaskId && viewingStage
-                ? stageKey(activeTaskId, viewingStage.task_stage_id)
-                : null;
+                if (activeTaskId && viewingStage?.output_format === "interactive_terminal") {
+                  const key = stageKey(activeTaskId, viewingStage.task_stage_id);
+                  if (!persistentTerminals.has(key)) {
+                    persistentTerminals.set(key, { taskId: activeTaskId, stage: viewingStage });
+                  }
+                }
 
-              return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
-                const isVisible = key === currentKey;
-                return (
-                  <div
-                    key={`pty-${key}`}
-                    className="absolute inset-0"
-                    style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
-                  >
-                    <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
-                  </div>
-                );
-              });
-            })()}
+                const currentKey = activeTaskId && viewingStage
+                  ? stageKey(activeTaskId, viewingStage.task_stage_id)
+                  : null;
 
-            {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
-            {viewingStage ? (
-              viewingStage.output_format !== "interactive_terminal" ? (
-                <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
-              ) : null
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">No stage selected</p>
-              </div>
-            )}
-          </div>
+                return Array.from(persistentTerminals.entries()).map(([key, { taskId: tId, stage: s }]) => {
+                  const isVisible = key === currentKey;
+                  return (
+                    <div
+                      key={`pty-${key}`}
+                      className="absolute inset-0"
+                      style={{ display: isVisible ? "flex" : "none", flexDirection: "column" }}
+                    >
+                      <InteractiveTerminalStageView stage={s} taskId={tId} isVisible={isVisible} />
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* Layer 2: Regular StageView — only for non-interactive-terminal stages */}
+              {viewingStage ? (
+                viewingStage.output_format !== "interactive_terminal" ? (
+                  <StageView key={`${activeTaskId}-${viewingStage.task_stage_id}`} stage={viewingStage} taskId={activeTaskId!} />
+                ) : null
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-muted-foreground">No stage selected</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Overview panel (collapsible right side) */}
           {showOverview && (

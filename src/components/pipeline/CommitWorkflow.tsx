@@ -1,9 +1,11 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import type { PendingCommit } from "../../stores/processStore";
+import { DiffFileList } from "./DiffFileList";
+import { gitDiffFileStatsUnstaged, type DiffFileStat } from "../../lib/git";
 
 interface CommitWorkflowProps {
   pendingCommit: PendingCommit | null;
@@ -23,6 +25,7 @@ interface CommitWorkflowProps {
   agentFixRunning?: boolean;
   nextStageSelector?: ReactNode;
   nextStageLoading?: boolean;
+  workingDir?: string;
 }
 
 export function CommitWorkflow({
@@ -41,7 +44,24 @@ export function CommitWorkflow({
   agentFixRunning,
   nextStageSelector,
   nextStageLoading,
+  workingDir,
 }: CommitWorkflowProps) {
+  const [fileStats, setFileStats] = useState<DiffFileStat[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  useEffect(() => {
+    if (!workingDir || !pendingCommit) return;
+    let cancelled = false;
+    const load = () => {
+      gitDiffFileStatsUnstaged(workingDir)
+        .then((stats) => { if (!cancelled) setFileStats(stats); })
+        .catch(() => {});
+    };
+    load();
+    intervalRef.current = setInterval(load, 10_000);
+    return () => { cancelled = true; clearInterval(intervalRef.current); };
+  }, [workingDir, pendingCommit]);
+
   if (pendingCommit?.stageId === stageId) {
     return (
       <div className="mt-4 p-4 bg-muted/50 border border-border rounded-lg">
@@ -54,11 +74,13 @@ export function CommitWorkflow({
           </span>
         </div>
 
-        {pendingCommit.diffStat && (
+        {fileStats.length > 0 ? (
+          <DiffFileList files={fileStats} />
+        ) : pendingCommit.diffStat ? (
           <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
             {pendingCommit.diffStat}
           </pre>
-        )}
+        ) : null}
 
         <Textarea
           value={commitMessage}

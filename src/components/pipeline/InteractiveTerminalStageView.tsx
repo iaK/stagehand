@@ -714,6 +714,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
           commitPrepTimedOut={false}
           nextStageSelector={!isTerminalStage ? nextStageSelectorNode : undefined}
           nextStageLoading={!isTerminalStage ? (loadingNextSuggestion || !effectiveNextTemplateId) : undefined}
+          workingDir={activeProject && task ? getTaskWorkingDir(task, activeProject.path) : undefined}
         />
       </div>
     );

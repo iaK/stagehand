@@ -4,8 +4,9 @@ import { useTheme } from "next-themes";
 import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSettingsStore, TEXT_SIZE_PX, type TextSize } from "@/stores/settingsStore";
 
-type Section = "appearance" | "archived";
+type Section = "appearance" | "editor" | "archived";
 
 type NavItem =
   | { header: string }
@@ -21,6 +22,7 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
   const navItems: NavItem[] = [
     { header: "GENERAL" },
     { section: "appearance", label: "Appearance" },
+    { section: "editor", label: "Editor" },
     { header: "PROJECTS" },
     { section: "archived", label: "Archived Projects" },
   ];
@@ -85,6 +87,7 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
           <ScrollArea className="flex-1 min-h-0">
             <div className="p-6">
               {activeSection === "appearance" && <AppearanceSettings />}
+              {activeSection === "editor" && <EditorSettings />}
               {activeSection === "archived" && <ArchivedProjectsSettings />}
             </div>
           </ScrollArea>
@@ -94,8 +97,156 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
   );
 }
 
+function RadioGroup({
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  name: string;
+  value: string;
+  options: { value: string; label: string; description: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {options.map((opt) => (
+        <label
+          key={opt.value}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+            value === opt.value
+              ? "bg-accent text-accent-foreground"
+              : "hover:bg-accent/50"
+          }`}
+        >
+          <input
+            type="radio"
+            name={name}
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            className="sr-only"
+          />
+          <div
+            className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+              value === opt.value
+                ? "border-foreground"
+                : "border-muted-foreground/40"
+            }`}
+          >
+            {value === opt.value && (
+              <div className="w-2 h-2 rounded-full bg-foreground" />
+            )}
+          </div>
+          <div>
+            <p className="text-sm font-medium">{opt.label}</p>
+            <p className="text-xs text-muted-foreground">{opt.description}</p>
+          </div>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function FontSizeSelect({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="bg-background border border-border rounded-md px-2 py-1.5 text-sm"
+    >
+      {Array.from({ length: 10 }, (_, i) => i + 11).map((size) => (
+        <option key={size} value={size}>
+          {size}px
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function EditorSettings() {
+  const editorSidebarPosition = useSettingsStore((s) => s.editorSidebarPosition);
+  const editorFontSize = useSettingsStore((s) => s.editorFontSize);
+  const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
+  const diffViewMode = useSettingsStore((s) => s.diffViewMode);
+  const setEditorSidebarPosition = useSettingsStore((s) => s.setEditorSidebarPosition);
+  const setEditorFontSize = useSettingsStore((s) => s.setEditorFontSize);
+  const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
+  const setDiffViewMode = useSettingsStore((s) => s.setDiffViewMode);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">File Tree Position</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Which side the file tree and changes panel appears on.
+        </p>
+        <RadioGroup
+          name="editorSidebarPosition"
+          value={editorSidebarPosition}
+          options={[
+            { value: "left", label: "Left", description: "File tree on the left side" },
+            { value: "right", label: "Right", description: "File tree on the right side" },
+          ]}
+          onChange={(v) => setEditorSidebarPosition(v as "left" | "right")}
+        />
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">Editor Font Size</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Font size for the code editor.
+        </p>
+        <FontSizeSelect value={editorFontSize} onChange={setEditorFontSize} />
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">Terminal Font Size</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Font size for the integrated terminal.
+        </p>
+        <FontSizeSelect value={terminalFontSize} onChange={setTerminalFontSize} />
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">Diff View</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          How file diffs are displayed in the editor.
+        </p>
+        <RadioGroup
+          name="diffViewMode"
+          value={diffViewMode}
+          options={[
+            { value: "inline", label: "Inline", description: "Show changes in a single column" },
+            { value: "sideBySide", label: "Side by Side", description: "Show old and new side by side" },
+          ]}
+          onChange={(v) => setDiffViewMode(v as "inline" | "sideBySide")}
+        />
+      </div>
+    </div>
+  );
+}
+
+const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
+  { value: "xs", label: "XS" },
+  { value: "s", label: "S" },
+  { value: "m", label: "M" },
+  { value: "l", label: "L" },
+  { value: "xl", label: "XL" },
+];
+
 function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
+  const appTextSize = useSettingsStore((s) => s.appTextSize);
+  const setAppTextSize = useSettingsStore((s) => s.setAppTextSize);
+  const appSidebarPosition = useSettingsStore((s) => s.appSidebarPosition);
+  const setAppSidebarPosition = useSettingsStore((s) => s.setAppSidebarPosition);
 
   const options = [
     { value: "system", label: "System", description: "Follow your OS preference" },
@@ -104,7 +255,8 @@ function AppearanceSettings() {
   ] as const;
 
   return (
-    <div>
+    <div className="space-y-6">
+      <div>
       <h3 className="text-sm font-medium text-foreground mb-1">Theme</h3>
       <p className="text-xs text-muted-foreground mb-4">
         Choose how Stagehand looks.
@@ -144,6 +296,45 @@ function AppearanceSettings() {
             </div>
           </label>
         ))}
+      </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">Text Size</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Adjust the base text size across the app ({TEXT_SIZE_PX[appTextSize]}px).
+        </p>
+        <div className="flex gap-1">
+          {TEXT_SIZE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setAppTextSize(opt.value)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                appTextSize === opt.value
+                  ? "bg-foreground text-background"
+                  : "bg-accent/50 text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium text-foreground mb-1">Sidebar Position</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Which side the app sidebar appears on.
+        </p>
+        <RadioGroup
+          name="appSidebarPosition"
+          value={appSidebarPosition}
+          options={[
+            { value: "left", label: "Left", description: "Sidebar on the left side" },
+            { value: "right", label: "Right", description: "Sidebar on the right side" },
+          ]}
+          onChange={(v) => setAppSidebarPosition(v as "left" | "right")}
+        />
       </div>
     </div>
   );

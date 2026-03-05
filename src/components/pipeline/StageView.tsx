@@ -836,6 +836,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                   agentFixRunning={isRunning}
                   nextStageSelector={!hasPendingQuestions ? nextStageSelectorNode : undefined}
                   nextStageLoading={!hasPendingQuestions ? (loadingNextSuggestion || !effectiveNextTemplateId) : undefined}
+                  workingDir={activeProject && task ? getTaskWorkingDir(task, activeProject.path) : undefined}
                 />
               )}
 

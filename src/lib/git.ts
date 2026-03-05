@@ -36,7 +36,16 @@ export async function getChangedFiles(workingDir: string): Promise<string[]> {
     .trim()
     .split("\n")
     .filter((line) => line.length > 0)
-    .map((line) => line.slice(3).trim());
+    .map((line) => {
+      // Porcelain format: "XY path" where XY is 2-char status + space + path.
+      // Rust run_command trims stdout, so a leading space on the first line may
+      // be lost (e.g. " M src/foo" becomes "M src/foo"). Detect and re-pad:
+      if (line.length >= 2 && line[1] === " " && line[0] !== "?" && !line.startsWith("  ")) {
+        line = " " + line;
+      }
+      return line.slice(3).trim();
+    })
+    .filter((p) => p.length > 0);
 }
 
 export async function gitCommit(workingDir: string, message: string): Promise<string> {
@@ -479,6 +488,79 @@ export async function gitDiffNameOnly(workingDir: string, base: string, head?: s
   return result.trim().split("\n").filter((l) => l.length > 0);
 }
 
+export interface DiffFileStat {
+  path: string;
+  status: "M" | "A" | "D" | "R" | "C" | "U";
+  additions: number;
+  deletions: number;
+}
+
+/** Returns per-file status + line counts for a branch diff. */
+export async function gitDiffFileStats(workingDir: string, base: string): Promise<DiffFileStat[]> {
+  const [nameStatus, numstat] = await Promise.all([
+    runGit(workingDir, "diff", "--name-status", `${base}...HEAD`),
+    runGit(workingDir, "diff", "--numstat", `${base}...HEAD`),
+  ]);
+
+  // Parse --name-status: "M\tpath" or "R100\told\tnew"
+  const statusMap = new Map<string, DiffFileStat["status"]>();
+  for (const line of nameStatus.trim().split("\n").filter(Boolean)) {
+    const parts = line.split("\t");
+    const code = parts[0][0] as DiffFileStat["status"];
+    const filePath = parts.length >= 3 ? parts[2] : parts[1]; // renamed: use new path
+    statusMap.set(filePath, code);
+  }
+
+  // Parse --numstat: "additions\tdeletions\tpath"
+  const results: DiffFileStat[] = [];
+  for (const line of numstat.trim().split("\n").filter(Boolean)) {
+    const parts = line.split("\t");
+    const adds = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
+    const dels = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
+    const filePath = parts.slice(2).join("\t"); // handle paths with tabs
+    results.push({
+      path: filePath,
+      status: statusMap.get(filePath) ?? "M",
+      additions: adds,
+      deletions: dels,
+    });
+  }
+
+  return results;
+}
+
+/** Returns per-file line counts for uncommitted changes (used in commit view). */
+export async function gitDiffFileStatsUnstaged(workingDir: string): Promise<DiffFileStat[]> {
+  const [nameStatus, numstat] = await Promise.all([
+    runGit(workingDir, "diff", "HEAD", "--name-status"),
+    runGit(workingDir, "diff", "HEAD", "--numstat"),
+  ]);
+
+  const statusMap = new Map<string, DiffFileStat["status"]>();
+  for (const line of nameStatus.trim().split("\n").filter(Boolean)) {
+    const parts = line.split("\t");
+    const code = parts[0][0] as DiffFileStat["status"];
+    const filePath = parts.length >= 3 ? parts[2] : parts[1];
+    statusMap.set(filePath, code);
+  }
+
+  const results: DiffFileStat[] = [];
+  for (const line of numstat.trim().split("\n").filter(Boolean)) {
+    const parts = line.split("\t");
+    const adds = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
+    const dels = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
+    const filePath = parts.slice(2).join("\t");
+    results.push({
+      path: filePath,
+      status: statusMap.get(filePath) ?? "M",
+      additions: adds,
+      deletions: dels,
+    });
+  }
+
+  return results;
+}
+
 export async function gitDiffStatBranch(workingDir: string, base: string): Promise<string> {
   return runGit(workingDir, "diff", "--stat", `${base}...HEAD`);
 }
@@ -532,6 +614,19 @@ export async function injectTaskFromMainRepo(
   await gitWorktreeAdd(projectPath, worktreePath, branchName, false);
 }
 
-export async function readFileContents(path: string): Promise<string | null> {
-  return invoke<string | null>("read_file_contents", { path });
+export async function gitShowFile(workingDir: string, filePath: string, ref = "HEAD"): Promise<string> {
+  try {
+    return await runGit(workingDir, "show", `${ref}:${filePath}`);
+  } catch {
+    return "";
+  }
 }
+
+export async function readFileContents(path: string, worktreeRoot: string): Promise<string | null> {
+  return invoke<string | null>("read_file_contents", { path, worktreeRoot });
+}
+
+export async function writeFileContents(path: string, contents: string, worktreeRoot: string): Promise<void> {
+  return invoke<void>("write_file_contents", { path, contents, worktreeRoot });
+}
+

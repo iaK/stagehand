@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useGitHubStore } from "../../stores/githubStore";
@@ -16,7 +16,10 @@ import {
   gitDiffShortStatBranch,
   gitCurrentBranch,
   hasUncommittedChanges,
+  gitDiffFileStats,
+  type DiffFileStat,
 } from "../../lib/git";
+import { DiffFileList } from "./DiffFileList";
 import { logger } from "../../lib/logger";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
@@ -84,6 +87,8 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
   const [targetBranch, setTargetBranch] = useState<string>(storeDefaultBranch ?? "main");
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [diffStat, setDiffStat] = useState<string>("");
+  const [fileStats, setFileStats] = useState<DiffFileStat[]>([]);
+  const refreshRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
   const [fixCommitting, setFixCommitting] = useState(false);
   const [fixCommitError, setFixCommitError] = useState<string | null>(null);
@@ -154,8 +159,11 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         }
 
         const diffBase = defaultBr;
-        const files = await gitDiffNameOnly(workDir, diffBase).catch(() => [] as string[]);
-        const stat = await gitDiffStatBranch(workDir, diffBase).catch(() => "");
+        const [files, stat, fStats] = await Promise.all([
+          gitDiffNameOnly(workDir, diffBase).catch(() => [] as string[]),
+          gitDiffStatBranch(workDir, diffBase).catch(() => ""),
+          gitDiffFileStats(workDir, diffBase).catch(() => [] as DiffFileStat[]),
+        ]);
 
         // Check if the target branch is checked out with dirty changes
         let dirty = false;
@@ -169,6 +177,7 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
         if (!cancelled) {
           setChangedFiles(files);
           setDiffStat(stat);
+          setFileStats(fStats);
           setTargetIsDirty(dirty);
           // Only transition to preview on first load; keep persisted state otherwise
           if (mergeState === "loading") setMergeState("preview");
@@ -180,6 +189,24 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by ID to avoid re-running on object identity changes
   }, [activeProject?.id, activeTask?.id, isApproved]);
+
+  // Auto-refresh file stats every 10s while in preview state
+  useEffect(() => {
+    if (!activeProject || !activeTask?.branch_name || mergeState !== "preview") return;
+    const workDir = getTaskWorkingDir(activeTask, activeProject.path);
+    const defaultBr = targetBranch;
+    const refresh = () => {
+      Promise.all([
+        gitDiffNameOnly(workDir, defaultBr).catch(() => [] as string[]),
+        gitDiffFileStats(workDir, defaultBr).catch(() => [] as DiffFileStat[]),
+      ]).then(([files, fStats]) => {
+        setChangedFiles(files);
+        setFileStats(fStats);
+      });
+    };
+    refreshRef.current = setInterval(refresh, 10_000);
+    return () => clearInterval(refreshRef.current);
+  }, [activeProject?.id, activeTask?.id, activeTask?.branch_name, mergeState, targetBranch]);
 
   const handleMerge = async () => {
     if (!activeProject || !activeTask?.branch_name) return;
@@ -541,7 +568,9 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
           Merge <code className="font-mono text-foreground bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{activeTask.branch_name}</code> into <code className="font-mono text-foreground bg-zinc-100 dark:bg-zinc-800 px-1 rounded">{targetBranch}</code>
         </p>
 
-        {changedFiles.length > 0 && (
+        {fileStats.length > 0 ? (
+          <DiffFileList files={fileStats} />
+        ) : changedFiles.length > 0 ? (
           <div className="mb-3">
             <p className="text-xs font-medium text-muted-foreground mb-1">
               {changedFiles.length} file{changedFiles.length !== 1 ? "s" : ""} changed
@@ -552,13 +581,7 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
               ))}
             </div>
           </div>
-        )}
-
-        {diffStat && (
-          <pre className="text-xs text-muted-foreground bg-zinc-50 dark:bg-zinc-900 border border-border rounded p-2 mb-3 overflow-x-auto">
-            {diffStat}
-          </pre>
-        )}
+        ) : null}
 
         {targetIsDirty && (
           <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg">

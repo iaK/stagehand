@@ -6,6 +6,7 @@ import { SetupWizard } from "./components/onboarding/SetupWizard";
 import { checkAgentAvailable } from "./lib/agent";
 import { getSetting, setSetting } from "./lib/repositories";
 import { useProjectStore } from "./stores/projectStore";
+import { useSettingsStore, TEXT_SIZE_PX } from "./stores/settingsStore";
 import { useOrphanedProcessCleanup } from "./hooks/useOrphanedProcessCleanup";
 import { requestNotificationPermission, registerNotificationClickHandler } from "./lib/notifications";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,11 +17,13 @@ import { Toaster } from "@/components/ui/sonner";
 function App() {
   const [claudeError, setClaudeError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState<boolean | null>(null); // null = loading
+  const appTextSize = useSettingsStore((s) => s.appTextSize);
   useOrphanedProcessCleanup();
 
   useEffect(() => {
     requestNotificationPermission();
     const unregisterPromise = registerNotificationClickHandler();
+    useSettingsStore.getState().load();
     checkAgentAvailable().catch((err) => {
       setClaudeError(String(err));
     });
@@ -87,7 +90,7 @@ function App() {
     <ErrorBoundary>
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="stagehand-theme">
     <TooltipProvider>
-      <div className="h-screen overflow-hidden">
+      <div className="h-screen overflow-hidden" style={{ fontSize: `${TEXT_SIZE_PX[appTextSize]}px` }}>
         {claudeError && (
           <Alert className="rounded-none border-x-0 border-t-0 border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400">
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

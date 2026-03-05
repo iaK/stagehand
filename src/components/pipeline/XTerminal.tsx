@@ -2,6 +2,7 @@ import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export interface XTerminalHandle {
   write: (data: string) => void;
@@ -19,6 +20,7 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const fitRef = useRef<FitAddon | null>(null);
+    const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
 
     useImperativeHandle(ref, () => ({
       write(data: string) {
@@ -34,7 +36,7 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
 
       const term = new Terminal({
         cursorBlink: true,
-        fontSize: 13,
+        fontSize: useSettingsStore.getState().terminalFontSize,
         fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
         theme: {
           background: "#09090b",
@@ -87,6 +89,18 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
     }, []);
+
+    // Update font size when setting changes
+    useEffect(() => {
+      if (termRef.current) {
+        termRef.current.options.fontSize = terminalFontSize;
+        try {
+          fitRef.current?.fit();
+        } catch {
+          // ignore if disposed
+        }
+      }
+    }, [terminalFontSize]);
 
     // Scroll to bottom when the terminal becomes visible (e.g. task switch)
     useEffect(() => {
