@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import { KeyMod, KeyCode } from "monaco-editor";
 import { useTheme } from "next-themes";

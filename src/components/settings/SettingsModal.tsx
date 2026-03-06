@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
 import { useProjectStore } from "../../stores/projectStore";
 import { sendNotification } from "../../lib/notifications";

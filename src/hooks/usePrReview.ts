@@ -15,7 +15,6 @@ import {
   ghFetchReviewThreads,
   ghResolveReviewThread,
   ghUnresolveReviewThread,
-  ghCommentOnPr,
   ghReplyToReviewComment,
   gitPush,
   gitPull,
