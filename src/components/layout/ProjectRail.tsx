@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useProjectStore } from "../../stores/projectStore";
+import { usePrReviewsStore } from "../../stores/prReviewsStore";
 import { ProjectCreate } from "../project/ProjectCreate";
 import { AppSettingsModal } from "../settings/AppSettingsModal";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Inbox } from "lucide-react";
 import type { ProjectLogoInfo } from "../../lib/projectLogo";
 import logoSrc from "../../assets/logo.png";
 
@@ -66,6 +68,9 @@ export function ProjectRail() {
   const projectLogos = useProjectStore((s) => s.projectLogos);
   const [showProjectCreate, setShowProjectCreate] = useState(false);
   const [showAppSettings, setShowAppSettings] = useState(false);
+  const prReviewsOpen = usePrReviewsStore((s) => s.open);
+  const prCount = usePrReviewsStore((s) => s.prs.length);
+  const togglePrReviews = usePrReviewsStore((s) => s.toggle);
 
   return (
     <div className="w-14 flex-shrink-0 border-r border-border bg-muted/50 flex flex-col items-center">
@@ -126,6 +131,31 @@ export function ProjectRail() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">New Project</TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* PR Reviews button — fixed at bottom */}
+      <div className="shrink-0 pb-3 flex flex-col items-center">
+        <div className="w-6 h-px bg-border mb-3" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={togglePrReviews}
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                prReviewsOpen
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              <Inbox className="w-4 h-4" />
+              {prCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold bg-primary text-primary-foreground flex items-center justify-center">
+                  {prCount > 99 ? "99+" : prCount}
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">PR Reviews{prCount > 0 ? ` (${prCount})` : ""}</TooltipContent>
         </Tooltip>
       </div>
 

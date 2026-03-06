@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { readFileContents, writeFileContents, gitShowFile, gitDefaultBranch, gitStatus, gitResetFile, runGit } from "../lib/git";
 import { useGitHubStore } from "./githubStore";
 import { useTaskStore } from "./taskStore";
+import { useProjectStore } from "./projectStore";
+import { useNavigationStore } from "./navigationStore";
 
 export interface OpenFile {
   /** Unique tab key: path for normal, "diff:"+path for diff view */
@@ -43,6 +45,15 @@ const tabCache: Record<string, SavedTabState> = {};
 
 export type EditorSidebarView = "files" | "changes";
 
+/** What to compare the working tree against in the Changes view. */
+export type DiffBase = "merge-base" | "branch" | "head";
+
+export const DIFF_BASE_LABELS: Record<DiffBase, string> = {
+  "merge-base": "Branch point",
+  "branch": "Target branch",
+  "head": "Latest commit",
+};
+
 interface EditorStore {
   sidebarView: EditorSidebarView;
   openFiles: OpenFile[];
@@ -57,9 +68,17 @@ interface EditorStore {
   originalContent: Record<string, string>;
   changedFiles: ChangedFile[];
   targetBranch: string | null;
+  diffBase: DiffBase;
   quickOpenVisible: boolean;
+  /** Monotonic counter bumped on each resetForTask to invalidate in-flight async ops */
+  _resetEpoch: number;
+  /** Bumped when diffBase changes to invalidate in-flight originalContent fetches */
+  _diffEpoch: number;
+  /** Bumped when the file tree should refresh (e.g. after save) */
+  _fileTreeEpoch: number;
 
   loadChangedFiles: () => Promise<void>;
+  setDiffBase: (base: DiffBase) => void;
   setSidebarView: (view: EditorSidebarView) => void;
   fetchOriginalContent: (path: string) => Promise<void>;
   setQuickOpen: (open: boolean) => void;
@@ -78,6 +97,7 @@ interface EditorStore {
   restoreTabsForTask: (taskId: string) => Promise<void>;
   clearSaveError: () => void;
   resetFile: (filePath: string) => Promise<void>;
+  refreshDiffContent: () => void;
   promptUnsavedChanges: (fileKey: string, callback: (confirm: boolean) => void) => void;
   resolveUnsavedChanges: (confirmed: boolean) => void;
 
@@ -97,8 +117,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   originalContent: {},
   changedFiles: [],
   targetBranch: null,
+  diffBase: "merge-base" as DiffBase,
   unsavedChangesDialogCallback: null,
   quickOpenVisible: false,
+  _resetEpoch: 0,
+  _diffEpoch: 0,
+  _fileTreeEpoch: 0,
 
   activeFilePath: () => {
     const { activeFileKey, openFiles } = get();
@@ -108,23 +132,31 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   loadChangedFiles: async () => {
-    const { worktreeRoot } = get();
+    const { worktreeRoot, diffBase, _resetEpoch: epoch } = get();
     if (!worktreeRoot) return;
     const target = useTaskStore.getState().activeTask?.target_branch
       ?? useGitHubStore.getState().defaultBranch
       ?? await gitDefaultBranch(worktreeRoot)
       ?? "main";
     const fileMap = new Map<string, ChangedFile["status"]>();
-    // Use working-tree diff against target branch so that reset files
-    // (matching target) disappear even if commits on the branch touched them.
+
     try {
-      const raw = await runGit(worktreeRoot, "diff", "--name-status", target);
+      let ref: string;
+      if (diffBase === "head") {
+        ref = "HEAD";
+      } else if (diffBase === "branch") {
+        ref = target;
+      } else {
+        // merge-base: where the branch diverged from target
+        ref = (await runGit(worktreeRoot, "merge-base", target, "HEAD")).trim();
+      }
+      const raw = await runGit(worktreeRoot, "diff", "--name-status", ref);
       for (const line of raw.trim().split("\n")) {
         if (!line) continue;
         const parts = line.split("\t");
         if (parts.length < 2) continue;
         const code = parts[0][0];
-        const filePath = parts.length >= 3 ? parts[2] : parts[1]; // renamed: use new path
+        const filePath = parts.length >= 3 ? parts[2] : parts[1];
         if (code === "A") fileMap.set(filePath, "A");
         else if (code === "D") fileMap.set(filePath, "D");
         else fileMap.set(filePath, "M");
@@ -156,19 +188,53 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const files: ChangedFile[] = [...fileMap.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([path, status]) => ({ path, status }));
+    // Bail if a task switch happened while we were running git commands
+    if (get()._resetEpoch !== epoch) return;
     set({ targetBranch: target, changedFiles: files });
   },
 
   fetchOriginalContent: async (path: string) => {
-    const { worktreeRoot, originalContent, targetBranch } = get();
+    const { worktreeRoot, originalContent, targetBranch, diffBase, _resetEpoch: epoch, _diffEpoch: diffEp } = get();
     if (!worktreeRoot) return;
     const relativePath = path.startsWith(worktreeRoot + "/")
       ? path.slice(worktreeRoot.length + 1)
       : path;
     if (originalContent[path] !== undefined) return;
-    const ref = targetBranch ?? "HEAD";
+    let ref: string;
+    if (diffBase === "head") {
+      ref = "HEAD";
+    } else if (diffBase === "branch") {
+      ref = targetBranch ?? "HEAD";
+    } else {
+      // merge-base
+      try {
+        ref = (await runGit(worktreeRoot, "merge-base", targetBranch ?? "main", "HEAD")).trim();
+      } catch {
+        ref = targetBranch ?? "HEAD";
+      }
+    }
     const content = await gitShowFile(worktreeRoot, relativePath, ref);
+    if (get()._resetEpoch !== epoch || get()._diffEpoch !== diffEp) return;
     set((s) => ({ originalContent: { ...s.originalContent, [path]: content } }));
+  },
+
+  setDiffBase: (base: DiffBase) => {
+    // Clear cached original content and bump epoch so in-flight fetches are discarded
+    set((s) => ({ diffBase: base, originalContent: {}, _diffEpoch: s._diffEpoch + 1 }));
+    get().loadChangedFiles();
+    // Re-fetch original content for all open diff tabs with the new base
+    const { openFiles } = get();
+    for (const file of openFiles) {
+      if (file.isDiff) {
+        get().fetchOriginalContent(file.path);
+      }
+    }
+    // Persist per-task
+    const projectId = useProjectStore.getState().activeProject?.id;
+    const taskId = useTaskStore.getState().activeTask?.id;
+    if (projectId && taskId) {
+      useNavigationStore.getState().persistTaskViewState(projectId, taskId, { diffBase: base });
+    }
   },
 
   setSidebarView: (view) => set({ sidebarView: view }),
@@ -201,7 +267,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   openDiffFile: async (path: string) => {
-    const { openFiles, worktreeRoot } = get();
+    const { openFiles, worktreeRoot, _resetEpoch: epoch } = get();
     const key = fileKey(path, true);
     const existing = openFiles.find((f) => f.key === key);
     if (existing) {
@@ -218,11 +284,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
     if (content === null) content = "";
 
+    if (get()._resetEpoch !== epoch) return;
+
     // Ensure target branch is resolved
     if (!get().targetBranch) {
       await get().loadChangedFiles();
     }
     await get().fetchOriginalContent(path);
+
+    if (get()._resetEpoch !== epoch) return;
 
     set((s) => ({
       openFiles: [...s.openFiles, { key, path, content, diskContent: content, isDirty: false, isDiff: true, diskChanged: false }],
@@ -279,6 +349,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set((s) => ({
         saveError: null,
         isSaving: false,
+        _fileTreeEpoch: s._fileTreeEpoch + 1,
         openFiles: s.openFiles.map((f) =>
           f.key === key ? { ...f, isDirty: false, diskContent: f.content, diskChanged: false } : f,
         ),
@@ -356,7 +427,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   resetForTask: () => {
-    set({
+    set((s) => ({
+      _resetEpoch: s._resetEpoch + 1,
+      _diffEpoch: s._diffEpoch + 1,
       openFiles: [],
       activeFileKey: null,
       saveError: null,
@@ -368,7 +441,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       fileAwaitingCloseKey: null,
       unsavedChangesDialogCallback: null,
       quickOpenVisible: false,
-    });
+    }));
   },
 
   saveTabsForTask: (taskId) => {
@@ -391,11 +464,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const saved = tabCache[taskId];
     if (!saved || saved.tabs.length === 0) return;
 
-    const { worktreeRoot } = get();
+    const { worktreeRoot, _resetEpoch: epoch } = get();
     if (!worktreeRoot) return;
 
     // Load current changed files so we can validate diff tabs
     await get().loadChangedFiles();
+    if (get()._resetEpoch !== epoch) return;
     const { changedFiles } = get();
     const changedPaths = new Set(changedFiles.map((f) => f.path));
 
@@ -435,6 +509,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     if (opened.length === 0) return;
+    if (get()._resetEpoch !== epoch) return;
 
     // Resolve active key: use saved if it still exists, else last tab
     const activeKey = opened.find((f) => f.key === saved.activeFileKey)
@@ -469,10 +544,20 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       // Also clear original content cache for this path
       const { [filePath]: _, ...restOriginal } = s.originalContent;
-      return { openFiles: filtered, activeFileKey: nextActive, originalContent: restOriginal };
+      return { openFiles: filtered, activeFileKey: nextActive, originalContent: restOriginal, _fileTreeEpoch: s._fileTreeEpoch + 1 };
     });
     // Refresh changed files list
     get().loadChangedFiles();
+  },
+
+  refreshDiffContent: () => {
+    set((s) => ({ originalContent: {}, _diffEpoch: s._diffEpoch + 1 }));
+    const { openFiles } = get();
+    for (const file of openFiles) {
+      if (file.isDiff) {
+        get().fetchOriginalContent(file.path);
+      }
+    }
   },
 
   clearSaveError: () => set({ saveError: null }),

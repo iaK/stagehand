@@ -202,7 +202,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
                     }
                   }
                 } catch {
-                  appendOutput(sk, event.line);
+                  // Non-JSON lines are CLI UI noise — skip
                 }
                 break;
               case "stderr_line":
@@ -241,9 +241,33 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   );
 
   const stageStatus = latestExecution?.status ?? "pending";
-  const isCurrentStage = task?.current_stage_id === sid
-    || (task?.current_stage_id == null && stage.sort_order === 0);
+  const getActiveTaskStageInstances = useTaskStore((s) => s.getActiveTaskStageInstances);
+  const allStages = useMemo(() => getActiveTaskStageInstances(), [getActiveTaskStageInstances, task?.id, task?.current_stage_id]);
+  const isCurrentStage = useMemo(() => {
+    // Direct match
+    if (task?.current_stage_id === sid) return true;
+    if (task?.current_stage_id == null && stage.sort_order === 0) return true;
+    // Fallback: if current_stage_id doesn't match any known stage instance,
+    // infer the current stage as the first non-approved one (same logic as PipelineStepper).
+    const currentIdMatchesAny = task?.current_stage_id && allStages.some((s) => s.task_stage_id === task.current_stage_id);
+    if (!currentIdMatchesAny && task?.status !== "completed" && task?.status !== "split" && allStages.length > 0) {
+      const firstNonApproved = allStages.find((s) => {
+        const execs = executions.filter((e) => e.task_stage_id === s.task_stage_id);
+        return !execs.some((e) => e.status === "approved");
+      });
+      const inferredId = firstNonApproved?.task_stage_id ?? allStages[0].task_stage_id;
+      return inferredId === sid;
+    }
+    return false;
+  }, [task?.current_stage_id, task?.status, sid, stage.sort_order, allStages, executions]);
   const isApproved = stageStatus === "approved";
+  // Whether this stage is before the current stage (passed through to get here)
+  const isPastStage = useMemo(() => {
+    if (isCurrentStage) return false;
+    const currentSort = allStages.find((s) => s.task_stage_id === (task?.current_stage_id ?? ""))?.sort_order;
+    if (currentSort == null) return false;
+    return stage.sort_order < currentSort;
+  }, [isCurrentStage, allStages, task?.current_stage_id, stage.sort_order]);
   const needsUserInput = !!stage.requires_user_input;
 
   // Determine whether the output component renders its own action button.
@@ -622,8 +646,18 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
         </p>
       )}
 
-      {/* Future stage -- not current, nothing has run */}
-      {!isCurrentStage && !latestExecution && (
+      {/* Past stage -- before current, but no execution data (mismatched IDs) */}
+      {!isCurrentStage && !latestExecution && isPastStage && (
+        <div className="mb-6 py-6 text-center text-muted-foreground">
+          <svg className="w-8 h-8 mx-auto mb-2 text-emerald-300 dark:text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-sm">Stage completed</p>
+        </div>
+      )}
+
+      {/* Future stage -- not current, nothing has run, after current stage */}
+      {!isCurrentStage && !latestExecution && !isPastStage && (
         <div className="mb-6 py-6 text-center text-muted-foreground">
           <svg className="w-8 h-8 mx-auto mb-2 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />

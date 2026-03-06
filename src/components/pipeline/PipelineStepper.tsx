@@ -18,7 +18,30 @@ export function PipelineStepper({
 }: PipelineStepperProps) {
   const stageStatusMap = useMemo(() => {
     const map = new Map<string, string>();
-    const currentStage = stages.find((s) => s.task_stage_id === currentStageId);
+
+    // Resolve effective current stage ID.
+    // If currentStageId doesn't match any visible stage (stale pointer,
+    // data inconsistency, or null), infer from execution state.
+    let effectiveCurrentId = currentStageId;
+    const currentIdMatchesStage = effectiveCurrentId && stages.some((s) => s.task_stage_id === effectiveCurrentId);
+    if (!currentIdMatchesStage && !isTaskCompleted && stages.length > 0) {
+      if (effectiveCurrentId) {
+        console.warn(
+          "[PipelineStepper] current_stage_id %s does not match any stage instance: %o",
+          effectiveCurrentId,
+          stages.map((s) => s.task_stage_id),
+        );
+      }
+      const firstNonApproved = stages.find((s) => {
+        const execs = executions.filter((e) => e.task_stage_id === s.task_stage_id);
+        return !execs.some((e) => e.status === "approved");
+      });
+      effectiveCurrentId = firstNonApproved?.task_stage_id ?? stages[0].task_stage_id;
+    }
+
+    // Find the effective current stage's sort_order for position-based fallback
+    const effectiveCurrentSort = stages.find((s) => s.task_stage_id === effectiveCurrentId)?.sort_order ?? -1;
+
     for (const stage of stages) {
       if (isTaskCompleted) {
         map.set(stage.task_stage_id, "completed");
@@ -31,16 +54,18 @@ export function PipelineStepper({
 
       if (latestExec?.status === "approved") {
         map.set(stage.task_stage_id, "completed");
-      } else if (stage.task_stage_id === currentStageId) {
+      } else if (stage.task_stage_id === effectiveCurrentId) {
         if (latestExec?.status === "running") map.set(stage.task_stage_id, "running");
         else if (latestExec?.status === "awaiting_user") map.set(stage.task_stage_id, "awaiting");
         else map.set(stage.task_stage_id, "current");
       } else {
-        // Only mark as completed if there's an actual approved execution,
-        // not just because it's before the current stage in sort_order.
-        // With dynamic stages, earlier stages may not have been executed.
         const hasApprovedExec = stageExecs.some((e) => e.status === "approved");
         if (hasApprovedExec) {
+          map.set(stage.task_stage_id, "completed");
+        } else if (stage.sort_order < effectiveCurrentSort) {
+          // Stage is before the current stage — must have been completed
+          // (or skipped) to reach the current stage. Show as completed even
+          // if executions have mismatched task_stage_ids.
           map.set(stage.task_stage_id, "completed");
         } else {
           map.set(stage.task_stage_id, "future");

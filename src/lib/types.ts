@@ -205,6 +205,7 @@ export interface PrReviewFix {
   execution_id: string;
   comment_id: number;
   comment_type: "review" | "inline" | "conversation";
+  review_id: number | null;
   author: string;
   author_avatar_url: string | null;
   body: string;
@@ -214,6 +215,7 @@ export interface PrReviewFix {
   state: string;
   fix_status: "pending" | "fixing" | "fixed" | "skipped";
   fix_commit_hash: string | null;
+  submitted_at: string | null;
   created_at: string;
   updated_at: string;
 }

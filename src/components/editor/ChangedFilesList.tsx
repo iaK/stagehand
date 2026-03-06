@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { RefreshCw, Undo2, GitCommitHorizontal, Loader2 } from "lucide-react";
-import { useEditorStore, type ChangedFile } from "../../stores/editorStore";
+import { useEditorStore, type ChangedFile, DIFF_BASE_LABELS, type DiffBase } from "../../stores/editorStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { gitAdd, gitCommit, gitDiff, gitDiffFileStatsUnstaged, type DiffFileStat } from "../../lib/git";
 import { getCommitPrefix, getProjectSetting } from "../../lib/repositories";
@@ -35,8 +35,11 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
   const openDiffFile = useEditorStore((s) => s.openDiffFile);
   const loadChangedFiles = useEditorStore((s) => s.loadChangedFiles);
   const resetFile = useEditorStore((s) => s.resetFile);
+  const diffBase = useEditorStore((s) => s.diffBase);
+  const setDiffBase = useEditorStore((s) => s.setDiffBase);
   const projectId = useProjectStore((s) => s.activeProject?.id);
 
+  const [refreshing, setRefreshing] = useState(false);
   const [resetConfirmPath, setResetConfirmPath] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -146,6 +149,8 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       setCommitDialogOpen(false);
       setCommitMessage("");
       useEditorStore.getState().loadChangedFiles();
+      // Refresh original content for open diff tabs (HEAD has moved)
+      useEditorStore.getState().refreshDiffContent();
     } catch (err) {
       setCommitError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -164,6 +169,15 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       setResetError(err instanceof Error ? err.message : String(err));
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadChangedFiles();
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -196,12 +210,26 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
           </button>
           <button
             className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
-            onClick={loadChangedFiles}
+            onClick={handleRefresh}
             title="Refresh"
+            disabled={refreshing}
           >
-            <RefreshCw className="w-3 h-3" />
+            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
           </button>
         </div>
+      </div>
+
+      {/* Diff base selector */}
+      <div className="px-2 py-1 shrink-0 border-b border-border">
+        <select
+          className="w-full text-[11px] bg-transparent text-muted-foreground hover:text-foreground cursor-pointer outline-none"
+          value={diffBase}
+          onChange={(e) => setDiffBase(e.target.value as DiffBase)}
+        >
+          {(Object.keys(DIFF_BASE_LABELS) as DiffBase[]).map((key) => (
+            <option key={key} value={key}>{DIFF_BASE_LABELS[key]}</option>
+          ))}
+        </select>
       </div>
 
       {changedFiles.length === 0 ? (

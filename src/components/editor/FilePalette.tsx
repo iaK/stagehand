@@ -132,6 +132,9 @@ export function FilePalette() {
           type="text"
           className="w-full px-3 py-2.5 text-sm bg-transparent border-b border-border outline-none placeholder:text-muted-foreground"
           placeholder="Search files by name..."
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}

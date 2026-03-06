@@ -301,6 +301,9 @@ function ProjectSettings({ projectId }: { projectId: string }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleRename()}
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {nameChanged && (
@@ -323,6 +326,9 @@ function ProjectSettings({ projectId }: { projectId: string }) {
             value={worktreeLocation}
             onChange={(e) => { setWorktreeLocation(e.target.value); setWorktreeChanged(true); }}
             placeholder={worktreeDefault}
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {worktreeChanged && (
@@ -385,6 +391,9 @@ function ProjectSettings({ projectId }: { projectId: string }) {
                 onChange={(e) => handleInitialsChange(e.target.value)}
                 placeholder={activeProject?.name.slice(0, 3).toUpperCase()}
                 maxLength={3}
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 className="w-20 h-8 rounded-md border border-input bg-background px-2 text-sm text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>

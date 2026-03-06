@@ -7,6 +7,7 @@ mod commands;
 use process_manager::ProcessManager;
 use pty_manager::PtyManager;
 use tauri::Manager;
+use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -61,6 +62,39 @@ pub fn run() {
         .manage(ProcessManager::new())
         .manage(PtyManager::new())
         .setup(|app| {
+            // Build a custom menu without the Close Window (Cmd+W) shortcut
+            // so that Cmd+W can be handled by the frontend to close editor tabs.
+            let app_menu = SubmenuBuilder::new(app, "stagehand")
+                .about(None)
+                .separator()
+                .services()
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .fullscreen()
+                .build()?;
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .minimize()
+                .build()?;
+            let menu = MenuBuilder::new(app)
+                .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
+                .build()?;
+            app.set_menu(menu)?;
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -103,6 +137,7 @@ pub fn run() {
             commands::pty::write_to_pty,
             commands::pty::resize_pty,
             commands::pty::kill_pty,
+            commands::editor::open_in_external_editor,
         ])
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {

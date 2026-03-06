@@ -251,8 +251,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       // previous task prevent both commit generation and the timeout fallback,
       // leaving the UI permanently stuck on "Preparing commit...".
       useProcessStore.setState({ committedStages: {}, mergeStages: {} });
+      // Clear executions for the old task — loadExecutions will reload for the new one.
+      // task_stage_ids are unique UUIDs so stale executions wouldn't match, but
+      // clearing avoids edge cases with legacy null task_stage_id entries.
+      set({ activeTask: task, executions: [] });
+    } else {
+      // Same task (e.g. refreshed from DB) — keep existing executions.
+      // Clearing here would wipe them without re-triggering the load effect
+      // (which only fires on activeTaskId change), leaving pills permanently gray.
+      set({ activeTask: task });
     }
-    set({ activeTask: task, executions: [] });
 
     // Persist active task selection
     const projectId = useProjectStore.getState().activeProject?.id;

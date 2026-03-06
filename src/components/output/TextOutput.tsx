@@ -1,6 +1,7 @@
 import { Children, isValidElement } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import type { Components } from "react-markdown";
 import { CodeBlock } from "../ui/CodeBlock";
 
@@ -97,7 +98,7 @@ const components: Components = {
 export function TextOutput({ content }: TextOutputProps) {
   return (
     <div className="max-w-none [&>:first-child]:!mt-0 [&>:last-child]:!mb-0">
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={components}>
         {content}
       </Markdown>
     </div>

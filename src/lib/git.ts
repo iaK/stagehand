@@ -289,7 +289,7 @@ export async function gitFetch(workingDir: string, branch?: string): Promise<str
 }
 
 export async function gitPull(workingDir: string): Promise<string> {
-  return runGit(workingDir, "pull");
+  return runGit(workingDir, "pull", "--no-ff");
 }
 
 export async function gitMergeAbort(workingDir: string): Promise<string> {
@@ -368,22 +368,27 @@ export interface GhReview {
   state: string;
   body: string;
   user: { login: string; avatar_url: string };
+  submitted_at: string;
 }
 
 export interface GhReviewComment {
   id: number;
+  pull_request_review_id: number;
+  in_reply_to_id?: number;
   body: string;
   path: string;
   line: number | null;
   original_line: number | null;
   diff_hunk: string;
   user: { login: string; avatar_url: string };
+  created_at: string;
 }
 
 export interface GhIssueComment {
   id: number;
   body: string;
   user: { login: string; avatar_url: string };
+  created_at: string;
 }
 
 function parsePaginatedJson<T>(raw: string): T[] {
@@ -479,6 +484,106 @@ export async function ghCommentOnPr(
     "api",
     `repos/${owner}/${repo}/issues/${prNumber}/comments`,
     "-f", `body=${body}`,
+  );
+}
+
+export async function ghReplyToReviewComment(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commentId: number,
+  body: string,
+): Promise<GhReviewComment> {
+  const raw = await runGh(
+    workingDir,
+    "api",
+    `repos/${owner}/${repo}/pulls/${prNumber}/comments/${commentId}/replies`,
+    "-f", `body=${body}`,
+  );
+  return JSON.parse(raw);
+}
+
+export interface GhReviewThread {
+  id: string;
+  isResolved: boolean;
+  commentDatabaseIds: number[];
+}
+
+export async function ghFetchReviewThreads(
+  workingDir: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GhReviewThread[]> {
+  const query = `
+    query($owner: String!, $repo: String!, $pr: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              comments(first: 100) {
+                nodes { databaseId }
+              }
+            }
+          }
+        }
+      }
+    }`;
+  const raw = await runGhWithRetry(
+    workingDir,
+    "api", "graphql",
+    "-f", `query=${query}`,
+    "-f", `owner=${owner}`,
+    "-f", `repo=${repo}`,
+    "-F", `pr=${prNumber}`,
+  );
+  const parsed = JSON.parse(raw);
+  const nodes = parsed.data.repository.pullRequest.reviewThreads.nodes;
+  return nodes.map((t: Record<string, unknown>) => ({
+    id: t.id as string,
+    isResolved: t.isResolved as boolean,
+    commentDatabaseIds: (
+      (t.comments as { nodes: { databaseId: number }[] }).nodes
+    ).map((c) => c.databaseId),
+  }));
+}
+
+export async function ghResolveReviewThread(
+  workingDir: string,
+  threadId: string,
+): Promise<void> {
+  const mutation = `
+    mutation($threadId: ID!) {
+      resolveReviewThread(input: { threadId: $threadId }) {
+        thread { isResolved }
+      }
+    }`;
+  await runGh(
+    workingDir,
+    "api", "graphql",
+    "-f", `query=${mutation}`,
+    "-f", `threadId=${threadId}`,
+  );
+}
+
+export async function ghUnresolveReviewThread(
+  workingDir: string,
+  threadId: string,
+): Promise<void> {
+  const mutation = `
+    mutation($threadId: ID!) {
+      unresolveReviewThread(input: { threadId: $threadId }) {
+        thread { isResolved }
+      }
+    }`;
+  await runGh(
+    workingDir,
+    "api", "graphql",
+    "-f", `query=${mutation}`,
+    "-f", `threadId=${threadId}`,
   );
 }
 

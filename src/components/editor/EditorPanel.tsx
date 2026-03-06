@@ -8,6 +8,7 @@ import { ChangedFilesList } from "./ChangedFilesList";
 import { CodeEditor } from "./CodeEditor";
 import { FilePalette } from "./FilePalette";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { matchesShortcut } from "@/lib/keybindings";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -58,9 +59,10 @@ export function EditorPanel() {
     }
   }, [taskId, worktreePath]);
 
-  // Poll for git changes every 10s while the editor is open
+  // Load changed files immediately + poll every 10s while the editor is open
   useEffect(() => {
     if (!worktreePath) return;
+    useEditorStore.getState().loadChangedFiles();
     const id = setInterval(() => {
       useEditorStore.getState().loadChangedFiles();
     }, 10_000);
@@ -76,12 +78,16 @@ export function EditorPanel() {
     return () => clearInterval(id);
   }, [worktreePath]);
 
-  // Cmd+P / Ctrl+P to open quick file search
+  // Keybinding: close tab
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      const kb = useSettingsStore.getState().keybindings;
+      if (matchesShortcut(e, kb.closeTab)) {
         e.preventDefault();
-        useEditorStore.getState().setQuickOpen(true);
+        const { activeFileKey, closeFile } = useEditorStore.getState();
+        if (activeFileKey) {
+          closeFile(activeFileKey);
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -98,7 +104,7 @@ export function EditorPanel() {
 
   return (
     <>
-      <div className={`flex-1 flex min-h-0 ${editorSidebarPosition === "right" ? "flex-row-reverse" : ""}`}>
+      <div className={`flex-1 flex min-h-0 min-w-0 ${editorSidebarPosition === "right" ? "flex-row-reverse" : ""}`}>
         {/* Sidebar */}
         <div className={`w-[200px] shrink-0 flex flex-col ${editorSidebarPosition === "right" ? "border-l border-border" : "border-r border-border"}`}>
           <div className="flex items-center shrink-0 border-b border-border bg-muted/30 text-xs">

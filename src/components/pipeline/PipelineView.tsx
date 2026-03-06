@@ -14,7 +14,10 @@ import { Code2, Terminal, GitBranch, Info } from "lucide-react";
 import { logger } from "../../lib/logger";
 import { useEditorStore } from "../../stores/editorStore";
 import { useNavigationStore } from "../../stores/navigationStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { EditorPanel } from "../editor/EditorPanel";
+import { openInExternalEditor } from "../../lib/editor";
+import { matchesShortcut, formatShortcut } from "../../lib/keybindings";
 import type { TaskStageInstance } from "../../lib/types";
 
 export function PipelineView() {
@@ -41,6 +44,7 @@ export function PipelineView() {
   const activePtySessions = useProcessStore((s) => s.activePtySessions);
   const activeView = useProcessStore((s) => s.activeView);
   const showOverview = useProcessStore((s) => s.overviewOpen);
+  const keybindings = useSettingsStore((s) => s.keybindings);
   const terminalTabOrder = useProcessStore((s) => s.terminalTabOrder);
 
   // Task IDs that need a mounted IntegratedTerminal (have tabs or are active)
@@ -83,6 +87,32 @@ export function PipelineView() {
     useProcessStore.getState().setActiveView(view);
     persistViewPatch({ activeView: view });
   }, [persistViewPatch]);
+
+  const handleEditorClick = useCallback(() => {
+    const editorCommand = useSettingsStore.getState().getEditorCommand();
+    if (editorCommand) {
+      const worktreePath = activeTask?.worktree_path ?? (activeTask?.ejected ? activeProject?.path : undefined);
+      if (worktreePath) {
+        openInExternalEditor(editorCommand, worktreePath).catch((err) =>
+          logger.error("Failed to open external editor:", err),
+        );
+      }
+    } else {
+      switchView("editor");
+    }
+  }, [switchView, activeTask, activeProject]);
+
+  // Keybindings: switch between pipeline, editor, terminal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const kb = useSettingsStore.getState().keybindings;
+      if (matchesShortcut(e, kb.viewPipeline)) { e.preventDefault(); switchView("pipeline"); }
+      else if (matchesShortcut(e, kb.viewEditor)) { e.preventDefault(); switchView("editor"); }
+      else if (matchesShortcut(e, kb.viewTerminal)) { e.preventDefault(); switchView("terminal"); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [switchView]);
 
   const handleToggleOverview = useCallback(() => {
     const next = !useProcessStore.getState().overviewOpen;
@@ -138,6 +168,10 @@ export function PipelineView() {
       // Restore panel states
       useProcessStore.getState().setActiveView(viewState.activeView);
       useEditorStore.getState().setSidebarView(viewState.editorSidebarView);
+      if (viewState.diffBase) {
+        // Set diffBase directly without triggering a reload (loadChangedFiles will run via resetForTask)
+        useEditorStore.setState({ diffBase: viewState.diffBase });
+      }
       useProcessStore.getState().setOverviewOpen(viewState.overview);
 
       // Restore viewing stage
@@ -190,7 +224,8 @@ export function PipelineView() {
           stages={filteredStages}
           currentStageId={currentStageId ?? null}
           executions={executions}
-          onStageClick={setViewingStage}
+          onStageClick={(stage) => { setViewingStage(stage); switchView("pipeline"); }}
+          isTaskCompleted={activeTask?.status === "completed" || activeTask?.status === "split"}
         />
         <div className="ml-auto pl-4 pr-4 flex items-center gap-1 shrink-0">
           {/* View switcher */}
@@ -205,19 +240,19 @@ export function PipelineView() {
                   <GitBranch className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Pipeline</TooltipContent>
+              <TooltipContent>Pipeline ({formatShortcut(keybindings.viewPipeline)})</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant={activeView === "editor" ? "secondary" : "ghost"}
                   size="icon-xs"
-                  onClick={() => switchView("editor")}
+                  onClick={handleEditorClick}
                 >
                   <Code2 className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Editor</TooltipContent>
+              <TooltipContent>Editor ({formatShortcut(keybindings.viewEditor)})</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -229,7 +264,7 @@ export function PipelineView() {
                   <Terminal className="w-3.5 h-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Terminal</TooltipContent>
+              <TooltipContent>Terminal ({formatShortcut(keybindings.viewTerminal)})</TooltipContent>
             </Tooltip>
           </div>
           <Tooltip>

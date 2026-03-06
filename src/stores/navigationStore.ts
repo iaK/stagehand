@@ -6,6 +6,7 @@ import {
   setProjectSetting,
 } from "../lib/repositories";
 import { logger } from "../lib/logger";
+import type { DiffBase } from "./editorStore";
 
 export type EditorSidebarView = "files" | "changes";
 
@@ -14,6 +15,7 @@ export interface TaskViewState {
   activeView: "pipeline" | "editor" | "terminal";
   overview: boolean;
   editorSidebarView: EditorSidebarView;
+  diffBase: DiffBase;
   /** @deprecated kept for reading old persisted data */
   editor?: boolean;
   /** @deprecated kept for reading old persisted data */
@@ -25,6 +27,7 @@ const DEFAULT_VIEW_STATE: TaskViewState = {
   activeView: "pipeline",
   overview: true,
   editorSidebarView: "files",
+  diffBase: "merge-base",
 };
 
 // Debounce timers keyed by a string identifier

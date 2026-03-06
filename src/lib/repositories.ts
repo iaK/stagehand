@@ -873,16 +873,17 @@ export async function upsertPrReviewFix(
   const db = await getProjectDb(projectId);
   const now = new Date().toISOString();
   await db.execute(
-    `INSERT INTO pr_review_fixes (id, execution_id, comment_id, comment_type, author, author_avatar_url, body, file_path, line, diff_hunk, state, fix_status, fix_commit_hash, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    `INSERT INTO pr_review_fixes (id, execution_id, comment_id, comment_type, review_id, author, author_avatar_url, body, file_path, line, diff_hunk, state, fix_status, fix_commit_hash, submitted_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      ON CONFLICT(execution_id, comment_id, comment_type) DO UPDATE SET
-       author = $5, author_avatar_url = $6, body = $7, file_path = $8, line = $9,
-       diff_hunk = $10, state = $11, updated_at = $15`,
+       review_id = $5, author = $6, author_avatar_url = $7, body = $8, file_path = $9, line = $10,
+       diff_hunk = $11, state = $12, submitted_at = $15, updated_at = $17`,
     [
       fix.id,
       fix.execution_id,
       fix.comment_id,
       fix.comment_type,
+      fix.review_id,
       fix.author,
       fix.author_avatar_url,
       fix.body,
@@ -892,6 +893,7 @@ export async function upsertPrReviewFix(
       fix.state,
       fix.fix_status,
       fix.fix_commit_hash,
+      fix.submitted_at,
       now,
       now,
     ],

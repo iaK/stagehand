@@ -132,10 +132,11 @@ export function FileTree({ workingDir }: FileTreeProps) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [gitStatusMap, setGitStatusMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
+  const fileTreeEpoch = useEditorStore((s) => s._fileTreeEpoch);
 
   const loadFiles = useCallback(async () => {
     try {
-      const output = await runGit(workingDir, "ls-files");
+      const output = await runGit(workingDir, "ls-files", "--cached", "--others", "--exclude-standard");
       const files = output.trim().split("\n").filter((f) => f.length > 0);
       setTree(buildTree(files, workingDir));
     } catch {
@@ -162,9 +163,19 @@ export function FileTree({ workingDir }: FileTreeProps) {
     }
   }, [workingDir]);
 
+  // Refresh on mount, workingDir change, and after saves (fileTreeEpoch)
   useEffect(() => {
     loadFiles();
     loadGitStatus();
+  }, [loadFiles, loadGitStatus, fileTreeEpoch]);
+
+  // Poll every 5s for changes made by agents or external tools
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadFiles();
+      loadGitStatus();
+    }, 5_000);
+    return () => clearInterval(id);
   }, [loadFiles, loadGitStatus]);
 
   if (loading) {

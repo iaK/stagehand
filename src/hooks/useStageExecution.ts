@@ -375,8 +375,8 @@ export function useStageExecution() {
                   };
                 }
               } catch {
-                // Not JSON, just append as-is
-                appendOutput(sk, event.line);
+                // Non-JSON stdout lines are CLI UI noise (spinners, prompts, etc.)
+                // when using stream-json format. Skip them.
               }
               break;
             case "stderr_line":

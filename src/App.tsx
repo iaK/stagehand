@@ -9,6 +9,7 @@ import { useProjectStore } from "./stores/projectStore";
 import { useSettingsStore, TEXT_SIZE_PX } from "./stores/settingsStore";
 import { useOrphanedProcessCleanup } from "./hooks/useOrphanedProcessCleanup";
 import { requestNotificationPermission, registerNotificationClickHandler } from "./lib/notifications";
+import { usePrReviewsStore } from "./stores/prReviewsStore";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ function App() {
     requestNotificationPermission();
     const unregisterPromise = registerNotificationClickHandler();
     useSettingsStore.getState().load();
+    usePrReviewsStore.getState().startPolling();
     checkAgentAvailable().catch((err) => {
       setClaudeError(String(err));
     });
@@ -54,6 +56,7 @@ function App() {
 
     return () => {
       unregisterPromise.then((u) => u.unregister());
+      usePrReviewsStore.getState().stopPolling();
     };
   }, []);
 

@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 
 import { ArchivedProjectsSettings } from "./ArchivedProjectsSettings";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useSettingsStore, TEXT_SIZE_PX, type TextSize } from "@/stores/settingsStore";
+import { useSettingsStore, TEXT_SIZE_PX, EXTERNAL_EDITOR_OPTIONS, type TextSize, type ExternalEditor } from "@/stores/settingsStore";
+import { KEYBINDING_ACTIONS, formatShortcut, shortcutFromEvent, type KeyBindingAction } from "@/lib/keybindings";
 
-type Section = "appearance" | "editor" | "archived";
+type Section = "appearance" | "editor" | "keybindings" | "archived";
 
 type NavItem =
   | { header: string }
@@ -23,6 +24,7 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
     { header: "GENERAL" },
     { section: "appearance", label: "Appearance" },
     { section: "editor", label: "Editor" },
+    { section: "keybindings", label: "Keybindings" },
     { header: "PROJECTS" },
     { section: "archived", label: "Archived Projects" },
   ];
@@ -88,6 +90,7 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
             <div className="p-6">
               {activeSection === "appearance" && <AppearanceSettings />}
               {activeSection === "editor" && <EditorSettings />}
+              {activeSection === "keybindings" && <KeybindingsSettings />}
               {activeSection === "archived" && <ArchivedProjectsSettings />}
             </div>
           </ScrollArea>
@@ -175,59 +178,172 @@ function EditorSettings() {
   const editorFontSize = useSettingsStore((s) => s.editorFontSize);
   const terminalFontSize = useSettingsStore((s) => s.terminalFontSize);
   const diffViewMode = useSettingsStore((s) => s.diffViewMode);
+  const externalEditor = useSettingsStore((s) => s.externalEditor);
+  const externalEditorCommand = useSettingsStore((s) => s.externalEditorCommand);
   const setEditorSidebarPosition = useSettingsStore((s) => s.setEditorSidebarPosition);
   const setEditorFontSize = useSettingsStore((s) => s.setEditorFontSize);
   const setTerminalFontSize = useSettingsStore((s) => s.setTerminalFontSize);
   const setDiffViewMode = useSettingsStore((s) => s.setDiffViewMode);
+  const setExternalEditor = useSettingsStore((s) => s.setExternalEditor);
+  const setExternalEditorCommand = useSettingsStore((s) => s.setExternalEditorCommand);
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-medium text-foreground mb-1">File Tree Position</h3>
+        <h3 className="text-sm font-medium text-foreground mb-1">Editor</h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Which side the file tree and changes panel appears on.
+          Choose which editor to open when clicking the editor button.
         </p>
         <RadioGroup
-          name="editorSidebarPosition"
-          value={editorSidebarPosition}
-          options={[
-            { value: "left", label: "Left", description: "File tree on the left side" },
-            { value: "right", label: "Right", description: "File tree on the right side" },
-          ]}
-          onChange={(v) => setEditorSidebarPosition(v as "left" | "right")}
+          name="externalEditor"
+          value={externalEditor}
+          options={EXTERNAL_EDITOR_OPTIONS.map((opt) => ({
+            value: opt.value,
+            label: opt.label,
+            description: opt.value === "builtin"
+              ? "Use the built-in code editor"
+              : opt.value === "custom"
+              ? "Specify a custom editor command"
+              : `Open worktree in ${opt.label}`,
+          }))}
+          onChange={(v) => setExternalEditor(v as ExternalEditor)}
         />
+        {externalEditor === "custom" && (
+          <div className="mt-3">
+            <label className="text-xs text-muted-foreground block mb-1">
+              Command (e.g. <code className="text-foreground">vim</code>, <code className="text-foreground">emacs</code>)
+            </label>
+            <input
+              type="text"
+              value={externalEditorCommand}
+              onChange={(e) => setExternalEditorCommand(e.target.value)}
+              placeholder="editor-command"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="bg-background border border-border rounded-md px-2 py-1.5 text-sm w-full"
+            />
+          </div>
+        )}
       </div>
 
-      <div>
-        <h3 className="text-sm font-medium text-foreground mb-1">Editor Font Size</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Font size for the code editor.
-        </p>
-        <FontSizeSelect value={editorFontSize} onChange={setEditorFontSize} />
-      </div>
+      {externalEditor === "builtin" && (
+        <>
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-1">File Tree Position</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Which side the file tree and changes panel appears on.
+            </p>
+            <RadioGroup
+              name="editorSidebarPosition"
+              value={editorSidebarPosition}
+              options={[
+                { value: "left", label: "Left", description: "File tree on the left side" },
+                { value: "right", label: "Right", description: "File tree on the right side" },
+              ]}
+              onChange={(v) => setEditorSidebarPosition(v as "left" | "right")}
+            />
+          </div>
 
-      <div>
-        <h3 className="text-sm font-medium text-foreground mb-1">Terminal Font Size</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Font size for the integrated terminal.
-        </p>
-        <FontSizeSelect value={terminalFontSize} onChange={setTerminalFontSize} />
-      </div>
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-1">Editor Font Size</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Font size for the code editor.
+            </p>
+            <FontSizeSelect value={editorFontSize} onChange={setEditorFontSize} />
+          </div>
 
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-1">Terminal Font Size</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Font size for the integrated terminal.
+            </p>
+            <FontSizeSelect value={terminalFontSize} onChange={setTerminalFontSize} />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-1">Diff View</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              How file diffs are displayed in the editor.
+            </p>
+            <RadioGroup
+              name="diffViewMode"
+              value={diffViewMode}
+              options={[
+                { value: "inline", label: "Inline", description: "Show changes in a single column" },
+                { value: "sideBySide", label: "Side by Side", description: "Show old and new side by side" },
+              ]}
+              onChange={(v) => setDiffViewMode(v as "inline" | "sideBySide")}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KeybindingsSettings() {
+  const keybindings = useSettingsStore((s) => s.keybindings);
+  const setKeybinding = useSettingsStore((s) => s.setKeybinding);
+  const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
+  const [recording, setRecording] = useState<KeyBindingAction | null>(null);
+
+  const recordingRef = useRef(recording);
+  recordingRef.current = recording;
+
+  const handleRecord = useCallback((e: KeyboardEvent) => {
+    if (!recordingRef.current) return;
+    const shortcut = shortcutFromEvent(e);
+    if (!shortcut) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setKeybinding(recordingRef.current, shortcut);
+    setRecording(null);
+  }, [setKeybinding]);
+
+  useEffect(() => {
+    if (!recording) return;
+    window.addEventListener("keydown", handleRecord, true);
+    return () => window.removeEventListener("keydown", handleRecord, true);
+  }, [recording, handleRecord]);
+
+  return (
+    <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-medium text-foreground mb-1">Diff View</h3>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-medium text-foreground">Keyboard Shortcuts</h3>
+          <button
+            onClick={resetKeybindings}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Reset to defaults
+          </button>
+        </div>
         <p className="text-xs text-muted-foreground mb-4">
-          How file diffs are displayed in the editor.
+          Click a shortcut to re-record it. Press the new key combination to assign.
         </p>
-        <RadioGroup
-          name="diffViewMode"
-          value={diffViewMode}
-          options={[
-            { value: "inline", label: "Inline", description: "Show changes in a single column" },
-            { value: "sideBySide", label: "Side by Side", description: "Show old and new side by side" },
-          ]}
-          onChange={(v) => setDiffViewMode(v as "inline" | "sideBySide")}
-        />
+        <div className="space-y-1">
+          {KEYBINDING_ACTIONS.map(({ action, label }) => (
+            <div
+              key={action}
+              className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-accent/50"
+            >
+              <span className="text-sm">{label}</span>
+              <button
+                onClick={() => setRecording(recording === action ? null : action)}
+                className={`px-2.5 py-1 rounded text-xs font-mono min-w-[80px] text-center transition-colors ${
+                  recording === action
+                    ? "bg-foreground text-background animate-pulse"
+                    : "bg-accent text-accent-foreground hover:bg-accent/80"
+                }`}
+              >
+                {recording === action
+                  ? "Press keys..."
+                  : formatShortcut(keybindings[action])}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

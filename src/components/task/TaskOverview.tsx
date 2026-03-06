@@ -23,6 +23,8 @@ import {
   gitDiffStat,
   gitStash,
   gitStashPop,
+  gitFetch,
+  gitMerge,
   ejectTaskToMainRepo,
   injectTaskFromMainRepo,
   type GitCommit,
@@ -120,6 +122,12 @@ export function TaskOverview() {
   const [ejectCommitMessage, setEjectCommitMessage] = useState("");
   const [ejectDiffStat, setEjectDiffStat] = useState("");
   const [checkingChanges, setCheckingChanges] = useState(false);
+
+  // Merge state
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeSuccess, setMergeSuccess] = useState(false);
 
   const isAnyStageRunning = useProcessStore((s) => {
     if (!activeTask) return false;
@@ -374,6 +382,26 @@ export function TaskOverview() {
     }
   };
 
+  const handleMergeTargetBranch = async () => {
+    const workDir = activeTask && activeProject
+      ? getTaskWorkingDir(activeTask, activeProject.path)
+      : null;
+    const target = defaultBranch ?? "main";
+    if (!workDir) return;
+    setMerging(true);
+    setMergeError(null);
+    setMergeSuccess(false);
+    try {
+      await gitFetch(workDir, target);
+      await gitMerge(workDir, `origin/${target}`);
+      setMergeSuccess(true);
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMerging(false);
+    }
+  };
+
   if (!activeTask) return null;
 
   const status = statusConfig[activeTask.status] ?? statusConfig.pending;
@@ -533,6 +561,21 @@ export function TaskOverview() {
               }}
             />
           </div>
+          {activeTask.branch_name && activeTask.worktree_path && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 text-xs h-7"
+              onClick={() => {
+                setMergeError(null);
+                setMergeSuccess(false);
+                setMergeDialogOpen(true);
+              }}
+              disabled={isAnyStageRunning}
+            >
+              Merge {defaultBranch ?? "main"} into branch
+            </Button>
+          )}
         </div>
         {activeTask.ejected === 1 && (
           <InfoCard label="Status" value="Ejected to main repo" />
@@ -862,6 +905,46 @@ export function TaskOverview() {
             <AlertDialogAction variant="destructive" onClick={confirmArchive}>
               Archive
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Merge Target Branch Dialog */}
+      <AlertDialog open={mergeDialogOpen} onOpenChange={(open) => { if (!open) setMergeDialogOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge Target Branch</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will fetch and merge{" "}
+              <code className="px-1 py-0.5 rounded bg-muted text-xs">
+                origin/{defaultBranch ?? "main"}
+              </code>{" "}
+              into your current task branch. This is useful to pull in upstream changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {mergeError && (
+            <Alert variant="destructive">
+              <AlertDescription className="whitespace-pre-wrap text-xs">{mergeError}</AlertDescription>
+            </Alert>
+          )}
+
+          {mergeSuccess && (
+            <Alert>
+              <AlertDescription>Merge completed successfully.</AlertDescription>
+            </Alert>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {mergeSuccess ? "Done" : "Cancel"}
+            </AlertDialogCancel>
+            {!mergeSuccess && (
+              <Button onClick={handleMergeTargetBranch} disabled={merging}>
+                {merging && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+                {merging ? "Merging..." : "Merge"}
+              </Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import { useStageExecution } from "../../hooks/useStageExecution";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
@@ -8,6 +8,11 @@ import { LiveStreamBubble } from "./StageTimeline";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useEditorStore } from "../../stores/editorStore";
+import { useProjectStore } from "../../stores/projectStore";
+import { useNavigationStore } from "../../stores/navigationStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { openInExternalEditor } from "../../lib/editor";
 import type { TaskStageInstance, Task } from "../../lib/types";
 
 interface PrReviewViewProps {
@@ -29,6 +34,25 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
   const [commitError, setCommitError] = useState<string | null>(null);
 
   const prReviewCompleted = task.status === "completed";
+
+  const worktreeRoot = task.worktree_path ?? (task.ejected ? useProjectStore.getState().activeProject?.path : undefined);
+
+  const handleOpenFile = useCallback((relativePath: string) => {
+    if (!worktreeRoot) return;
+    const fullPath = `${worktreeRoot}/${relativePath}`;
+    const editorCommand = useSettingsStore.getState().getEditorCommand();
+    if (editorCommand) {
+      openInExternalEditor(editorCommand, fullPath).catch(() => {});
+    } else {
+      useEditorStore.getState().setWorktreeRoot(worktreeRoot);
+      useEditorStore.getState().openFile(fullPath);
+      useProcessStore.getState().setActiveView("editor");
+      const projectId = useProjectStore.getState().activeProject?.id;
+      if (projectId) {
+        useNavigationStore.getState().persistTaskViewState(projectId, task.id, { activeView: "editor" });
+      }
+    }
+  }, [task.id, worktreeRoot]);
 
   // Sync editable commit message when pending commit appears
   useEffect(() => {
@@ -90,11 +114,24 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
 
           <PrReviewOutput
             fixes={prReview.fixes}
+            replies={prReview.replies}
             fixingId={prReview.fixingId}
+            consideringId={prReview.consideringId}
+            considerations={prReview.considerations}
+            resolvingId={prReview.resolvingId}
+            resolvedIds={prReview.resolvedIds}
+            pushing={prReview.pushing}
+            pulling={prReview.pulling}
+            hasBranch={!!task.branch_name}
             onFix={prReview.fixComment}
-            onSkip={prReview.skipFix}
-            onMarkDone={prReview.markDone}
+            onConsider={prReview.considerComment}
+            onResolve={prReview.resolveComment}
+            onUnresolve={prReview.unresolveComment}
+            onReply={prReview.replyToComment}
+            onPush={prReview.pushBranch}
+            onPull={prReview.pullBranch}
             onRefresh={prReview.fetchReviews}
+            onOpenFile={handleOpenFile}
             loading={prReview.loading}
             isCompleted={false}
             error={prReview.error}

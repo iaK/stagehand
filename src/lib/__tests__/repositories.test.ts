@@ -463,6 +463,7 @@ describe("upsertPrReviewFix", () => {
       execution_id: "exec-1",
       comment_id: 42,
       comment_type: "inline",
+      review_id: 100,
       author: "alice",
       author_avatar_url: null,
       body: "Fix this",
@@ -472,6 +473,7 @@ describe("upsertPrReviewFix", () => {
       state: "COMMENTED",
       fix_status: "pending",
       fix_commit_hash: null,
+      submitted_at: "2026-01-01T00:00:00Z",
     });
     const call = getProjectMock("p1").execute.mock.calls.find(
       (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO pr_review_fixes"),

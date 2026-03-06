@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useProjectStore } from "../stores/projectStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useGitHubStore } from "../stores/githubStore";
@@ -11,8 +12,13 @@ import {
   ghFetchPrComments,
   ghFetchPrIssueComments,
   ghFetchPrState,
+  ghFetchReviewThreads,
+  ghResolveReviewThread,
+  ghUnresolveReviewThread,
   ghCommentOnPr,
+  ghReplyToReviewComment,
   gitPush,
+  gitPull,
   hasUncommittedChanges,
   gitDiffStat,
   getChangedFiles,
@@ -20,9 +26,11 @@ import {
   gitCommit,
   gitDiffShortStatBranch,
 } from "../lib/git";
+import type { GhReviewComment } from "../lib/git";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../lib/worktree";
 import * as repo from "../lib/repositories";
 import { sendNotification } from "../lib/notifications";
+import { loadConventions } from "../lib/conventions";
 import { PR_REVIEW_POLL_MS } from "../lib/constants";
 import type {
   Task,
@@ -43,6 +51,13 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
   const [fixes, setFixes] = useState<PrReviewFix[]>([]);
   const [loading, setLoading] = useState(false);
   const [fixingId, setFixingId] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  const [replies, setReplies] = useState<Map<number, GhReviewComment[]>>(new Map());
+  const [consideringId, setConsideringId] = useState<string | null>(null);
+  const [considerations, setConsiderations] = useState<Map<string, string>>(new Map());
+  const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [executionId, setExecutionId] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -50,6 +65,94 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
   const isFetchingRef = useRef(false);
   const fetchReviewsRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const preFixFilesRef = useRef<Set<string>>(new Set());
+  const hasCachedFixesRef = useRef(false);
+
+  /** Build MCP config + system prompt with pipeline context for agent calls. */
+  const buildAgentContext = useCallback(async (): Promise<{
+    mcpConfig?: string;
+    systemPrompt: string;
+  }> => {
+    if (!activeProject || !task) return { systemPrompt: "" };
+
+    const parts: string[] = [];
+
+    // 1. Completed stage summaries
+    try {
+      const summaries = await repo.getApprovedStageSummaries(activeProject.id, task.id);
+      if (summaries.length > 0) {
+        const lines = summaries.map((s) => `### ${s.stage_name}\n${s.stage_summary}`).join("\n\n");
+        parts.push(
+          `## Completed Pipeline Stages\nThe following stages have been completed for this task. Use the \`get_stage_output\` MCP tool to retrieve the full output of any stage if you need more detail.\n\n${lines}`,
+        );
+      }
+    } catch {
+      // Non-critical
+    }
+
+    // 2. Project conventions
+    try {
+      const conventions = await loadConventions(activeProject.id);
+      if (conventions.fullRules) {
+        parts.push(`## Project Conventions\n${conventions.fullRules}`);
+      }
+    } catch {
+      // Non-critical
+    }
+
+    // 3. MCP config
+    let mcpConfig: string | undefined;
+    try {
+      const mcpServerPath = await invoke<string>("get_mcp_server_path");
+      const stagehandDir = await invoke<string>("get_stagehand_dir");
+      const dbPath = `${stagehandDir}/data/${activeProject.id}.db`;
+      mcpConfig = JSON.stringify({
+        mcpServers: {
+          "stagehand-context": {
+            command: "node",
+            args: [mcpServerPath],
+            env: {
+              STAGEHAND_DB_PATH: dbPath,
+              STAGEHAND_TASK_ID: task.id,
+            },
+          },
+        },
+      });
+      parts.push(
+        "You have access to `list_completed_stages`, `get_stage_output`, and `get_task_title` tools to retrieve data from prior pipeline stages on demand.",
+      );
+    } catch {
+      // Graceful degradation
+    }
+
+    return { mcpConfig, systemPrompt: parts.join("\n\n") };
+  }, [activeProject, task]);
+
+  /** Build prompt context shared between fix/consider: task description, thread replies, sibling comments. */
+  const buildCommentContext = (fix: PrReviewFix): string => {
+    const sections: string[] = [];
+
+    // Thread replies
+    const commentReplies = replies.get(fix.comment_id);
+    if (commentReplies && commentReplies.length > 0) {
+      const replyLines = commentReplies.map((r) => `- **${r.user.login}**: ${r.body}`).join("\n");
+      sections.push(`Thread replies:\n${replyLines}`);
+    }
+
+    // Other comments in the same review
+    if (fix.review_id != null) {
+      const siblings = fixes.filter(
+        (f) => f.review_id === fix.review_id && f.id !== fix.id && f.comment_type === "inline",
+      );
+      if (siblings.length > 0) {
+        const siblingLines = siblings
+          .map((s) => `- ${s.file_path ?? ""}${s.line ? `:${s.line}` : ""}: ${s.body.slice(0, 120)}`)
+          .join("\n");
+        sections.push(`Other comments in this review:\n${siblingLines}`);
+      }
+    }
+
+    return sections.join("\n\n");
+  };
 
   // Create or find execution record
   const ensureExecution = useCallback(async (): Promise<string | null> => {
@@ -111,7 +214,8 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
     }
 
     isFetchingRef.current = true;
-    setLoading(true);
+    // Only show full loading spinner if we have no cached fixes to display
+    if (!hasCachedFixesRef.current) setLoading(true);
     setError(null);
 
     try {
@@ -181,6 +285,7 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
           execution_id: execId,
           comment_id: review.id,
           comment_type: "review",
+          review_id: review.id,
           author: review.user.login,
           author_avatar_url: review.user.avatar_url,
           body: review.body,
@@ -190,16 +295,58 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
           state: review.state,
           fix_status: "pending",
           fix_commit_hash: null,
+          submitted_at: review.submitted_at,
         });
       }
 
-      // Normalize inline review comments
+      // Separate root inline comments from replies
+      const rootComments: GhReviewComment[] = [];
+      const replyMap = new Map<number, GhReviewComment[]>();
       for (const comment of comments) {
+        if (comment.in_reply_to_id) {
+          const list = replyMap.get(comment.in_reply_to_id) ?? [];
+          list.push(comment);
+          replyMap.set(comment.in_reply_to_id, list);
+        } else {
+          rootComments.push(comment);
+        }
+      }
+
+      // Also create placeholder review records for reviews without body
+      // so inline comments can group under them
+      for (const review of reviews) {
+        if (review.body?.trim()) continue; // Already created above
+        const hasInlineComments = rootComments.some(
+          (c) => c.pull_request_review_id === review.id,
+        );
+        if (!hasInlineComments) continue;
+        await repo.upsertPrReviewFix(activeProject.id, {
+          id: crypto.randomUUID(),
+          execution_id: execId,
+          comment_id: review.id,
+          comment_type: "review",
+          review_id: review.id,
+          author: review.user.login,
+          author_avatar_url: review.user.avatar_url,
+          body: "",
+          file_path: null,
+          line: null,
+          diff_hunk: null,
+          state: review.state,
+          fix_status: "skipped",
+          fix_commit_hash: null,
+          submitted_at: review.submitted_at,
+        });
+      }
+
+      // Normalize root inline review comments (replies are shown from GitHub directly)
+      for (const comment of rootComments) {
         await repo.upsertPrReviewFix(activeProject.id, {
           id: crypto.randomUUID(),
           execution_id: execId,
           comment_id: comment.id,
           comment_type: "inline",
+          review_id: comment.pull_request_review_id,
           author: comment.user.login,
           author_avatar_url: comment.user.avatar_url,
           body: comment.body,
@@ -209,6 +356,7 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
           state: "COMMENTED",
           fix_status: "pending",
           fix_commit_hash: null,
+          submitted_at: comment.created_at,
         });
       }
 
@@ -221,6 +369,7 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
           execution_id: execId,
           comment_id: comment.id,
           comment_type: "conversation",
+          review_id: null,
           author: comment.user.login,
           author_avatar_url: comment.user.avatar_url,
           body: comment.body,
@@ -230,7 +379,41 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
           state: "COMMENTED",
           fix_status: "pending",
           fix_commit_hash: null,
+          submitted_at: comment.created_at,
         });
+      }
+
+      // Fetch resolved thread status from GitHub and sync to local fixes
+      try {
+        const threads = await ghFetchReviewThreads(
+          activeProject.path, parsed.owner, parsed.repo, parsed.number,
+        );
+        const resolvedCommentIds = new Set<number>();
+        for (const thread of threads) {
+          if (thread.isResolved) {
+            for (const cid of thread.commentDatabaseIds) {
+              resolvedCommentIds.add(cid);
+            }
+          }
+        }
+
+        // Reload fixes before checking resolved status
+        const currentFixes = await repo.listPrReviewFixes(activeProject.id, execId);
+        const newResolvedFixIds = new Set<string>();
+        for (const fix of currentFixes) {
+          if (fix.comment_type === "inline" && resolvedCommentIds.has(fix.comment_id)) {
+            newResolvedFixIds.add(fix.id);
+          }
+        }
+        if (mountedRef.current) {
+          setResolvedIds((prev) => {
+            const next = new Set(prev);
+            for (const id of newResolvedFixIds) next.add(id);
+            return next;
+          });
+        }
+      } catch {
+        // Non-critical — resolved status is cosmetic
       }
 
       // Reload fixes from DB
@@ -240,7 +423,9 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
         sendNotification("PR Review", `${newCount} new review comment${newCount === 1 ? "" : "s"}`, "info", { projectId: activeProject.id, taskId: task.id });
       }
       if (mountedRef.current) {
+        hasCachedFixesRef.current = updatedFixes.length > 0;
         setFixes(updatedFixes);
+        setReplies(replyMap);
       }
     } catch (err) {
       if (mountedRef.current) {
@@ -286,6 +471,8 @@ export function usePrReview(stage: TaskStageInstance, task: Task | null) {
       preFixFilesRef.current = new Set(preFixFiles);
 
       try {
+        const { mcpConfig, systemPrompt } = await buildAgentContext();
+
         let prompt = `Fix the following PR review comment.
 
 Task: ${task.title}
@@ -302,6 +489,18 @@ ${fix.body}`;
         if (fix.diff_hunk) {
           prompt += `\n\nRelevant diff:\n\`\`\`\n${fix.diff_hunk}\n\`\`\``;
         }
+
+        const extraContext = buildCommentContext(fix);
+        if (extraContext) {
+          prompt += `\n\n${extraContext}`;
+        }
+
+        // Include AI consideration if available
+        const considerationText = considerations.get(fixId);
+        if (considerationText) {
+          prompt += `\n\nAI evaluation of this comment:\n${considerationText}`;
+        }
+
         if (userContext) {
           prompt += `\n\nAdditional context from developer:\n${userContext}`;
         }
@@ -317,6 +516,8 @@ ${fix.body}`;
               workingDirectory: workDir,
               noSessionPersistence: true,
               outputFormat: "stream-json",
+              appendSystemPrompt: systemPrompt || undefined,
+              mcpConfig,
             },
             (event: AgentStreamEvent) => {
               switch (event.type) {
@@ -325,14 +526,11 @@ ${fix.body}`;
                   break;
                 case "stdout_line": {
                   const parsed = parseAgentStreamLine(event.line);
-                  if (parsed) {
-                    if (parsed.text) {
-                      appendOutput(sk, parsed.text);
-                      resultText += parsed.text;
-                    }
-                  } else {
-                    appendOutput(sk, event.line);
+                  if (parsed?.text) {
+                    appendOutput(sk, parsed.text);
+                    resultText += parsed.text;
                   }
+                  // Non-JSON lines are CLI UI noise — skip
                   break;
                 }
                 case "stderr_line":
@@ -432,7 +630,7 @@ Keep it under 72 characters for the first line.`,
         );
       }
     },
-    [activeProject, task, fixes, stage.task_stage_id, stage.name, clearOutput, setRunning, setStopped, appendOutput],
+    [activeProject, task, fixes, replies, considerations, stage.task_stage_id, stage.name, stage.agent_override, stage.agent, buildAgentContext, clearOutput, setRunning, setStopped, appendOutput],
   );
 
   const commitFix = useCallback(
@@ -474,18 +672,6 @@ Keep it under 72 characters for the first line.`,
     [activeProject, task],
   );
 
-  const skipFix = useCallback(
-    async (fixId: string) => {
-      if (!activeProject) return;
-      await repo.updatePrReviewFix(activeProject.id, fixId, { fix_status: "skipped" });
-      setFixes((prev) =>
-        prev.map((f) => (f.id === fixId ? { ...f, fix_status: "skipped" } : f)),
-      );
-      sendNotification("Fix skipped", undefined, "info", { projectId: activeProject.id, taskId: task?.id });
-    },
-    [activeProject, task],
-  );
-
   const skipFixCommit = useCallback(
     async (fixId: string) => {
       if (!activeProject) return;
@@ -499,90 +685,321 @@ Keep it under 72 characters for the first line.`,
     [activeProject, task],
   );
 
-  const markDone = useCallback(async () => {
-    if (!activeProject || !task) return;
+  const considerComment = useCallback(
+    async (fixId: string) => {
+      if (!activeProject || !task) return;
+
+      const fix = fixes.find((f) => f.id === fixId);
+      if (!fix) return;
+
+      setConsideringId(fixId);
+      setError(null);
+
+      const sk = stageKey(task.id, stage.task_stage_id);
+      clearOutput(sk);
+      setRunning(sk, "considering");
+
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
+      const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
+
+      try {
+        const { mcpConfig, systemPrompt } = await buildAgentContext();
+
+        let prompt = `Evaluate the following PR review comment and recommend whether it should be fixed or can be safely dismissed.
+
+Task: ${task.title}
+
+Review comment by ${fix.author}:
+${fix.body}`;
+
+        if (fix.file_path) {
+          prompt += `\n\nFile: ${fix.file_path}`;
+        }
+        if (fix.line) {
+          prompt += `:${fix.line}`;
+        }
+        if (fix.diff_hunk) {
+          prompt += `\n\nRelevant diff:\n\`\`\`\n${fix.diff_hunk}\n\`\`\``;
+        }
+
+        const extraContext = buildCommentContext(fix);
+        if (extraContext) {
+          prompt += `\n\n${extraContext}`;
+        }
+
+        prompt += `
+
+Read the relevant file(s) and understand the context. Then give your recommendation:
+
+1. **Verdict**: Should this be fixed? (YES / NO / PARTIAL)
+2. **Reasoning**: Why or why not? Is the reviewer's point valid?
+3. **Effort**: How complex would the fix be? (trivial / moderate / significant)
+4. **Suggestion**: If yes, briefly describe what change to make. If no, suggest a reply to the reviewer explaining why.
+
+Be concise and direct. Do NOT make any code changes.`;
+
+        let resultText = "";
+        await new Promise<void>((resolve) => {
+          spawnAgent(
+            {
+              prompt,
+              agent: effectiveAgent,
+              workingDirectory: workDir,
+              maxTurns: 1,
+              noSessionPersistence: true,
+              outputFormat: "stream-json",
+              appendSystemPrompt: systemPrompt || undefined,
+              mcpConfig,
+            },
+            (event: AgentStreamEvent) => {
+              switch (event.type) {
+                case "started":
+                  setRunning(sk, event.process_id);
+                  break;
+                case "stdout_line": {
+                  const parsed = parseAgentStreamLine(event.line);
+                  if (parsed?.text) {
+                    appendOutput(sk, parsed.text);
+                    resultText += parsed.text;
+                  }
+                  // Non-JSON lines are CLI UI noise — skip
+                  break;
+                }
+                case "stderr_line":
+                  appendOutput(sk, `[stderr] ${event.line}`);
+                  break;
+                case "completed":
+                case "error":
+                  setStopped(sk);
+                  resolve();
+                  break;
+              }
+            },
+          ).catch(() => resolve());
+        });
+
+        if (mountedRef.current) {
+          setConsiderations((prev) => {
+            const next = new Map(prev);
+            next.set(fixId, resultText.trim());
+            return next;
+          });
+        }
+      } catch (err) {
+        setStopped(sk);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (mountedRef.current) {
+          setConsideringId(null);
+        }
+      }
+    },
+    [activeProject, task, fixes, replies, stage.task_stage_id, stage.agent_override, stage.agent, buildAgentContext, clearOutput, setRunning, setStopped, appendOutput],
+  );
+
+  const resolveComment = useCallback(
+    async (fixId: string) => {
+      if (!activeProject || !task?.pr_url) return;
+
+      const fix = fixes.find((f) => f.id === fixId);
+      if (!fix || fix.comment_type !== "inline") return;
+
+      const parsed = parsePrUrl(task.pr_url);
+      if (!parsed) return;
+
+      setResolvingId(fixId);
+      setError(null);
+
+      try {
+        const workDir = getTaskWorkingDir(task, activeProject.path);
+        const threads = await ghFetchReviewThreads(
+          workDir, parsed.owner, parsed.repo, parsed.number,
+        );
+        const thread = threads.find((t) =>
+          t.commentDatabaseIds.includes(fix.comment_id),
+        );
+
+        if (!thread) {
+          setError("Could not find review thread for this comment.");
+          return;
+        }
+
+        if (!thread.isResolved) {
+          await ghResolveReviewThread(workDir, thread.id);
+        }
+
+        setResolvedIds((prev) => new Set(prev).add(fixId));
+        sendNotification("Thread resolved", fix.body.slice(0, 60), "success", {
+          projectId: activeProject.id,
+          taskId: task.id,
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setResolvingId(null);
+      }
+    },
+    [activeProject, task, fixes],
+  );
+
+  const unresolveComment = useCallback(
+    async (fixId: string) => {
+      if (!activeProject || !task?.pr_url) return;
+
+      const fix = fixes.find((f) => f.id === fixId);
+      if (!fix || fix.comment_type !== "inline") return;
+
+      const parsed = parsePrUrl(task.pr_url);
+      if (!parsed) return;
+
+      setResolvingId(fixId);
+      setError(null);
+
+      try {
+        const workDir = getTaskWorkingDir(task, activeProject.path);
+        const threads = await ghFetchReviewThreads(
+          workDir, parsed.owner, parsed.repo, parsed.number,
+        );
+        const thread = threads.find((t) =>
+          t.commentDatabaseIds.includes(fix.comment_id),
+        );
+
+        if (!thread) {
+          setError("Could not find review thread for this comment.");
+          return;
+        }
+
+        if (thread.isResolved) {
+          await ghUnresolveReviewThread(workDir, thread.id);
+        }
+
+        setResolvedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(fixId);
+          return next;
+        });
+
+        sendNotification("Thread unresolved", fix.body.slice(0, 60), "info", {
+          projectId: activeProject.id,
+          taskId: task.id,
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setResolvingId(null);
+      }
+    },
+    [activeProject, task, fixes],
+  );
+
+  const replyToComment = useCallback(
+    async (commentId: number, body: string) => {
+      if (!activeProject || !task?.pr_url) return;
+
+      const parsed = parsePrUrl(task.pr_url);
+      if (!parsed) return;
+
+      setError(null);
+
+      try {
+        const reply = await ghReplyToReviewComment(
+          activeProject.path,
+          parsed.owner,
+          parsed.repo,
+          parsed.number,
+          commentId,
+          body,
+        );
+
+        // Optimistically add the reply to local state
+        setReplies((prev) => {
+          const next = new Map(prev);
+          const list = [...(next.get(commentId) ?? []), reply];
+          next.set(commentId, list);
+          return next;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [activeProject, task],
+  );
+
+  const pushBranch = useCallback(async () => {
+    if (!activeProject || !task?.branch_name) return;
     setError(null);
+    setPushing(true);
 
     try {
-      // Push branch
-      if (task.branch_name) {
-        const workDir = getTaskWorkingDir(task, activeProject.path);
-        await gitPush(workDir, task.branch_name);
-      }
-
-      // Build summary
-      const fixed = fixes.filter((f) => f.fix_status === "fixed");
-      const skipped = fixes.filter((f) => f.fix_status === "skipped");
-      const pending = fixes.filter((f) => f.fix_status === "pending");
-
-      const summaryLines: string[] = [
-        `## PR Review Summary`,
-        ``,
-        `- **${fixed.length}** comment(s) fixed`,
-        `- **${skipped.length}** comment(s) skipped`,
-        `- **${pending.length}** comment(s) pending`,
-      ];
-
-      if (fixed.length > 0) {
-        summaryLines.push("", "### Fixed");
-        for (const f of fixed) {
-          const hash = f.fix_commit_hash ? ` (${f.fix_commit_hash})` : "";
-          summaryLines.push(`- ${f.author}: ${f.body.slice(0, 80)}${f.body.length > 80 ? "..." : ""}${hash}`);
-        }
-      }
-
-      const summaryText = summaryLines.join("\n");
-
-      // Post summary comment on PR
-      const parsed = parsePrUrl(task.pr_url!);
-      if (parsed) {
-        try {
-          await ghCommentOnPr(activeProject.path, parsed.owner, parsed.repo, parsed.number, summaryText);
-        } catch {
-          // Non-critical — continue
-        }
-      }
-
-      // Update execution with summary
-      if (executionId) {
-        await repo.updateStageExecution(activeProject.id, executionId, {
-          status: "approved",
-          raw_output: summaryText,
-          parsed_output: summaryText,
-          stage_result: summaryText,
-          stage_summary: `${fixed.length} fixed, ${skipped.length} skipped, ${pending.length} pending`,
-          completed_at: new Date().toISOString(),
-        });
-      }
-
-      // Clean up worktree before marking completed. Don't delete the branch
-      // here — the PR is still open and may receive more review comments.
-      // Branch deletion happens in fetchReviews when the PR is detected as merged.
-      await cleanupTaskWorktree(activeProject.path, task, {
-        defaultBranch: useGitHubStore.getState().defaultBranch ?? undefined,
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+      await gitPush(workDir, task.branch_name);
+      sendNotification("Pushed", `Pushed to ${task.branch_name}`, "success", {
+        projectId: activeProject.id,
+        taskId: task.id,
       });
-
-      // Mark task as completed
-      await updateTask(activeProject.id, task.id, { status: "completed" });
-      sendNotification("PR review done", `${fixed.length} fixed, ${skipped.length} skipped`, "success", { projectId: activeProject.id, taskId: task.id });
-      if (task.id) {
-        await loadExecutions(activeProject.id, task.id);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPushing(false);
     }
-  }, [activeProject, task, fixes, executionId, updateTask, loadExecutions]);
+  }, [activeProject, task]);
 
-  // Auto-fetch on mount (only for pr_review stages)
+  const pullBranch = useCallback(async () => {
+    if (!activeProject || !task) return;
+    setError(null);
+    setPulling(true);
+
+    try {
+      const workDir = getTaskWorkingDir(task, activeProject.path);
+      await gitPull(workDir);
+      sendNotification("Pulled", "Pulled latest changes", "success", {
+        projectId: activeProject.id,
+        taskId: task.id,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPulling(false);
+    }
+  }, [activeProject, task]);
+
+  // Load cached fixes from DB first, then auto-fetch from network
   useEffect(() => {
     mountedRef.current = true;
-    if (stage.output_format === "pr_review" && task?.pr_url && activeProject && task.status !== "completed") {
-      fetchReviewsRef.current();
-    }
+    if (stage.output_format !== "pr_review" || !activeProject || !task) return;
+
+    hasCachedFixesRef.current = false;
+    let cancelled = false;
+    (async () => {
+      // Eagerly load cached fixes from DB (no network, fast)
+      try {
+        const existing = await repo.getLatestExecution(
+          activeProject.id, task.id, stage.task_stage_id,
+        );
+        if (!cancelled && existing) {
+          const cached = await repo.listPrReviewFixes(activeProject.id, existing.id);
+          if (!cancelled && cached.length > 0) {
+            hasCachedFixesRef.current = true;
+            setFixes(cached);
+            setExecutionId(existing.id);
+          }
+        }
+      } catch {
+        // Non-critical — network fetch will follow
+      }
+
+      // Then refresh from network
+      if (!cancelled && task.pr_url && task.status !== "completed") {
+        fetchReviewsRef.current();
+      }
+    })();
+
     return () => {
+      cancelled = true;
       mountedRef.current = false;
     };
-  }, [task?.id, task?.pr_url, activeProject?.id, stage.output_format]);
+  }, [task?.id, task?.pr_url, activeProject?.id, stage.task_stage_id, stage.output_format]);
 
   // Polling (only for pr_review stages)
   useEffect(() => {
@@ -604,14 +1021,25 @@ Keep it under 72 characters for the first line.`,
 
   return {
     fixes,
+    replies,
     loading,
     fixingId,
+    consideringId,
+    considerations,
+    resolvingId,
+    resolvedIds,
+    pushing,
+    pulling,
     error,
     fetchReviews,
     fixComment,
+    considerComment,
     commitFix,
-    skipFix,
     skipFixCommit,
-    markDone,
+    resolveComment,
+    unresolveComment,
+    replyToComment,
+    pushBranch,
+    pullBranch,
   };
 }
