@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react";
+import { useMemo, memo, useRef, useState, useEffect, useCallback } from "react";
 import type { TaskStageInstance, StageExecution } from "../../lib/types";
 
 interface PipelineStepperProps {
@@ -76,18 +76,47 @@ export function PipelineStepper({
     return map;
   }, [stages, executions, currentStageId, isTaskCompleted]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    const ro = new ResizeObserver(checkScroll);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", checkScroll); ro.disconnect(); };
+  }, [checkScroll, stages.length]);
+
   return (
-    <div className="flex items-center gap-1 px-6 py-4 overflow-x-auto min-w-0">
-      {stages.map((stage, i) => (
-        <PipelineStep
-          key={stage.task_stage_id}
-          stage={stage}
-          status={stageStatusMap.get(stage.task_stage_id) ?? "future"}
-          index={i}
-          isLast={i === stages.length - 1}
-          onStageClick={onStageClick}
-        />
-      ))}
+    <div className="relative min-w-0">
+      {canScrollLeft && (
+        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+      )}
+      {canScrollRight && (
+        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+      )}
+      <div ref={scrollRef} className="flex items-center gap-1 px-6 py-4 overflow-x-auto min-w-0">
+        {stages.map((stage, i) => (
+          <PipelineStep
+            key={stage.task_stage_id}
+            stage={stage}
+            status={stageStatusMap.get(stage.task_stage_id) ?? "future"}
+            index={i}
+            isLast={i === stages.length - 1}
+            onStageClick={onStageClick}
+          />
+        ))}
+      </div>
     </div>
   );
 }
