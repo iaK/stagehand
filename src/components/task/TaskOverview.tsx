@@ -1112,29 +1112,3 @@ function BranchPicker({
   );
 }
 
-function InfoCard({
-  label,
-  value,
-  mono,
-  muted,
-  children,
-}: {
-  label: string;
-  value?: string;
-  mono?: boolean;
-  muted?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children ?? (
-        <p
-          className={`text-sm font-medium truncate ${mono ? "font-mono" : ""} ${muted ? "text-muted-foreground" : ""}`}
-        >
-          {value}
-        </p>
-      )}
-    </div>
-  );
-}
