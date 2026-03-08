@@ -52,8 +52,32 @@ fn get_mcp_server_path(app_handle: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+/// On macOS/Linux, GUI apps don't inherit the user's shell PATH.
+/// This resolves the full PATH from the user's default shell so that
+/// CLI tools like `claude`, `node`, `git`, etc. can be found.
+fn fix_path_env() {
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::process::Command;
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = Command::new(&shell)
+            .args(["-ilc", "echo $PATH"])
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    std::env::set_var("PATH", &path);
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    fix_path_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())

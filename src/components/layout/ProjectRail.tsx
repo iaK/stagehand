@@ -149,7 +149,7 @@ export function ProjectRail() {
             >
               <Inbox className="w-4 h-4" />
               {prCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold bg-primary text-primary-foreground flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full text-[0.6925rem] font-bold bg-primary text-primary-foreground flex items-center justify-center">
                   {prCount > 99 ? "99+" : prCount}
                 </span>
               )}

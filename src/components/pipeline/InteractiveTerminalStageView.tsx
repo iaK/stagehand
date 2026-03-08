@@ -168,6 +168,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
   const outputBufferRef = useRef("");
   const executionIdRef = useRef<string | null>(null);
   const effectiveAgentRef = useRef<string>("claude");
+  const effectiveModelRef = useRef<string | undefined>(undefined);
 
   // Check if already approved
   const latestExecution = executions
@@ -339,16 +340,18 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         }
       }
 
-      // Resolve effective agent for the PTY session
-      const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-      const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
+      // Resolve effective agent + model for the PTY session
+      const effectiveAgent = await repo.getEffectiveAgent(activeProject.id, stage.agent_override, stage.agent);
+      const effectiveModel = await repo.getEffectiveModel(activeProject.id, stage.model_override, stage.persona_model);
       effectiveAgentRef.current = effectiveAgent;
+      effectiveModelRef.current = effectiveModel;
 
       // Spawn PTY
       outputBufferRef.current = "";
       const ptyId = await spawnPty(
         {
           agent: effectiveAgent,
+          personaModel: effectiveModel,
           workingDirectory: workDir,
           appendSystemPrompt: systemPrompt,
         },
@@ -423,6 +426,7 @@ export function InteractiveTerminalStageView({ stage, taskId, isVisible }: Props
         {
           prompt: summaryPrompt,
           agent: effectiveAgentRef.current,
+          personaModel: effectiveModelRef.current,
           workingDirectory: getTaskWorkingDir(task, activeProject.path),
           noSessionPersistence: true,
           allowedTools: [],

@@ -4,8 +4,8 @@ import { Sidebar } from "./Sidebar";
 import { PipelineView } from "../pipeline/PipelineView";
 import { PrReviewsPanel } from "../pr-reviews/PrReviewsPanel";
 import { CommandPanel, addRecentTask } from "../CommandPanel";
-import { SettingsModal } from "../settings/SettingsModal";
-import { AppSettingsModal } from "../settings/AppSettingsModal";
+import { SettingsModal, type ProjectSettingsSection } from "../settings/SettingsModal";
+import { AppSettingsModal, type AppSettingsSection } from "../settings/AppSettingsModal";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { usePrReviewsStore } from "@/stores/prReviewsStore";
 import { useProjectStore } from "@/stores/projectStore";
@@ -16,8 +16,8 @@ export function Layout() {
   const appSidebarPosition = useSettingsStore((s) => s.appSidebarPosition);
   const prReviewsOpen = usePrReviewsStore((s) => s.open);
   const [commandPanelOpen, setCommandPanelOpen] = useState(false);
-  const [showProjectSettings, setShowProjectSettings] = useState(false);
-  const [showAppSettings, setShowAppSettings] = useState(false);
+  const [projectSettingsSection, setProjectSettingsSection] = useState<ProjectSettingsSection | null>(null);
+  const [appSettingsSection, setAppSettingsSection] = useState<AppSettingsSection | null>(null);
 
   // Track recent tasks when activeTask changes
   const activeProject = useProjectStore((s) => s.activeProject);
@@ -62,16 +62,16 @@ export function Layout() {
       {commandPanelOpen && (
         <CommandPanel
           onClose={() => setCommandPanelOpen(false)}
-          onOpenProjectSettings={() => setShowProjectSettings(true)}
-          onOpenAppSettings={() => setShowAppSettings(true)}
+          onOpenProjectSettings={(section) => setProjectSettingsSection(section ?? "project")}
+          onOpenAppSettings={(section) => setAppSettingsSection(section ?? "appearance")}
           onOpenPrReviews={() => usePrReviewsStore.getState().setOpen(true)}
         />
       )}
-      {showProjectSettings && (
-        <SettingsModal onClose={() => setShowProjectSettings(false)} />
+      {projectSettingsSection !== null && (
+        <SettingsModal onClose={() => setProjectSettingsSection(null)} initialSection={projectSettingsSection} />
       )}
-      {showAppSettings && (
-        <AppSettingsModal onClose={() => setShowAppSettings(false)} />
+      {appSettingsSection !== null && (
+        <AppSettingsModal onClose={() => setAppSettingsSection(null)} initialSection={appSettingsSection} />
       )}
     </div>
   );

@@ -559,22 +559,27 @@ export function TaskOverview() {
                 setBranchPickerOpen(false);
               }}
             />
+            {activeTask.branch_name && activeTask.worktree_path && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-auto disabled:opacity-40 disabled:pointer-events-none"
+                    onClick={() => {
+                      setMergeError(null);
+                      setMergeSuccess(false);
+                      setMergeDialogOpen(true);
+                    }}
+                    disabled={isAnyStageRunning}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    </svg>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Merge {defaultBranch ?? "main"} into branch</TooltipContent>
+              </Tooltip>
+            )}
           </div>
-          {activeTask.branch_name && activeTask.worktree_path && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 text-xs h-7"
-              onClick={() => {
-                setMergeError(null);
-                setMergeSuccess(false);
-                setMergeDialogOpen(true);
-              }}
-              disabled={isAnyStageRunning}
-            >
-              Merge {defaultBranch ?? "main"} into branch
-            </Button>
-          )}
         </div>
         {activeTask.ejected === 1 && (
           <InfoCard label="Status" value="Ejected to main repo" />
@@ -628,7 +633,7 @@ export function TaskOverview() {
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${statusColors[child.status] ?? "bg-zinc-400"}`} />
                   <span className="text-sm truncate">{child.title}</span>
-                  <Badge variant="secondary" className="ml-auto text-[10px]">
+                  <Badge variant="secondary" className="ml-auto text-[0.77rem]">
                     {child.status}
                   </Badge>
                 </button>

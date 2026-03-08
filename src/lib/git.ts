@@ -587,6 +587,27 @@ export async function ghUnresolveReviewThread(
   );
 }
 
+/** Look up an open PR whose head branch matches the given name. */
+export async function ghFindPrForBranch(
+  workingDir: string,
+  branchName: string,
+): Promise<{ url: string; title: string; number: number } | null> {
+  try {
+    const raw = await runGh(
+      workingDir,
+      "pr", "list",
+      "--head", branchName,
+      "--state", "open",
+      "--json", "url,title,number",
+      "--limit", "1",
+    );
+    const prs = JSON.parse(raw) as { url: string; title: string; number: number }[];
+    return prs[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function gitDiffNameOnly(workingDir: string, base: string, head?: string): Promise<string[]> {
   const ref = head ? `${base}...${head}` : `${base}...HEAD`;
   const result = await runGit(workingDir, "diff", "--name-only", ref);

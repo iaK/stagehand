@@ -3,7 +3,7 @@ import { RefreshCw, Undo2, GitCommitHorizontal, Loader2 } from "lucide-react";
 import { useEditorStore, type ChangedFile, DIFF_BASE_LABELS, type DiffBase } from "../../stores/editorStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { gitAdd, gitCommit, gitDiff, gitDiffFileStatsUnstaged, type DiffFileStat } from "../../lib/git";
-import { getCommitPrefix, getProjectSetting } from "../../lib/repositories";
+import { getCommitPrefix } from "../../lib/repositories";
 import { spawnAgent } from "../../lib/agent";
 import { DiffFileList } from "../pipeline/DiffFileList";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,7 +79,9 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       const diff = await gitDiff(workingDir);
       if (!diff.trim()) { setGeneratingMsg(false); return; }
       const prefix = await getCommitPrefix(projectId).catch(() => "feat");
-      const agent = (await getProjectSetting(projectId, "default_agent")) ?? "claude";
+      const { getEffectiveAgent, getEffectiveModel } = await import("../../lib/repositories");
+      const agent = await getEffectiveAgent(projectId);
+      const model = await getEffectiveModel(projectId);
       const truncatedDiff = diff.length > 8000 ? diff.slice(0, 8000) + "\n... (truncated)" : diff;
       const prompt = `Generate a short, one-line git commit message for this diff. Use the prefix "${prefix}:". Output ONLY the commit message, nothing else.\n\n${truncatedDiff}`;
       let resultText = "";
@@ -87,6 +89,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
         {
           prompt,
           agent,
+          personaModel: model,
           workingDirectory: workingDir,
           noSessionPersistence: true,
           maxTurns: 1,
@@ -192,7 +195,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
     <div className="flex flex-col h-full select-none text-xs">
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1.5 shrink-0 border-b border-border">
-        <span className="text-[11px] font-medium text-foreground/70">
+        <span className="text-[0.846rem] font-medium text-foreground/70">
           Changes
           {changedFiles.length > 0 && (
             <span className="ml-1.5 text-muted-foreground font-normal">
@@ -222,7 +225,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       {/* Diff base selector */}
       <div className="px-2 py-1 shrink-0 border-b border-border">
         <select
-          className="w-full text-[11px] bg-transparent text-muted-foreground hover:text-foreground cursor-pointer outline-none"
+          className="w-full text-[0.846rem] bg-transparent text-muted-foreground hover:text-foreground cursor-pointer outline-none"
           value={diffBase}
           onChange={(e) => setDiffBase(e.target.value as DiffBase)}
         >
@@ -233,7 +236,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       </div>
 
       {changedFiles.length === 0 ? (
-        <div className="p-3 text-muted-foreground text-center text-[11px]">
+        <div className="p-3 text-muted-foreground text-center text-[0.846rem]">
           No changes vs {targetBranch ?? "main"}
         </div>
       ) : (
@@ -261,13 +264,13 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
                   className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
                   onClick={() => openDiffFile(fullPath)}
                 >
-                  <span className={`shrink-0 w-4 text-center text-[10px] font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
+                  <span className={`shrink-0 w-4 text-center text-[0.77rem] font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
                     {status}
                   </span>
-                  <span className="truncate flex-1 text-[12px]">
+                  <span className="truncate flex-1 text-[0.923rem]">
                     {fileName}
                     {dirPath && (
-                      <span className="text-muted-foreground ml-1.5 text-[11px]">{dirPath}</span>
+                      <span className="text-muted-foreground ml-1.5 text-[0.846rem]">{dirPath}</span>
                     )}
                   </span>
                 </button>

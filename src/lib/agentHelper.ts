@@ -10,8 +10,10 @@ export async function quickAgentCall(params: {
   prompt: string;
   workingDirectory: string;
   timeoutMs?: number;
+  agent?: string;
+  personaModel?: string;
 }): Promise<string | null> {
-  const { prompt, workingDirectory, timeoutMs = 15_000 } = params;
+  const { prompt, workingDirectory, timeoutMs = 15_000, agent, personaModel } = params;
 
   return new Promise<string | null>((resolve) => {
     let text = "";
@@ -36,6 +38,8 @@ export async function quickAgentCall(params: {
       {
         prompt,
         workingDirectory,
+        agent,
+        personaModel,
         noSessionPersistence: true,
         maxTurns: 1,
         allowedTools: [],

@@ -25,9 +25,6 @@ import {
   getPreviousStageExecution,
   getTaskStageInstances,
   setTaskStages,
-  listPrReviewFixes,
-  upsertPrReviewFix,
-  updatePrReviewFix,
   getApprovedStageSummaries,
   getProjectTaskSummary,
 } from "../repositories";
@@ -439,57 +436,6 @@ describe("setTaskStages", () => {
       "UPDATE tasks SET current_stage_id = $1, updated_at = $2 WHERE id = $3",
       ["ts-research", expect.any(String), "t1"],
     );
-  });
-});
-
-// ─── PR Review Fixes ─────────────────────────────────────────────────────────
-
-describe("listPrReviewFixes", () => {
-  it("queries fixes for execution", async () => {
-    getProjectMock("p1").select.mockResolvedValueOnce([]);
-    const result = await listPrReviewFixes("p1", "exec-1");
-    expect(result).toEqual([]);
-    expect(getProjectMock("p1").select).toHaveBeenCalledWith(
-      "SELECT * FROM pr_review_fixes WHERE execution_id = $1 ORDER BY created_at ASC",
-      ["exec-1"],
-    );
-  });
-});
-
-describe("upsertPrReviewFix", () => {
-  it("executes upsert query", async () => {
-    await upsertPrReviewFix("p1", {
-      id: "fix-1",
-      execution_id: "exec-1",
-      comment_id: 42,
-      comment_type: "inline",
-      review_id: 100,
-      author: "alice",
-      author_avatar_url: null,
-      body: "Fix this",
-      file_path: "src/main.ts",
-      line: 10,
-      diff_hunk: "@@ -1,3 +1,3 @@",
-      state: "COMMENTED",
-      fix_status: "pending",
-      fix_commit_hash: null,
-      submitted_at: "2026-01-01T00:00:00Z",
-    });
-    const call = getProjectMock("p1").execute.mock.calls.find(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("INSERT INTO pr_review_fixes"),
-    );
-    expect(call).toBeDefined();
-  });
-});
-
-describe("updatePrReviewFix", () => {
-  it("builds dynamic SET clause", async () => {
-    await updatePrReviewFix("p1", "fix-1", { fix_status: "fixed" });
-    const call = getProjectMock("p1").execute.mock.calls.find(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("UPDATE pr_review_fixes"),
-    );
-    expect(call).toBeDefined();
-    expect(call![0]).toContain("fix_status = $1");
   });
 });
 

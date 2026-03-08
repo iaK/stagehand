@@ -163,6 +163,9 @@ export function StageView({ stage, taskId }: StageViewProps) {
     setRunning(sk, "fixing");
     setCommitError(null);
 
+    const fixAgent = await repo.getEffectiveAgent(activeProject.id, stage.agent_override, stage.agent);
+    const fixModel = await repo.getEffectiveModel(activeProject.id, stage.model_override, stage.persona_model);
+
     const prompt = `The following git commit failed with an error. Fix whatever is preventing the commit from succeeding.
 
 Task: ${task.title}
@@ -179,6 +182,8 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
         spawnAgent(
           {
             prompt,
+            agent: fixAgent,
+            personaModel: fixModel,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",

@@ -166,7 +166,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[10px] text-muted-foreground mt-1">
+          <p className="text-[0.77rem] text-muted-foreground mt-1">
             Controls how the stage output is rendered. "Auto" detects from output content.
           </p>
         </div>
@@ -187,7 +187,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
 
       <div>
         <Label>Can Follow Stages</Label>
-        <p className="text-[10px] text-muted-foreground mb-1.5">
+        <p className="text-[0.77rem] text-muted-foreground mb-1.5">
           Which stages can come before this one. If none selected, this stage can follow any stage.
         </p>
         <div className="mt-1 space-y-1 max-h-40 overflow-y-auto border border-border rounded-md p-2">
@@ -325,7 +325,7 @@ export function SingleTemplateEditor({ templateId }: { templateId: string }) {
           rows={12}
           className="mt-1 font-mono text-xs resize-none"
         />
-        <p className="text-[10px] text-muted-foreground mt-1">
+        <p className="text-[0.77rem] text-muted-foreground mt-1">
           Variables: {"{{task_description}}"}, {"{{user_input}}"},
           {"{{user_decision}}"}, {"{{prior_attempt_output}}"},
           {"{{available_stages}}"}. Prior stage summaries are auto-injected

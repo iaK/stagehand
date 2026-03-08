@@ -150,7 +150,12 @@ export function useStageExecution() {
         const prevAttempts = executions
           .filter((e) => e.task_stage_id === stage.task_stage_id)
           .sort((a, b) => a.attempt_number - b.attempt_number);
-        const attemptNumber = prevAttempts.length + 1;
+        // Query DB for the true max attempt_number — the in-memory store may be
+        // stale (e.g. after research re-runs that reassign task_stage_id).
+        const maxAttempt = await repo.getMaxAttemptNumber(
+          activeProject.id, task.id, stage.task_stage_id,
+        );
+        const attemptNumber = maxAttempt + 1;
 
         // For re-runs: include prior attempt output so the agent knows what
         // it already researched/asked, and preserve the original user input
@@ -444,9 +449,9 @@ export function useStageExecution() {
             : stageContext;
         }
 
-        // Resolve effective agent: per-stage override → project default → "claude"
-        const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-        const effectiveAgent = stage.agent ?? agentSetting ?? "claude";
+        // Resolve effective agent + model
+        const effectiveAgent = await repo.getEffectiveAgent(activeProject.id, null, stage.agent);
+        const effectiveModel = await repo.getEffectiveModel(activeProject.id, stage.model_override, stage.persona_model);
 
         // Build MCP config for stage context server
         let mcpConfig: string | undefined;
@@ -496,7 +501,7 @@ export function useStageExecution() {
           {
             prompt,
             agent: effectiveAgent,
-            personaModel: stage.model_override ?? stage.persona_model ?? undefined,
+            personaModel: effectiveModel,
             workingDirectory: getTaskWorkingDir(task, activeProject.path),
             sessionId,
             stageExecutionId: executionId,
@@ -837,9 +842,13 @@ Rules:
 Return strict JSON:
 {"next_stage_name":"...","reason":"..."}`;
 
+      const suggestAgent = await repo.getEffectiveAgent(activeProject.id, null, stage.agent);
+      const suggestModel = await repo.getEffectiveModel(activeProject.id, stage.model_override, stage.persona_model);
       const raw = await quickAgentCall({
         prompt,
         workingDirectory: getTaskWorkingDir(task, activeProject.path),
+        agent: suggestAgent,
+        personaModel: suggestModel,
       });
       const parsed = parseNextStageSuggestion(raw);
       return {
@@ -1143,6 +1152,8 @@ export async function generatePendingCommit(
     try {
       const conventions = await loadConventions(projectId);
       if (conventions.commitFormat) {
+        const commitAgent = await repo.getEffectiveAgent(projectId, null, stage.agent);
+        const commitModel = await repo.getEffectiveModel(projectId, stage.model_override, stage.persona_model);
         commitMsg = await quickAgentCall({
           prompt: `Generate a git commit message for the following changes. Follow the commit message format convention below. Return ONLY the commit message, nothing else.
 
@@ -1154,6 +1165,8 @@ Commit message format convention:
 ${conventions.commitFormat}`,
           workingDirectory: workDir,
           timeoutMs: 15_000,
+          agent: commitAgent,
+          personaModel: commitModel,
         });
       }
     } catch {

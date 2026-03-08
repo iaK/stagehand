@@ -66,6 +66,15 @@ interface TaskStore {
   duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
   restoreDefaultTemplates: (projectId: string) => Promise<void>;
   createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; initialInput?: string }[]) => Promise<Task[]>;
+  importBranchTask: (
+    projectId: string,
+    title: string,
+    branchName: string,
+    worktreePath: string,
+    targetBranch: string,
+    startTemplateId: string,
+    prUrl?: string,
+  ) => Promise<Task>;
 }
 
 export const useTaskStore = create<TaskStore>((set, get) => ({
@@ -417,5 +426,60 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // Refresh the task list so new subtasks appear in sidebar
     await get().loadTasks(projectId);
     return created;
+  },
+
+  importBranchTask: async (projectId, title, branchName, worktreePath, targetBranch, startTemplateId, prUrl) => {
+    const templates = get().stageTemplates;
+
+    const task = await repo.createTask(projectId, title, null, branchName);
+
+    // Update branch/worktree/pr info
+    await repo.updateTask(projectId, task.id, {
+      branch_name: branchName,
+      worktree_path: worktreePath,
+      target_branch: targetBranch,
+      status: "in_progress",
+      ...(prUrl ? { pr_url: prUrl } : {}),
+    });
+    task.branch_name = branchName;
+    task.worktree_path = worktreePath;
+    task.target_branch = targetBranch;
+    task.status = "in_progress";
+    if (prUrl) task.pr_url = prUrl;
+
+    // Build the pipeline: all templates up to and including the start template
+    const startTemplate = templates.find((t) => t.id === startTemplateId);
+    const startOrder = startTemplate?.sort_order ?? 0;
+    const pipelineTemplates = templates
+      .filter((t) => t.sort_order <= startOrder)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    // Create task_stage rows for each stage in the pipeline
+    let currentStageId: string | null = null;
+    for (const tmpl of pipelineTemplates) {
+      const taskStageId = await repo.insertTaskStage(
+        projectId, task.id, tmpl.id, tmpl.sort_order,
+      );
+      if (tmpl.id === startTemplateId) {
+        currentStageId = taskStageId;
+      }
+    }
+
+    // Point current_stage_id at the target stage
+    if (currentStageId) {
+      await repo.updateTask(projectId, task.id, { current_stage_id: currentStageId });
+      task.current_stage_id = currentStageId;
+    }
+
+    const instances = await repo.getTaskStageInstances(projectId, task.id);
+    const tasks = await repo.listTasks(projectId);
+
+    if (useProjectStore.getState().activeProject?.id !== projectId) return task;
+    set((state) => ({
+      tasks,
+      activeTask: task,
+      taskStages: { ...state.taskStages, [task.id]: instances },
+    }));
+    return task;
   },
 }));

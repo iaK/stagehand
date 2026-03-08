@@ -7,7 +7,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSettingsStore, TEXT_SIZE_PX, EXTERNAL_EDITOR_OPTIONS, type TextSize, type ExternalEditor } from "@/stores/settingsStore";
 import { KEYBINDING_ACTIONS, formatShortcut, shortcutFromEvent, type KeyBindingAction } from "@/lib/keybindings";
 
-type Section = "appearance" | "editor" | "keybindings" | "archived";
+export type AppSettingsSection = "appearance" | "editor" | "keybindings" | "archived";
+type Section = AppSettingsSection;
 
 type NavItem =
   | { header: string }
@@ -15,10 +16,11 @@ type NavItem =
 
 interface AppSettingsModalProps {
   onClose: () => void;
+  initialSection?: Section;
 }
 
-export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
-  const [activeSection, setActiveSection] = useState<Section>("appearance");
+export function AppSettingsModal({ onClose, initialSection }: AppSettingsModalProps) {
+  const [activeSection, setActiveSection] = useState<Section>(initialSection ?? "appearance");
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
@@ -56,7 +58,7 @@ export function AppSettingsModal({ onClose }: AppSettingsModalProps) {
                 return (
                   <div
                     key={i}
-                    className="px-4 pt-4 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                    className="px-4 pt-4 pb-1 text-[0.77rem] font-semibold text-muted-foreground uppercase tracking-wider"
                   >
                     {item.header}
                   </div>
@@ -377,42 +379,16 @@ function AppearanceSettings() {
       <p className="text-xs text-muted-foreground mb-4">
         Choose how Stagehand looks.
       </p>
-      <div className="space-y-1">
-        {options.map((opt) => (
-          <label
-            key={opt.value}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-              theme === opt.value
-                ? "bg-accent text-accent-foreground"
-                : "hover:bg-accent/50"
-            }`}
-          >
-            <input
-              type="radio"
-              name="theme"
-              value={opt.value}
-              checked={theme === opt.value}
-              onChange={() => setTheme(opt.value)}
-              className="sr-only"
-            />
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                theme === opt.value
-                  ? "border-foreground"
-                  : "border-muted-foreground/40"
-              }`}
-            >
-              {theme === opt.value && (
-                <div className="w-2 h-2 rounded-full bg-foreground" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium">{opt.label}</p>
-              <p className="text-xs text-muted-foreground">{opt.description}</p>
-            </div>
-          </label>
-        ))}
-      </div>
+      <RadioGroup
+        name="theme"
+        value={theme ?? "system"}
+        options={options.map((opt) => ({
+          value: opt.value,
+          label: opt.label,
+          description: opt.description,
+        }))}
+        onChange={(v) => setTheme(v)}
+      />
       </div>
 
       <div>

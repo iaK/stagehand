@@ -4,6 +4,8 @@ import { useTaskStore } from "../stores/taskStore";
 import { statusColors } from "../lib/taskStatus";
 import * as repo from "../lib/repositories";
 import type { Task } from "../lib/types";
+import type { AppSettingsSection } from "./settings/AppSettingsModal";
+import type { ProjectSettingsSection } from "./settings/SettingsModal";
 import { Settings, SlidersHorizontal, Inbox } from "lucide-react";
 
 const MAX_RECENT = 5;
@@ -55,6 +57,8 @@ interface CommandItem {
   sublabel?: string;
   dotClass?: string;
   actionId?: string;
+  appSection?: AppSettingsSection;
+  projectSection?: ProjectSettingsSection;
   data?: TaskEntry;
 }
 
@@ -65,8 +69,8 @@ export function CommandPanel({
   onOpenPrReviews,
 }: {
   onClose: () => void;
-  onOpenProjectSettings: () => void;
-  onOpenAppSettings: () => void;
+  onOpenProjectSettings: (section?: ProjectSettingsSection) => void;
+  onOpenAppSettings: (section?: AppSettingsSection) => void;
   onOpenPrReviews: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -107,28 +111,98 @@ export function CommandPanel({
   const actions: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = [];
     if (activeProject) {
-      items.push({
-        type: "action",
-        id: "project-settings",
-        actionId: "project-settings",
-        label: "Project Settings",
-        sublabel: activeProject.name,
-      });
+      items.push(
+        {
+          type: "action",
+          id: "project-settings",
+          actionId: "project-settings",
+          label: "Project Settings",
+          sublabel: activeProject.name,
+          projectSection: "project",
+        },
+        {
+          type: "action",
+          id: "project-pipeline",
+          actionId: "project-settings",
+          label: "Pipeline Settings",
+          sublabel: "Stage templates",
+          projectSection: "pipeline",
+        },
+        {
+          type: "action",
+          id: "project-linear",
+          actionId: "project-settings",
+          label: "Linear Integration",
+          sublabel: "API key, team, project",
+          projectSection: "linear",
+        },
+        {
+          type: "action",
+          id: "project-github",
+          actionId: "project-settings",
+          label: "Git Settings",
+          sublabel: "Repository, branch, remote",
+          projectSection: "github",
+        },
+        {
+          type: "action",
+          id: "project-agents",
+          actionId: "project-settings",
+          label: "AI Agents",
+          sublabel: "Default agent, models",
+          projectSection: "agents",
+        },
+        {
+          type: "action",
+          id: "project-conventions",
+          actionId: "project-settings",
+          label: "Conventions",
+          sublabel: "Commits, branches, PRs",
+          projectSection: "conventions",
+        },
+      );
     }
-    items.push({
-      type: "action",
-      id: "app-settings",
-      actionId: "app-settings",
-      label: "App Settings",
-      sublabel: "Theme, keybindings, editor",
-    });
-    items.push({
-      type: "action",
-      id: "pr-reviews",
-      actionId: "pr-reviews",
-      label: "PR Reviews",
-      sublabel: "PRs needing your review",
-    });
+    items.push(
+      {
+        type: "action",
+        id: "app-settings",
+        actionId: "app-settings",
+        label: "Appearance",
+        sublabel: "Theme, text size, sidebar",
+        appSection: "appearance",
+      },
+      {
+        type: "action",
+        id: "app-editor",
+        actionId: "app-settings",
+        label: "Editor Settings",
+        sublabel: "External editor, fonts, diff view",
+        appSection: "editor",
+      },
+      {
+        type: "action",
+        id: "app-keybindings",
+        actionId: "app-settings",
+        label: "Keybindings",
+        sublabel: "Keyboard shortcuts",
+        appSection: "keybindings",
+      },
+      {
+        type: "action",
+        id: "app-archived",
+        actionId: "app-settings",
+        label: "Archived Projects",
+        sublabel: "Restore archived projects",
+        appSection: "archived",
+      },
+      {
+        type: "action",
+        id: "pr-reviews",
+        actionId: "pr-reviews",
+        label: "PR Reviews",
+        sublabel: "PRs needing your review",
+      },
+    );
     return items;
   }, [activeProject]);
 
@@ -216,8 +290,8 @@ export function CommandPanel({
         onClose();
       } else if (item.type === "action") {
         onClose();
-        if (item.actionId === "project-settings") onOpenProjectSettings();
-        else if (item.actionId === "app-settings") onOpenAppSettings();
+        if (item.actionId === "project-settings") onOpenProjectSettings(item.projectSection);
+        else if (item.actionId === "app-settings") onOpenAppSettings(item.appSection);
         else if (item.actionId === "pr-reviews") onOpenPrReviews();
       }
     },
@@ -287,12 +361,12 @@ export function CommandPanel({
                 return (
                   <div key={item.id}>
                     {showRecentHeader && (
-                      <div className="px-4 pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      <div className="px-4 pt-3 pb-1.5 text-[0.846rem] font-medium text-muted-foreground uppercase tracking-wider">
                         Recent
                       </div>
                     )}
                     {showActionsHeader && (
-                      <div className="px-4 pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      <div className="px-4 pt-3 pb-1.5 text-[0.846rem] font-medium text-muted-foreground uppercase tracking-wider">
                         Actions
                       </div>
                     )}

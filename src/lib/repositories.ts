@@ -7,7 +7,6 @@ import type {
   TaskStageInstance,
   Task,
   StageExecution,
-  PrReviewFix,
   CompletionStrategy,
   OutputFormat,
   TokenTotals,
@@ -83,6 +82,38 @@ export async function getAgentModels(projectId: string, agent: string): Promise<
 
 export async function setAgentModels(projectId: string, agent: string, models: string[]): Promise<void> {
   await setProjectSetting(projectId, `agent_models_${agent}`, JSON.stringify(models));
+}
+
+// === Effective Agent / Model Resolution ===
+
+/**
+ * Resolve the effective agent for an AI call.
+ * Chain: stage agent_override → stage agent → project default_agent → "claude"
+ */
+export async function getEffectiveAgent(
+  projectId: string,
+  stageAgentOverride?: string | null,
+  stageAgent?: string | null,
+): Promise<string> {
+  const explicit = stageAgentOverride ?? stageAgent;
+  if (explicit) return explicit;
+  const setting = await getProjectSetting(projectId, "default_agent");
+  return setting ?? "claude";
+}
+
+/**
+ * Resolve the effective model for an AI call.
+ * Chain: stage model_override → stage persona_model → project default_model → undefined (CLI default)
+ */
+export async function getEffectiveModel(
+  projectId: string,
+  stageModelOverride?: string | null,
+  stagePersonaModel?: string | null,
+): Promise<string | undefined> {
+  const explicit = stageModelOverride ?? stagePersonaModel;
+  if (explicit) return explicit;
+  const setting = await getProjectSetting(projectId, "default_model");
+  return setting ?? undefined;
 }
 
 export async function getCompletionStrategy(projectId: string): Promise<CompletionStrategy> {
@@ -674,6 +705,19 @@ export async function getExecutionsForStage(
   );
 }
 
+export async function getMaxAttemptNumber(
+  projectId: string,
+  taskId: string,
+  taskStageId: string,
+): Promise<number> {
+  const db = await getProjectDb(projectId);
+  const rows = await db.select<{ max_attempt: number | null }[]>(
+    "SELECT MAX(attempt_number) as max_attempt FROM stage_executions WHERE task_id = $1 AND task_stage_id = $2",
+    [taskId, taskStageId],
+  );
+  return rows[0]?.max_attempt ?? 0;
+}
+
 export async function getPreviousStageExecution(
   projectId: string,
   taskId: string,
@@ -853,79 +897,7 @@ export async function insertTaskStage(
   return id;
 }
 
-// === PR Review Fixes ===
-
-export async function listPrReviewFixes(
-  projectId: string,
-  executionId: string,
-): Promise<PrReviewFix[]> {
-  const db = await getProjectDb(projectId);
-  return db.select<PrReviewFix[]>(
-    "SELECT * FROM pr_review_fixes WHERE execution_id = $1 ORDER BY created_at ASC",
-    [executionId],
-  );
-}
-
-export async function upsertPrReviewFix(
-  projectId: string,
-  fix: Omit<PrReviewFix, "created_at" | "updated_at">,
-): Promise<void> {
-  const db = await getProjectDb(projectId);
-  const now = new Date().toISOString();
-  await db.execute(
-    `INSERT INTO pr_review_fixes (id, execution_id, comment_id, comment_type, review_id, author, author_avatar_url, body, file_path, line, diff_hunk, state, fix_status, fix_commit_hash, submitted_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-     ON CONFLICT(execution_id, comment_id, comment_type) DO UPDATE SET
-       review_id = $5, author = $6, author_avatar_url = $7, body = $8, file_path = $9, line = $10,
-       diff_hunk = $11, state = $12, submitted_at = $15, updated_at = $17`,
-    [
-      fix.id,
-      fix.execution_id,
-      fix.comment_id,
-      fix.comment_type,
-      fix.review_id,
-      fix.author,
-      fix.author_avatar_url,
-      fix.body,
-      fix.file_path,
-      fix.line,
-      fix.diff_hunk,
-      fix.state,
-      fix.fix_status,
-      fix.fix_commit_hash,
-      fix.submitted_at,
-      now,
-      now,
-    ],
-  );
-}
-
-export async function updatePrReviewFix(
-  projectId: string,
-  fixId: string,
-  updates: Partial<Pick<PrReviewFix, "fix_status" | "fix_commit_hash" | "state">>,
-): Promise<void> {
-  const db = await getProjectDb(projectId);
-  const sets: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-
-  for (const [key, value] of Object.entries(updates)) {
-    sets.push(`${key} = $${idx}`);
-    values.push(value);
-    idx++;
-  }
-
-  sets.push(`updated_at = $${idx}`);
-  values.push(new Date().toISOString());
-  idx++;
-
-  values.push(fixId);
-  await db.execute(
-    `UPDATE pr_review_fixes SET ${sets.join(", ")} WHERE id = $${idx}`,
-    values,
-  );
-}
+// === PR Review Fixes (legacy — table kept for migration compat, no longer written to) ===
 
 export async function getProjectTaskSummary(
   projectId: string,

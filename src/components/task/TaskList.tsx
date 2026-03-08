@@ -112,7 +112,7 @@ const TaskListItem = memo(function TaskListItem({
         />
         <span className="truncate">{task.title}</span>
         {task.ejected === 1 && (
-          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
+          <span className="ml-1 text-[0.77rem] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
             ejected
           </span>
         )}

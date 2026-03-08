@@ -79,18 +79,42 @@ function AgentModelList({ projectId, agentValue, agentLabel }: { projectId: stri
 
 export function AgentSettingsContent({ projectId }: AgentSettingsContentProps) {
   const [defaultAgent, setDefaultAgent] = useState<string>("claude");
+  const [defaultModel, setDefaultModel] = useState<string>("");
+  const [agentModels, setAgentModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    repo.getProjectSetting(projectId, "default_agent").then((val) => {
-      if (val) setDefaultAgent(val);
+    Promise.all([
+      repo.getProjectSetting(projectId, "default_agent"),
+      repo.getProjectSetting(projectId, "default_model"),
+    ]).then(([agent, model]) => {
+      if (agent) setDefaultAgent(agent);
+      setDefaultModel(model ?? "");
       setLoading(false);
     });
   }, [projectId]);
 
-  const handleChange = async (value: string) => {
+  // Load model list for the current default agent
+  useEffect(() => {
+    repo.getAgentModels(projectId, defaultAgent).then(setAgentModels);
+  }, [projectId, defaultAgent]);
+
+  const handleAgentChange = async (value: string) => {
     setDefaultAgent(value);
     await repo.setProjectSetting(projectId, "default_agent", value);
+    // Clear model when agent changes (the model list is different)
+    setDefaultModel("");
+    await repo.deleteProjectSetting(projectId, "default_model");
+  };
+
+  const handleModelChange = async (value: string) => {
+    if (value === "__agent_default__") {
+      setDefaultModel("");
+      await repo.deleteProjectSetting(projectId, "default_model");
+    } else {
+      setDefaultModel(value);
+      await repo.setProjectSetting(projectId, "default_model", value);
+    }
   };
 
   if (loading) return null;
@@ -101,16 +125,16 @@ export function AgentSettingsContent({ projectId }: AgentSettingsContentProps) {
     <div>
       <h2 className="text-lg font-semibold text-foreground">AI Agents</h2>
       <p className="text-sm text-muted-foreground mt-1 mb-6">
-        Choose the default AI coding agent for this project. Individual stages can override this in the Pipeline settings.
+        Choose the default AI agent and model for this project. Individual stages can override these in the Pipeline settings.
       </p>
 
-      <div className="border border-border rounded-md p-4 space-y-3">
+      <div className="border border-border rounded-md p-4 space-y-4">
         <div>
           <label className="text-sm font-medium text-foreground">Default Agent</label>
           <p className="text-xs text-muted-foreground mt-0.5 mb-2">
             Used for all stages unless a stage specifies its own agent.
           </p>
-          <Select value={defaultAgent} onValueChange={handleChange}>
+          <Select value={defaultAgent} onValueChange={handleAgentChange}>
             <SelectTrigger className="w-64">
               <SelectValue />
             </SelectTrigger>
@@ -124,11 +148,33 @@ export function AgentSettingsContent({ projectId }: AgentSettingsContentProps) {
             </SelectContent>
           </Select>
         </div>
+
+        <div>
+          <label className="text-sm font-medium text-foreground">Default Model</label>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+            Used for all AI calls (stages, commit messages, PR reviews, suggestions) unless overridden per stage.
+          </p>
+          <Select value={defaultModel || "__agent_default__"} onValueChange={handleModelChange}>
+            <SelectTrigger className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__agent_default__">
+                <span className="text-muted-foreground">Agent default</span>
+              </SelectItem>
+              {agentModels.map((m) => (
+                <SelectItem key={m} value={m}>
+                  <span className="font-mono text-sm">{m}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <h3 className="text-sm font-semibold text-foreground mt-6 mb-1">Model Lists</h3>
       <p className="text-xs text-muted-foreground mb-4">
-        Configure available models per agent. These appear in the Model Override dropdown when editing stage templates.
+        Configure available models per agent. These appear in the Default Model dropdown above and in the Model Override dropdown when editing stage templates.
       </p>
       <div className="space-y-4">
         {visibleAgents.map((a) => (

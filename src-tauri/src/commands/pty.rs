@@ -11,6 +11,7 @@ use tauri::State;
 #[serde(rename_all = "camelCase")]
 pub struct SpawnPtyArgs {
     pub agent: Option<String>,
+    pub persona_model: Option<String>,
     pub working_directory: Option<String>,
     pub append_system_prompt: Option<String>,
     pub cols: Option<u16>,
@@ -86,6 +87,17 @@ pub async fn spawn_pty(
 
         if let Some(flag) = agent.auto_approve_flag() {
             c.arg(flag);
+        }
+
+        // Model override
+        if let Some(ref model) = args.persona_model {
+            match agent {
+                Agent::Claude | Agent::Codex | Agent::Gemini | Agent::Amp => {
+                    c.arg("--model");
+                    c.arg(model);
+                }
+                Agent::OpenCode => {}
+            }
         }
 
         // System prompt — per-agent mechanism

@@ -202,7 +202,6 @@ export interface StageSuggestion {
 
 export interface PrReviewFix {
   id: string;
-  execution_id: string;
   comment_id: number;
   comment_type: "review" | "inline" | "conversation";
   review_id: number | null;
@@ -213,11 +212,7 @@ export interface PrReviewFix {
   line: number | null;
   diff_hunk: string | null;
   state: string;
-  fix_status: "pending" | "fixing" | "fixed" | "skipped";
-  fix_commit_hash: string | null;
   submitted_at: string | null;
-  created_at: string;
-  updated_at: string;
 }
 
 // === Linear ===
@@ -283,6 +278,7 @@ export type PtyEvent =
 
 export interface SpawnPtyArgs {
   agent?: string;
+  personaModel?: string;
   workingDirectory?: string;
   appendSystemPrompt?: string;
   cols?: number;

@@ -96,6 +96,11 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
   if (connected) {
     return (
       <div>
+        <h2 className="text-lg font-semibold text-foreground">Linear</h2>
+        <p className="text-sm text-muted-foreground mt-1 mb-6">
+          Connect to Linear for issue tracking and task management.
+        </p>
+
         <div className="flex items-center gap-2 mb-4 p-3 bg-muted rounded-lg">
           <div className="w-2 h-2 rounded-full bg-green-500" />
           <span className="text-sm text-muted-foreground">
@@ -162,6 +167,12 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
   }
 
   return (
+    <div>
+      <h2 className="text-lg font-semibold text-foreground">Linear</h2>
+      <p className="text-sm text-muted-foreground mt-1 mb-6">
+        Connect to Linear for issue tracking and task management.
+      </p>
+
     <form onSubmit={handleConnect}>
       <div className="mb-4">
         <Label>Personal API Key</Label>
@@ -192,5 +203,6 @@ export function LinearSettingsContent({ projectId }: { projectId: string }) {
         </Button>
       </div>
     </form>
+    </div>
   );
 }

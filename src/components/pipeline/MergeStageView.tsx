@@ -321,9 +321,9 @@ export function MergeStageView({ stage }: MergeStageViewProps) {
     setFixOutput("");
     const workDir = getTaskWorkingDir(activeTask, activeProject.path);
 
-    // Resolve effective agent: per-stage override → project default → "claude"
-    const agentSetting = await repo.getProjectSetting(activeProject.id, "default_agent");
-    const effectiveAgent = stage.agent_override ?? stage.agent ?? agentSetting ?? "claude";
+    // Resolve effective agent + model
+    const effectiveAgent = await repo.getEffectiveAgent(activeProject.id, stage.agent_override, stage.agent);
+    const effectiveModel = await repo.getEffectiveModel(activeProject.id, stage.model_override, stage.persona_model);
 
     const prompt = `A git merge operation failed with the following error. Fix whatever is preventing the merge from succeeding.
 
@@ -341,6 +341,7 @@ Investigate and fix the issue (e.g. resolve merge conflicts, fix compatibility p
           {
             prompt,
             agent: effectiveAgent,
+            personaModel: effectiveModel,
             workingDirectory: workDir,
             noSessionPersistence: true,
             outputFormat: "stream-json",

@@ -118,12 +118,10 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-foreground">Conventions</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Define how commits, branches, and PRs should be formatted. These rules are used when generating commit messages and creating branches.
-        </p>
-      </div>
+      <h2 className="text-lg font-semibold text-foreground">Conventions</h2>
+      <p className="text-sm text-muted-foreground mt-1 mb-6">
+        Define how commits, branches, and PRs should be formatted. These rules are used when generating commit messages and creating branches.
+      </p>
 
       {loading ? (
         <div className="space-y-4 py-4">

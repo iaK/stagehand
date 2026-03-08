@@ -75,9 +75,7 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
   };
 
   const handleSkipCommit = async () => {
-    if (pendingCommit?.fixId) {
-      await prReview.skipFixCommit(pendingCommit.fixId);
-    }
+    await prReview.skipFixCommit();
   };
 
   const noPrUrl = !task.pr_url;
@@ -136,6 +134,8 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
             isCompleted={false}
             error={prReview.error}
             stageKey={sk}
+            summary={prReview.summary}
+            summaryLoading={prReview.summaryLoading}
           />
 
           {/* Commit dialog for individual fixes */}

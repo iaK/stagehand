@@ -15,7 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Section = "project" | "pipeline" | "linear" | "github" | "conventions" | "agents";
+export type ProjectSettingsSection = "project" | "pipeline" | "linear" | "github" | "conventions" | "agents";
+type Section = ProjectSettingsSection;
 
 type NavItem =
   | { header: string }
@@ -23,11 +24,12 @@ type NavItem =
 
 interface SettingsModalProps {
   onClose: () => void;
+  initialSection?: Section;
 }
 
-export function SettingsModal({ onClose }: SettingsModalProps) {
+export function SettingsModal({ onClose, initialSection }: SettingsModalProps) {
   const activeProject = useProjectStore((s) => s.activeProject);
-  const [activeSection, setActiveSection] = useState<Section>("project");
+  const [activeSection, setActiveSection] = useState<Section>(initialSection ?? "project");
 
   const navItems: NavItem[] = [
     { header: "GENERAL" },
@@ -74,7 +76,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 return (
                   <div
                     key={i}
-                    className="px-4 pt-4 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                    className="px-4 pt-4 pb-1 text-[0.77rem] font-semibold text-muted-foreground uppercase tracking-wider"
                   >
                     {item.header}
                   </div>

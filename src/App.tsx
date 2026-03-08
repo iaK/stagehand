@@ -21,6 +21,11 @@ function App() {
   const appTextSize = useSettingsStore((s) => s.appTextSize);
   useOrphanedProcessCleanup();
 
+  // Apply text size to <html> so rem-based Tailwind classes (text-xs, text-sm, etc.) scale
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${TEXT_SIZE_PX[appTextSize]}px`;
+  }, [appTextSize]);
+
   useEffect(() => {
     requestNotificationPermission();
     const unregisterPromise = registerNotificationClickHandler();
@@ -93,7 +98,7 @@ function App() {
     <ErrorBoundary>
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="stagehand-theme">
     <TooltipProvider>
-      <div className="h-screen overflow-hidden" style={{ fontSize: `${TEXT_SIZE_PX[appTextSize]}px` }}>
+      <div className="h-screen overflow-hidden">
         {claudeError && (
           <Alert className="rounded-none border-x-0 border-t-0 border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400">
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

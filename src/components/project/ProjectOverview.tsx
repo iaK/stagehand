@@ -200,7 +200,7 @@ export function ProjectOverview() {
               >
                 <span className="w-2 h-2 rounded-full shrink-0 bg-amber-500" />
                 <span className="text-sm truncate">{task.title}</span>
-                <Badge variant="secondary" className="ml-auto text-[10px]">
+                <Badge variant="secondary" className="ml-auto text-[0.77rem]">
                   Awaiting input
                 </Badge>
               </button>
@@ -401,7 +401,7 @@ function TaskRow({
         {formatRelativeTime(updatedAt)}
       </span>
       {status && (
-        <Badge variant="secondary" className="text-[10px] shrink-0">
+        <Badge variant="secondary" className="text-[0.77rem] shrink-0">
           {status.replace(/_/g, " ")}
         </Badge>
       )}
