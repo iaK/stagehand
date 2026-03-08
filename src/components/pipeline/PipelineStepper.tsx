@@ -154,7 +154,7 @@ const PipelineStep = memo(function PipelineStep({
       </button>
       {!isLast && (
         <div
-          className={`w-6 h-px mx-1 ${
+          className={`w-6 h-0.5 mx-1 rounded-full ${
             status === "completed" ? "bg-emerald-300 dark:bg-emerald-700" : "bg-zinc-200 dark:bg-zinc-700"
           }`}
         />
