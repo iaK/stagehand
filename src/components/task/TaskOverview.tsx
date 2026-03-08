@@ -606,12 +606,8 @@ export function TaskOverview() {
         {activeTask.ejected === 1 && (
           <InfoCard label="Status" value="Ejected to main repo" />
         )}
-        <InfoCard
-          label="Pull Request"
-          value={activeTask.pr_url ? undefined : "No PR created yet"}
-          muted={!activeTask.pr_url}
-        >
-          {activeTask.pr_url && (
+        {activeTask.pr_url && (
+          <InfoCard label="Pull Request">
             <a
               href={activeTask.pr_url}
               target="_blank"
@@ -620,17 +616,22 @@ export function TaskOverview() {
             >
               {activeTask.pr_url.replace(/^https?:\/\//, "")}
             </a>
-          )}
-        </InfoCard>
-        {(diffStats || activeTask.diff_insertions != null) && (
-          <InfoCard label="Lines Changed">
-            <p className="text-sm font-medium font-mono mt-0.5">
-              <span className="text-green-600">+{diffStats?.insertions ?? activeTask.diff_insertions}</span>
-              {" / "}
-              <span className="text-red-600">-{diffStats?.deletions ?? activeTask.diff_deletions}</span>
-            </p>
           </InfoCard>
         )}
+        {(() => {
+          const ins = diffStats?.insertions ?? activeTask.diff_insertions;
+          const del = diffStats?.deletions ?? activeTask.diff_deletions;
+          if (ins == null || (ins === 0 && del === 0)) return null;
+          return (
+            <InfoCard label="Lines Changed">
+              <p className="text-sm font-medium font-mono mt-0.5">
+                <span className="text-green-600">+{ins}</span>
+                {" / "}
+                <span className="text-red-600">-{del}</span>
+              </p>
+            </InfoCard>
+          );
+        })()}
       </div>
 
       {activeTask.status === "completed" && (
