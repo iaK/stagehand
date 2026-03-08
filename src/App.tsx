@@ -70,12 +70,24 @@ function App() {
     setShowWizard(false);
   };
 
-  // Still loading — show nothing while we check
+  // Still loading — show skeleton while we check
   if (showWizard === null) {
     return (
       <ErrorBoundary>
         <ThemeProvider attribute="class" defaultTheme="system" storageKey="stagehand-theme">
-          <div className="h-screen" />
+          <div className="h-screen flex">
+            {/* Rail skeleton */}
+            <div className="w-14 shrink-0 bg-muted/50" />
+            {/* Sidebar skeleton */}
+            <div className="w-56 shrink-0 border-r border-border bg-muted/30 p-3 space-y-3">
+              <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+              <div className="h-3 w-full rounded bg-muted animate-pulse" />
+              <div className="h-3 w-3/4 rounded bg-muted animate-pulse" />
+              <div className="h-3 w-5/6 rounded bg-muted animate-pulse" />
+            </div>
+            {/* Main content skeleton */}
+            <div className="flex-1" />
+          </div>
         </ThemeProvider>
       </ErrorBoundary>
     );
