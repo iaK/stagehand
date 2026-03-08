@@ -624,33 +624,27 @@ export function TaskOverview() {
             <p className="text-sm font-medium">Ejected to main repo</p>
           </div>
         )}
-        {(activeTask.pr_url || (() => {
-          const ins = diffStats?.insertions ?? activeTask.diff_insertions;
-          const del = diffStats?.deletions ?? activeTask.diff_deletions;
-          return ins != null && (ins !== 0 || del !== 0);
-        })()) && (
-          <div className="grid grid-cols-2 gap-4">
-            {activeTask.pr_url && (
-              <div>
-                <span className="text-xs text-muted-foreground">Pull Request</span>
-                <a
-                  href={activeTask.pr_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline truncate block"
-                >
-                  {activeTask.pr_url.replace(/^https?:\/\//, "")}
-                </a>
-              </div>
-            )}
+        {activeTask.pr_url && (
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-xs text-muted-foreground">Pull Request</span>
+              <a
+                href={activeTask.pr_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline truncate block"
+              >
+                {activeTask.pr_url.replace(/^https?:\/\//, "")}
+              </a>
+            </div>
             {(() => {
               const ins = diffStats?.insertions ?? activeTask.diff_insertions;
               const del = diffStats?.deletions ?? activeTask.diff_deletions;
               if (ins == null || (ins === 0 && del === 0)) return null;
               return (
-                <div>
+                <div className="shrink-0 text-right">
                   <span className="text-xs text-muted-foreground">Lines Changed</span>
-                  <p className="text-sm font-medium font-mono mt-0.5">
+                  <p className="text-sm font-medium font-mono">
                     <span className="text-green-600">+{ins}</span>
                     {" / "}
                     <span className="text-red-600">-{del}</span>
@@ -660,6 +654,21 @@ export function TaskOverview() {
             })()}
           </div>
         )}
+        {!activeTask.pr_url && (() => {
+          const ins = diffStats?.insertions ?? activeTask.diff_insertions;
+          const del = diffStats?.deletions ?? activeTask.diff_deletions;
+          if (ins == null || (ins === 0 && del === 0)) return null;
+          return (
+            <div>
+              <span className="text-xs text-muted-foreground">Lines Changed</span>
+              <p className="text-sm font-medium font-mono">
+                <span className="text-green-600">+{ins}</span>
+                {" / "}
+                <span className="text-red-600">-{del}</span>
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {activeTask.status === "split" && childTasks.length > 0 && (
@@ -695,14 +704,14 @@ export function TaskOverview() {
               <CardTitle className="text-base">Token Usage</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <div>
                   <span className="text-xs text-muted-foreground">Total Cost</span>
                   <p className="text-sm font-medium">{formatCost(tokenTotals.total_cost_usd)}</p>
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground">Tokens</span>
-                  <p className="text-sm font-medium">
+                  <p className="text-sm font-medium whitespace-nowrap">
                     {formatTokenCount(tokenTotals.input_tokens)} in / {formatTokenCount(tokenTotals.output_tokens)} out
                   </p>
                 </div>
@@ -731,7 +740,6 @@ export function TaskOverview() {
                         <thead>
                           <tr className="border-b border-border text-muted-foreground">
                             <th className="text-left py-1.5 pr-3 font-medium">Stage</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Cost</th>
                             <th className="text-right py-1.5 px-3 font-medium">Input</th>
                             <th className="text-right py-1.5 px-3 font-medium">Output</th>
                             <th className="text-right py-1.5 px-3 font-medium">Cache Read</th>
@@ -743,9 +751,6 @@ export function TaskOverview() {
                           {perStageUsage.map(({ stage, execution }) => (
                             <tr key={stage.task_stage_id} className="border-b border-border/50">
                               <td className="py-1.5 pr-3">{stage.name}</td>
-                              <td className="text-right py-1.5 px-3">
-                                {execution.total_cost_usd != null ? formatCost(execution.total_cost_usd) : "\u2014"}
-                              </td>
                               <td className="text-right py-1.5 px-3">
                                 {execution.input_tokens != null ? formatTokenCount(execution.input_tokens) : "\u2014"}
                               </td>
