@@ -540,14 +540,29 @@ export function TaskOverview() {
         <h1 className="text-xl font-semibold truncate">{activeTask.title}</h1>
       </div>
 
-      {/* Info Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        <InfoCard label="Started" value={formatDate(activeTask.created_at)} />
-        <InfoCard
-          label="Current Stage"
-          value={currentStage?.name ?? "Not started"}
-        />
-        <div className="col-span-2 rounded-lg border border-border bg-card px-4 py-3">
+      {/* Task Info */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-3">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <span className="text-xs text-muted-foreground">Started</span>
+            <p className="text-sm font-medium">{formatDate(activeTask.created_at)}</p>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground">Current Stage</span>
+            <p className="text-sm font-medium">{currentStage?.name ?? "Not started"}</p>
+          </div>
+        </div>
+        {activeTask.status === "completed" && (
+          <div>
+            <span className="text-xs text-muted-foreground">Finished</span>
+            <p className="text-sm font-medium">{formatDate(activeTask.updated_at)}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Git Info */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-3">
+        <div>
           <span className="text-xs text-muted-foreground">Branch</span>
           <div className="flex items-center gap-2 text-sm font-medium font-mono mt-0.5">
             {activeTask.branch_name ? (
@@ -604,42 +619,48 @@ export function TaskOverview() {
           </div>
         </div>
         {activeTask.ejected === 1 && (
-          <InfoCard label="Status" value="Ejected to main repo" />
+          <div>
+            <span className="text-xs text-muted-foreground">Status</span>
+            <p className="text-sm font-medium">Ejected to main repo</p>
+          </div>
         )}
-        {activeTask.pr_url && (
-          <InfoCard label="Pull Request">
-            <a
-              href={activeTask.pr_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:underline truncate block"
-            >
-              {activeTask.pr_url.replace(/^https?:\/\//, "")}
-            </a>
-          </InfoCard>
-        )}
-        {(() => {
+        {(activeTask.pr_url || (() => {
           const ins = diffStats?.insertions ?? activeTask.diff_insertions;
           const del = diffStats?.deletions ?? activeTask.diff_deletions;
-          if (ins == null || (ins === 0 && del === 0)) return null;
-          return (
-            <InfoCard label="Lines Changed">
-              <p className="text-sm font-medium font-mono mt-0.5">
-                <span className="text-green-600">+{ins}</span>
-                {" / "}
-                <span className="text-red-600">-{del}</span>
-              </p>
-            </InfoCard>
-          );
-        })()}
+          return ins != null && (ins !== 0 || del !== 0);
+        })()) && (
+          <div className="grid grid-cols-2 gap-4">
+            {activeTask.pr_url && (
+              <div>
+                <span className="text-xs text-muted-foreground">Pull Request</span>
+                <a
+                  href={activeTask.pr_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline truncate block"
+                >
+                  {activeTask.pr_url.replace(/^https?:\/\//, "")}
+                </a>
+              </div>
+            )}
+            {(() => {
+              const ins = diffStats?.insertions ?? activeTask.diff_insertions;
+              const del = diffStats?.deletions ?? activeTask.diff_deletions;
+              if (ins == null || (ins === 0 && del === 0)) return null;
+              return (
+                <div>
+                  <span className="text-xs text-muted-foreground">Lines Changed</span>
+                  <p className="text-sm font-medium font-mono mt-0.5">
+                    <span className="text-green-600">+{ins}</span>
+                    {" / "}
+                    <span className="text-red-600">-{del}</span>
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
-
-      {activeTask.status === "completed" && (
-        <div className="rounded-lg border border-border bg-card px-4 py-3">
-          <span className="text-xs text-muted-foreground">Finished</span>
-          <p className="text-sm font-medium">{formatDate(activeTask.updated_at)}</p>
-        </div>
-      )}
 
       {activeTask.status === "split" && childTasks.length > 0 && (
         <>
