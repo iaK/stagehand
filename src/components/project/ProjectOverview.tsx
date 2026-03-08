@@ -200,7 +200,7 @@ export function ProjectOverview() {
 
       {/* Tasks Requiring Attention */}
       {awaitingTasks.length > 0 && (
-        <Card>
+        <Card className="border-l-4 border-l-amber-400 dark:border-l-amber-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Needs Attention</CardTitle>
           </CardHeader>
@@ -213,7 +213,7 @@ export function ProjectOverview() {
               >
                 <span className="w-2 h-2 rounded-full shrink-0 bg-amber-500" />
                 <span className="text-sm truncate">{task.title}</span>
-                <Badge variant="secondary" className="ml-auto text-[0.77rem]">
+                <Badge variant="secondary" className="ml-auto text-xs">
                   Awaiting input
                 </Badge>
               </button>
