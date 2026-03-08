@@ -94,7 +94,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-3 h-[57px] shrink-0">
           <button
             onClick={() => useTaskStore.getState().setActiveTask(null)}
-            className="text-[0.846rem] font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+            className="text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
           >
             Overview
           </button>

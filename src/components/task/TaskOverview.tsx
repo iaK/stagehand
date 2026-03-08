@@ -655,7 +655,7 @@ export function TaskOverview() {
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${statusColors[child.status] ?? "bg-zinc-400"}`} />
                   <span className="text-sm truncate">{child.title}</span>
-                  <Badge variant="secondary" className="ml-auto text-[0.77rem]">
+                  <Badge variant="secondary" className="ml-auto text-xs">
                     {child.status}
                   </Badge>
                 </button>

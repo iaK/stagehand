@@ -195,7 +195,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
     <div className="flex flex-col h-full select-none text-xs">
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1.5 shrink-0 border-b border-border">
-        <span className="text-[0.846rem] font-medium text-foreground/70">
+        <span className="text-xs font-medium text-foreground/70">
           Changes
           {changedFiles.length > 0 && (
             <span className="ml-1.5 text-muted-foreground font-normal">
@@ -225,7 +225,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       {/* Diff base selector */}
       <div className="px-2 py-1 shrink-0 border-b border-border">
         <select
-          className="w-full text-[0.846rem] bg-transparent text-muted-foreground hover:text-foreground cursor-pointer outline-none"
+          className="w-full text-xs bg-transparent text-muted-foreground hover:text-foreground cursor-pointer outline-none"
           value={diffBase}
           onChange={(e) => setDiffBase(e.target.value as DiffBase)}
         >
@@ -236,7 +236,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
       </div>
 
       {changedFiles.length === 0 ? (
-        <div className="p-3 text-muted-foreground text-center text-[0.846rem]">
+        <div className="p-3 text-muted-foreground text-center text-xs">
           No changes vs {targetBranch ?? "main"}
         </div>
       ) : (
@@ -264,13 +264,13 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
                   className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
                   onClick={() => openDiffFile(fullPath)}
                 >
-                  <span className={`shrink-0 w-4 text-center text-[0.77rem] font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
+                  <span className={`shrink-0 w-4 text-center text-xs font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
                     {status}
                   </span>
                   <span className="truncate flex-1 text-[0.923rem]">
                     {fileName}
                     {dirPath && (
-                      <span className="text-muted-foreground ml-1.5 text-[0.846rem]">{dirPath}</span>
+                      <span className="text-muted-foreground ml-1.5 text-xs">{dirPath}</span>
                     )}
                   </span>
                 </button>

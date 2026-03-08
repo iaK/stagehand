@@ -39,7 +39,7 @@ function PrRow({ pr }: { pr: PendingPr }) {
               #{pr.number}
             </span>
             {pr.isDraft && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.77rem] font-medium bg-muted text-muted-foreground">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
                 Draft
               </span>
             )}
@@ -85,14 +85,14 @@ export function PrReviewsPanel() {
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">PR Reviews</h2>
           {prs.length > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[0.77rem] font-medium bg-primary text-primary-foreground">
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-medium bg-primary text-primary-foreground">
               {prs.length}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {lastChecked && (
-            <span className="text-[0.846rem] text-muted-foreground/60">
+            <span className="text-xs text-muted-foreground/60">
               Updated {timeAgo(new Date(lastChecked).toISOString())}
             </span>
           )}

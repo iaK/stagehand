@@ -361,12 +361,12 @@ export function CommandPanel({
                 return (
                   <div key={item.id}>
                     {showRecentHeader && (
-                      <div className="px-4 pt-3 pb-1.5 text-[0.846rem] font-medium text-muted-foreground uppercase tracking-wider">
+                      <div className="px-4 pt-3 pb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Recent
                       </div>
                     )}
                     {showActionsHeader && (
-                      <div className="px-4 pt-3 pb-1.5 text-[0.846rem] font-medium text-muted-foreground uppercase tracking-wider">
+                      <div className="px-4 pt-3 pb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Actions
                       </div>
                     )}

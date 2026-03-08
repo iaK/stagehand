@@ -694,7 +694,7 @@ function ReviewGroupCard({
 
         <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-foreground">{group.author}</span>
-          <Badge variant={stateInfo.badge} className="text-[0.77rem] uppercase font-bold">
+          <Badge variant={stateInfo.badge} className="text-xs uppercase font-bold">
             {stateInfo.label}
           </Badge>
           {group.submittedAt && (
@@ -715,7 +715,7 @@ function ReviewGroupCard({
               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-              <span className="text-[0.77rem] font-medium uppercase">All resolved</span>
+              <span className="text-xs font-medium uppercase">All resolved</span>
             </span>
           )}
         </div>
@@ -919,7 +919,7 @@ const CommentCard = memo(function CommentCard({
         )}
 
         {fix.comment_type !== "review" && (
-          <Badge variant="secondary" className="text-[0.77rem] uppercase font-medium flex-shrink-0">
+          <Badge variant="secondary" className="text-xs uppercase font-medium flex-shrink-0">
             {fix.comment_type}
           </Badge>
         )}
@@ -949,7 +949,7 @@ const CommentCard = memo(function CommentCard({
         {replies.length > 0 && (
           <span className="flex items-center gap-1 text-muted-foreground flex-shrink-0">
             <MessageSquare className="w-3 h-3" />
-            <span className="text-[0.77rem]">{replies.length}</span>
+            <span className="text-xs">{replies.length}</span>
           </span>
         )}
 
@@ -971,7 +971,7 @@ const CommentCard = memo(function CommentCard({
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span className="text-[0.77rem] font-medium">
+            <span className="text-xs font-medium">
               {resolvingId === fix.id ? "Unresolving..." : "Resolved"}
             </span>
           </button>
@@ -1238,7 +1238,7 @@ function ReplyBubble({ reply }: { reply: GhReviewComment }) {
           className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5"
         />
       ) : (
-        <div className="w-5 h-5 rounded-full bg-zinc-300 dark:bg-zinc-600 flex-shrink-0 mt-0.5 flex items-center justify-center text-[0.6925rem] font-medium text-zinc-600 dark:text-zinc-400">
+        <div className="w-5 h-5 rounded-full bg-zinc-300 dark:bg-zinc-600 flex-shrink-0 mt-0.5 flex items-center justify-center text-xs font-medium text-zinc-600 dark:text-zinc-400">
           {reply.user.login.charAt(0).toUpperCase()}
         </div>
       )}
@@ -1246,7 +1246,7 @@ function ReplyBubble({ reply }: { reply: GhReviewComment }) {
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-foreground">{reply.user.login}</span>
           {reply.created_at && (
-            <span className="text-[0.77rem] text-muted-foreground">{timeAgo(reply.created_at)}</span>
+            <span className="text-xs text-muted-foreground">{timeAgo(reply.created_at)}</span>
           )}
         </div>
         <div className="text-sm">

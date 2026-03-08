@@ -437,7 +437,7 @@ function TaskRow({
         {formatRelativeTime(updatedAt)}
       </span>
       {status && (
-        <Badge variant="secondary" className="text-[0.77rem] shrink-0">
+        <Badge variant="secondary" className="text-xs shrink-0">
           {status.replace(/_/g, " ")}
         </Badge>
       )}

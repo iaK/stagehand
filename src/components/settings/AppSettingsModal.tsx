@@ -58,7 +58,7 @@ export function AppSettingsModal({ onClose, initialSection }: AppSettingsModalPr
                 return (
                   <div
                     key={i}
-                    className="px-4 pt-4 pb-1 text-[0.77rem] font-semibold text-muted-foreground uppercase tracking-wider"
+                    className="px-4 pt-4 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                   >
                     {item.header}
                   </div>

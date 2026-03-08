@@ -124,7 +124,7 @@ const PipelineStep = memo(function PipelineStep({
         }`}
       >
         <span
-          className={`w-5 h-5 rounded-full flex items-center justify-center text-[0.77rem] font-bold ${
+          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
             status === "completed"
               ? "bg-emerald-500 text-white"
               : status === "running"

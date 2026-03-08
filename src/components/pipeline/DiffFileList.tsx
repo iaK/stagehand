@@ -72,16 +72,16 @@ export function DiffFileList({ files, maxHeight = "max-h-48" }: DiffFileListProp
               key={file.path}
               className="flex items-center gap-2 px-2.5 py-1 text-xs border-b border-border/50 last:border-b-0 hover:bg-accent/30 transition-colors"
             >
-              <span className={`shrink-0 w-4 text-center text-[0.77rem] font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
+              <span className={`shrink-0 w-4 text-center text-xs font-semibold rounded px-0.5 ${st.color} ${st.bg}`}>
                 {st.text}
               </span>
               <span className="truncate flex-1 font-mono text-foreground/90">
                 {fileName}
                 {dirPath && (
-                  <span className="text-muted-foreground font-sans ml-1.5 text-[0.846rem]">{dirPath}</span>
+                  <span className="text-muted-foreground font-sans ml-1.5 text-xs">{dirPath}</span>
                 )}
               </span>
-              <span className="shrink-0 flex items-center gap-1 tabular-nums text-[0.846rem]">
+              <span className="shrink-0 flex items-center gap-1 tabular-nums text-xs">
                 {file.additions > 0 && (
                   <span className="text-green-600 dark:text-green-400">+{file.additions}</span>
                 )}

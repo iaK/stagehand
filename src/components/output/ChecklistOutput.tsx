@@ -100,7 +100,7 @@ export function ChecklistOutput({
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <Badge variant={badgeVar} className="text-[0.77rem] uppercase font-bold">
+                    <Badge variant={badgeVar} className="text-xs uppercase font-bold">
                       {item.severity}
                     </Badge>
                   </div>

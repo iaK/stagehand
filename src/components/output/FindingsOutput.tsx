@@ -179,11 +179,11 @@ function FindingsCards({
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <Badge variant={badgeVar} className="text-[0.77rem] uppercase font-bold">
+                    <Badge variant={badgeVar} className="text-xs uppercase font-bold">
                       {finding.severity}
                     </Badge>
                     {finding.category && (
-                      <Badge variant="secondary" className="text-[0.77rem] uppercase font-medium">
+                      <Badge variant="secondary" className="text-xs uppercase font-medium">
                         {finding.category}
                       </Badge>
                     )}
