@@ -8,6 +8,8 @@ import { AVAILABLE_AGENTS } from "../../lib/agents";
 import * as repo from "../../lib/repositories";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { pipelineColors } from "../../lib/taskStatus";
@@ -15,12 +17,15 @@ import { ChevronDown } from "lucide-react";
 import { formatRelativeTime, formatTokenCount, formatDuration, formatCost } from "../../lib/format";
 import { gitDiffShortStatBranch } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
+import type { Task } from "../../lib/types";
 
 export function ProjectOverview() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const tasks = useTaskStore((s) => s.tasks);
   const taskExecStatuses = useTaskStore((s) => s.taskExecStatuses);
   const setActiveTask = useTaskStore((s) => s.setActiveTask);
+  const updateTask = useTaskStore((s) => s.updateTask);
+  const loadTasks = useTaskStore((s) => s.loadTasks);
 
   const pausedTasks = useProjectOverviewStore((s) => s.pausedTasks);
   const archivedTasks = useProjectOverviewStore((s) => s.archivedTasks);
@@ -103,6 +108,14 @@ export function ProjectOverview() {
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject?.path, defaultBranch, taskIds]);
+
+  const resumeTask = async (task: Task) => {
+    if (!activeProject) return;
+    await updateTask(activeProject.id, task.id, { lifecycle: "active" });
+    await loadTasks(activeProject.id);
+    loadProjectOverview(activeProject.id);
+    setActiveTask(task);
+  };
 
   if (!activeProject) return null;
 
@@ -259,6 +272,27 @@ export function ProjectOverview() {
                     insertions={task.diff_insertions ?? undefined}
                     deletions={task.diff_deletions ?? undefined}
                     onClick={() => setActiveTask(task)}
+                    action={
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              resumeTask(task);
+                            }}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Resume task</TooltipContent>
+                      </Tooltip>
+                    }
                   />
                 ))}
               </CardContent>
@@ -371,6 +405,7 @@ function TaskRow({
   muted,
   disabled,
   onClick,
+  action,
 }: {
   title: string;
   updatedAt: string;
@@ -381,6 +416,7 @@ function TaskRow({
   muted?: boolean;
   disabled?: boolean;
   onClick?: () => void;
+  action?: React.ReactNode;
 }) {
   return (
     <button
@@ -405,6 +441,7 @@ function TaskRow({
           {status.replace(/_/g, " ")}
         </Badge>
       )}
+      {action}
     </button>
   );
 }

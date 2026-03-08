@@ -32,6 +32,7 @@ import { sendNotification } from "../../lib/notifications";
 import { toast } from "sonner";
 import { useProcessStore } from "../../stores/processStore";
 import { useGitHubStore } from "../../stores/githubStore";
+import { useProjectOverviewStore } from "../../stores/projectOverviewStore";
 import { getTaskWorkingDir, cleanupTaskWorktree } from "../../lib/worktree";
 import * as repo from "../../lib/repositories";
 import { statusColors } from "../../lib/taskStatus";
@@ -486,6 +487,27 @@ export function TaskOverview() {
             </Tooltip>
           )
         )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              disabled={isAnyStageRunning}
+              onClick={async () => {
+                if (!activeProject || !activeTask) return;
+                await updateTask(activeProject.id, activeTask.id, { lifecycle: "paused" });
+                useProjectOverviewStore.getState().loadProjectOverview(activeProject.id);
+                sendNotification("Task paused", activeTask.title, "info", { projectId: activeProject.id, taskId: activeTask.id });
+                setActiveTask(null);
+              }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Pause task</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
