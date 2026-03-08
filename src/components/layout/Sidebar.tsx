@@ -88,7 +88,7 @@ export function Sidebar() {
   }, [tasks, taskExecStatuses, loadProjectStatuses]);
 
   return (
-    <div className="w-56 flex-shrink-0 border-r border-border bg-muted/30 flex flex-col">
+    <div className="w-56 flex-shrink-0 border-r border-border bg-muted/50 flex flex-col">
       {/* Tasks */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center justify-between px-3 h-[57px] shrink-0">
