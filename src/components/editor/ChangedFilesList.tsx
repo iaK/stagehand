@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { usePersistedState } from "../../hooks/usePersistedState";
 import { RefreshCw, Undo2, GitCommitHorizontal, Loader2 } from "lucide-react";
 import { useEditorStore, type ChangedFile, DIFF_BASE_LABELS, type DiffBase } from "../../stores/editorStore";
 import { useProjectStore } from "../../stores/projectStore";
@@ -46,7 +47,7 @@ export function ChangedFilesList({ workingDir }: ChangedFilesListProps) {
 
   // Commit dialog state
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
+  const [commitMessage, setCommitMessage] = usePersistedState(`editor_commit:${projectId ?? "x"}`);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   const [commitFileStats, setCommitFileStats] = useState<DiffFileStat[]>([]);

@@ -22,6 +22,7 @@ export function makeTask(overrides?: Partial<Task>): Task {
     id: crypto.randomUUID(),
     project_id: "project-1",
     title: "Test Task",
+    description: null,
     current_stage_id: "stage-1",
     status: "pending",
     branch_name: null,

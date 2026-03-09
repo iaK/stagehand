@@ -6,7 +6,6 @@ const CONVENTION_FILES = [
   "CONTRIBUTING.md",
   "CLAUDE.md",
   ".claude/settings.json",
-  ".github/PULL_REQUEST_TEMPLATE.md",
   ".github/COMMIT_CONVENTION.md",
   ".husky/pre-commit",
   ".husky/commit-msg",
@@ -82,7 +81,6 @@ export async function scanRepository(
   const sections: Record<string, string[]> = {
     "Commit Conventions": [],
     "Branch Naming": [],
-    "PR Templates": [],
     "CI/CD & Hooks": [],
     "Project Rules": [],
   };
@@ -150,10 +148,6 @@ export async function scanRepository(
       sections["CI/CD & Hooks"].push(
         `### ${file}\n\`\`\`sh\n${content}\n\`\`\``,
       );
-    } else if (file === ".github/PULL_REQUEST_TEMPLATE.md") {
-      sections["PR Templates"].push(
-        `### Pull Request Template\n${content}`,
-      );
     } else if (file === ".github/COMMIT_CONVENTION.md") {
       sections["Commit Conventions"].push(
         `### Commit Convention\n${content}`,
@@ -194,7 +188,6 @@ export async function scanRepository(
   // Also populate individual convention fields (only if not already set by user)
   const existingCommit = await repo.getProjectSetting(projectId, "conv_commit_format");
   const existingBranch = await repo.getProjectSetting(projectId, "conv_branch_naming");
-  const existingPr = await repo.getProjectSetting(projectId, "conv_pr_template");
 
   if (!existingCommit && sections["Commit Conventions"].length > 0) {
     await repo.setProjectSetting(
@@ -208,13 +201,6 @@ export async function scanRepository(
       projectId,
       "conv_branch_naming",
       sections["Branch Naming"].join("\n\n"),
-    );
-  }
-  if (!existingPr && sections["PR Templates"].length > 0) {
-    await repo.setProjectSetting(
-      projectId,
-      "conv_pr_template",
-      sections["PR Templates"].join("\n\n"),
     );
   }
 

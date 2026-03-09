@@ -7,7 +7,7 @@ import type { ProposedSubtask } from "../../lib/types";
 
 interface TaskSplittingOutputProps {
   output: string;
-  onSplit: (tasks: { title: string; initialInput?: string }[]) => void;
+  onSplit: (tasks: { title: string; description?: string; initialInput?: string }[]) => void;
   onApprove?: () => void;
   isApproved: boolean;
   approving?: boolean;
@@ -89,7 +89,7 @@ function SubtaskCards({
   approving,
 }: {
   tasks: ProposedSubtask[];
-  onSplit: (tasks: { title: string; initialInput?: string }[]) => void;
+  onSplit: (tasks: { title: string; description?: string; initialInput?: string }[]) => void;
   isApproved: boolean;
   approving?: boolean;
 }) {
@@ -115,7 +115,7 @@ function SubtaskCards({
   const handleSplit = () => {
     setSplitting(true);
     const selected = tasks.filter((t) => t.selected);
-    onSplit(selected.map((t) => ({ title: t.title, initialInput: t.description })));
+    onSplit(selected.map((t) => ({ title: t.title, description: t.description, initialInput: t.description })));
   };
 
   return (

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { usePersistedState } from "../../hooks/usePersistedState";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -41,11 +41,11 @@ import type { Task, StageExecution } from "../../lib/types";
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }) + " at " + date.toLocaleTimeString("en-US", {
+  }) + " at " + date.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -74,10 +74,6 @@ function formatDuration(ms: number): string {
   const secs = totalSecs % 60;
   if (mins === 0) return `${secs}s`;
   return `${mins}m ${secs}s`;
-}
-
-function formatCost(usd: number): string {
-  return `$${usd.toFixed(2)}`;
 }
 
 const statusConfig: Record<string, { label: string; variant: "success" | "info" | "secondary" | "critical" }> = {
@@ -119,7 +115,7 @@ export function TaskOverview() {
   const [injectError, setInjectError] = useState<string | null>(null);
   const [worktreeHasChanges, setWorktreeHasChanges] = useState(false);
   const [mainRepoHasChanges, setMainRepoHasChanges] = useState(false);
-  const [ejectCommitMessage, setEjectCommitMessage] = useState("");
+  const [ejectCommitMessage, setEjectCommitMessage] = usePersistedState(`eject_commit:${activeTask?.id ?? "x"}`);
   const [ejectDiffStat, setEjectDiffStat] = useState("");
   const [checkingChanges, setCheckingChanges] = useState(false);
 
@@ -558,6 +554,75 @@ export function TaskOverview() {
             <p className="text-sm font-medium">{formatDate(activeTask.updated_at)}</p>
           </div>
         )}
+        {tokenTotals && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-xs text-muted-foreground">Duration</span>
+                <p className="text-sm font-medium">{formatDuration(tokenTotals.duration_ms)}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Turns</span>
+                <p className="text-sm font-medium">{tokenTotals.num_turns}</p>
+              </div>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Tokens</span>
+              <p className="text-sm font-medium font-mono">
+                {formatTokenCount(tokenTotals.input_tokens)} in / {formatTokenCount(tokenTotals.output_tokens)} out
+              </p>
+            </div>
+            {perStageUsage.length > 1 && (
+              <div>
+                <button
+                  onClick={() => setShowTokenDetails((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showTokenDetails ? "Hide details" : "Show details"}
+                </button>
+
+                {showTokenDetails && (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground">
+                          <th className="text-left py-1.5 pr-3 font-medium">Stage</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Input</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Output</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Cache Read</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Duration</th>
+                          <th className="text-right py-1.5 pl-3 font-medium">Turns</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perStageUsage.map(({ stage, execution }) => (
+                          <tr key={stage.task_stage_id} className="border-b border-border/50">
+                            <td className="py-1.5 pr-3">{stage.name}</td>
+                            <td className="text-right py-1.5 px-3">
+                              {execution.input_tokens != null ? formatTokenCount(execution.input_tokens) : "\u2014"}
+                            </td>
+                            <td className="text-right py-1.5 px-3">
+                              {execution.output_tokens != null ? formatTokenCount(execution.output_tokens) : "\u2014"}
+                            </td>
+                            <td className="text-right py-1.5 px-3">
+                              {execution.cache_read_input_tokens != null ? formatTokenCount(execution.cache_read_input_tokens) : "\u2014"}
+                            </td>
+                            <td className="text-right py-1.5 px-3">
+                              {execution.duration_ms != null ? formatDuration(execution.duration_ms) : "\u2014"}
+                            </td>
+                            <td className="text-right py-1.5 pl-3">
+                              {execution.num_turns != null ? execution.num_turns : "\u2014"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Git Info */}
@@ -672,149 +737,56 @@ export function TaskOverview() {
       </div>
 
       {activeTask.status === "split" && childTasks.length > 0 && (
-        <>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Subtasks ({childTasks.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {childTasks.map((child) => (
-                <button
-                  key={child.id}
-                  onClick={() => useTaskStore.getState().setActiveTask(child)}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent transition-colors"
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${statusColors[child.status] ?? "bg-zinc-400"}`} />
-                  <span className="text-sm truncate">{child.title}</span>
-                  <Badge variant="secondary" className="ml-auto text-xs">
-                    {child.status}
-                  </Badge>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* Token Usage */}
-      {tokenTotals && (
-        <>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Token Usage</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                <div>
-                  <span className="text-xs text-muted-foreground">Total Cost</span>
-                  <p className="text-sm font-medium">{formatCost(tokenTotals.total_cost_usd)}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Tokens</span>
-                  <p className="text-sm font-medium whitespace-nowrap">
-                    {formatTokenCount(tokenTotals.input_tokens)} in / {formatTokenCount(tokenTotals.output_tokens)} out
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Duration</span>
-                  <p className="text-sm font-medium">{formatDuration(tokenTotals.duration_ms)}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Turns</span>
-                  <p className="text-sm font-medium">{tokenTotals.num_turns}</p>
-                </div>
-              </div>
-
-              {perStageUsage.length > 1 && (
-                <div>
-                  <button
-                    onClick={() => setShowTokenDetails((v) => !v)}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showTokenDetails ? "Hide details" : "Show details"}
-                  </button>
-
-                  {showTokenDetails && (
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-border text-muted-foreground">
-                            <th className="text-left py-1.5 pr-3 font-medium">Stage</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Input</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Output</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Cache Read</th>
-                            <th className="text-right py-1.5 px-3 font-medium">Duration</th>
-                            <th className="text-right py-1.5 pl-3 font-medium">Turns</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {perStageUsage.map(({ stage, execution }) => (
-                            <tr key={stage.task_stage_id} className="border-b border-border/50">
-                              <td className="py-1.5 pr-3">{stage.name}</td>
-                              <td className="text-right py-1.5 px-3">
-                                {execution.input_tokens != null ? formatTokenCount(execution.input_tokens) : "\u2014"}
-                              </td>
-                              <td className="text-right py-1.5 px-3">
-                                {execution.output_tokens != null ? formatTokenCount(execution.output_tokens) : "\u2014"}
-                              </td>
-                              <td className="text-right py-1.5 px-3">
-                                {execution.cache_read_input_tokens != null ? formatTokenCount(execution.cache_read_input_tokens) : "\u2014"}
-                              </td>
-                              <td className="text-right py-1.5 px-3">
-                                {execution.duration_ms != null ? formatDuration(execution.duration_ms) : "\u2014"}
-                              </td>
-                              <td className="text-right py-1.5 pl-3">
-                                {execution.num_turns != null ? execution.num_turns : "\u2014"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
+        <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
+          <span className="text-xs font-medium text-muted-foreground">Subtasks ({childTasks.length})</span>
+          {childTasks.map((child) => (
+            <button
+              key={child.id}
+              onClick={() => useTaskStore.getState().setActiveTask(child)}
+              className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent transition-colors"
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${statusColors[child.status] ?? "bg-zinc-400"}`} />
+              <span className="text-sm truncate">{child.title}</span>
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {child.status}
+              </Badge>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Commits */}
-      <Card>
-        <CardHeader className="pb-0">
-          <CardTitle className="text-base">
-            Commits{!commitsLoading && ` (${commits.length})`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {commitsLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-              <Skeleton className="h-4 w-4/6" />
-            </div>
-          ) : commits.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No commits yet</p>
-          ) : (
-            <div className="space-y-2">
-              {commits.map((commit) => (
-                <div
-                  key={commit.hash}
-                  className="flex items-baseline gap-3 text-sm"
-                >
-                  <code className="text-xs text-muted-foreground font-mono shrink-0">
-                    {commit.hash.slice(0, 7)}
-                  </code>
-                  <span className="truncate">{commit.message}</span>
-                  <span className="text-xs text-muted-foreground shrink-0 ml-auto">
-                    {formatRelativeTime(commit.date)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-3">
+        <span className="text-xs font-medium text-muted-foreground">
+          Commits{!commitsLoading && ` (${commits.length})`}
+        </span>
+        {commitsLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/6" />
+          </div>
+        ) : commits.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No commits yet</p>
+        ) : (
+          <div className="space-y-2">
+            {commits.map((commit) => (
+              <div
+                key={commit.hash}
+                className="flex items-baseline gap-3 text-sm"
+              >
+                <code className="text-xs text-muted-foreground font-mono shrink-0">
+                  {commit.hash.slice(0, 7)}
+                </code>
+                <span className="truncate">{commit.message}</span>
+                <span className="text-xs text-muted-foreground shrink-0 ml-auto">
+                  {formatRelativeTime(commit.date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Eject Confirmation Dialog */}
       <AlertDialog

@@ -53,7 +53,7 @@ interface TaskStore {
   updateTask: (
     projectId: string,
     taskId: string,
-    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "target_branch" | "ejected">>,
+    updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "description" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "target_branch" | "ejected">>,
   ) => Promise<void>;
   refreshExecution: (
     projectId: string,
@@ -65,7 +65,7 @@ interface TaskStore {
   reorderStageTemplates: (projectId: string, orderedIds: string[]) => Promise<void>;
   duplicateStageTemplate: (projectId: string, templateId: string) => Promise<StageTemplate>;
   restoreDefaultTemplates: (projectId: string) => Promise<void>;
-  createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; initialInput?: string }[]) => Promise<Task[]>;
+  createSubtasks: (projectId: string, parentTaskId: string, subtasks: { title: string; description?: string; initialInput?: string }[]) => Promise<Task[]>;
   importBranchTask: (
     projectId: string,
     title: string,
@@ -405,6 +405,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         undefined,
         undefined,
         parentTaskId,
+        sub.description,
       );
       if (firstTemplate) {
         const taskStageId = await repo.insertTaskStage(

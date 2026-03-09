@@ -72,8 +72,12 @@ export async function gitCurrentBranch(workingDir: string): Promise<string> {
   return runGit(workingDir, "branch", "--show-current");
 }
 
-export async function gitListBranches(workingDir: string): Promise<string[]> {
+export async function gitListBranches(workingDir: string, { fetch = false } = {}): Promise<string[]> {
   try {
+    // Optionally fetch to get up-to-date remote branches
+    if (fetch) {
+      try { await runGit(workingDir, "fetch", "--prune", "origin"); } catch { /* ok */ }
+    }
     const local = await runGit(workingDir, "branch", "--format=%(refname:short)");
     const remote = await runGit(workingDir, "branch", "-r", "--format=%(refname:short)");
     const seen = new Set<string>();
@@ -237,12 +241,25 @@ export async function gitWorktreeAdd(
   createBranch: boolean,
   startPoint?: string,
 ): Promise<string> {
+  // Prune stale worktree entries before adding
+  try { await runGit(workingDir, "worktree", "prune"); } catch { /* ok */ }
+
   if (createBranch) {
     const args = ["worktree", "add", worktreePath, "-b", branchName];
     if (startPoint) args.push(startPoint);
     return runGit(workingDir, ...args);
   }
-  return runGit(workingDir, "worktree", "add", worktreePath, branchName);
+
+  try {
+    return await runGit(workingDir, "worktree", "add", worktreePath, branchName);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // If the branch is already checked out (e.g. in the main repo), force it
+    if (/already used by worktree|already checked out/i.test(msg)) {
+      return runGit(workingDir, "worktree", "add", "--force", worktreePath, branchName);
+    }
+    throw err;
+  }
 }
 
 export async function gitWorktreeAddDetached(

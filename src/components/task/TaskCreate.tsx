@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sendNotification } from "../../lib/notifications";
-import { gitListBranches, gitBranchExists, gitWorktreeAdd, gitWorktreeRemove, ghFindPrForBranch, isGitRepo } from "../../lib/git";
+import { gitListBranches, gitBranchExists, gitWorktreeAdd, gitWorktreeRemove, ghFindPrForBranch, isGitRepo, gitCurrentBranch, gitCheckoutBranch } from "../../lib/git";
 import * as repo from "../../lib/repositories";
 import type { Task } from "../../lib/types";
 
@@ -47,12 +47,12 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
   const projectPath = activeProject?.path ?? "";
   const isEditing = !!task;
 
-  // Load branches when switching to import mode
+  // Load branches when switching to import mode — fetch from remote for freshness
   useEffect(() => {
     if (mode !== "import" || !projectPath) return;
     let cancelled = false;
     setLoadingBranches(true);
-    gitListBranches(projectPath).then((branches) => {
+    gitListBranches(projectPath, { fetch: true }).then((branches) => {
       if (!cancelled) {
         setAllBranches(branches);
         setLoadingBranches(false);
@@ -162,6 +162,14 @@ export function TaskCreate({ projectId, onClose, task }: TaskCreateProps) {
 
       // Clean up stale worktree if exists
       try { await gitWorktreeRemove(projectPath, worktreePath); } catch { /* ok */ }
+
+      // If the branch is currently checked out in the main repo, switch away first
+      try {
+        const current = await gitCurrentBranch(projectPath);
+        if (current.trim() === branchName) {
+          await gitCheckoutBranch(projectPath, targetBranch);
+        }
+      } catch { /* ok — best effort */ }
 
       // Branch exists (we verified earlier), so don't create it
       await gitWorktreeAdd(projectPath, worktreePath, branchName, false);

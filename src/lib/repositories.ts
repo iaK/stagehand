@@ -484,21 +484,23 @@ export async function createTask(
   branchName?: string,
   worktreePath?: string,
   parentTaskId?: string,
+  description?: string,
 ): Promise<Task> {
   const db = await getProjectDb(projectId);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
   await db.execute(
-    `INSERT INTO tasks (id, project_id, title, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [id, projectId, title, firstStageId ?? null, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
+    `INSERT INTO tasks (id, project_id, title, description, current_stage_id, status, branch_name, worktree_path, parent_task_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [id, projectId, title, description ?? null, firstStageId ?? null, "pending", branchName ?? null, worktreePath ?? null, parentTaskId ?? null, now, now],
   );
 
   return {
     id,
     project_id: projectId,
     title,
+    description: description ?? null,
     current_stage_id: firstStageId ?? null,
     status: "pending",
     branch_name: branchName ?? null,
@@ -541,7 +543,7 @@ export async function getChildTasks(
 export async function updateTask(
   projectId: string,
   taskId: string,
-  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "target_branch" | "ejected" | "diff_insertions" | "diff_deletions">>,
+  updates: Partial<Pick<Task, "current_stage_id" | "status" | "title" | "description" | "lifecycle" | "branch_name" | "worktree_path" | "pr_url" | "target_branch" | "ejected" | "diff_insertions" | "diff_deletions">>,
 ): Promise<void> {
   const db = await getProjectDb(projectId);
   const sets: string[] = [];

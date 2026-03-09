@@ -39,7 +39,6 @@ export function GitHubConventions({ projectId, onClose }: GitHubConventionsProps
 export function GitHubConventionsContent({ projectId }: { projectId: string }) {
   const [commitFormat, setCommitFormat] = useState("");
   const [branchNaming, setBranchNaming] = useState("");
-  const [prTemplate, setPrTemplate] = useState("");
   const [extraRules, setExtraRules] = useState("");
   const [defaultBranchOverride, setDefaultBranchOverride] = useState("");
   const [completionStrategy, setCompletionStrategy] = useState<CompletionStrategy>("pr");
@@ -48,17 +47,15 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     (async () => {
-      const [cf, bn, pr, er, cs, db] = await Promise.all([
+      const [cf, bn, er, cs, db] = await Promise.all([
         repo.getProjectSetting(projectId, "conv_commit_format"),
         repo.getProjectSetting(projectId, "conv_branch_naming"),
-        repo.getProjectSetting(projectId, "conv_pr_template"),
         repo.getProjectSetting(projectId, "conv_extra_rules"),
         repo.getProjectSetting(projectId, "default_completion_strategy"),
         repo.getProjectSetting(projectId, "github_default_branch"),
       ]);
       setCommitFormat(cf ?? "");
       setBranchNaming(bn ?? "");
-      setPrTemplate(pr ?? "");
       setExtraRules(er ?? "");
       setDefaultBranchOverride(db ?? "");
       setCompletionStrategy((cs as CompletionStrategy) ?? "pr");
@@ -74,7 +71,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
     const settings: [string, string][] = [
       ["conv_commit_format", commitFormat],
       ["conv_branch_naming", branchNaming],
-      ["conv_pr_template", prTemplate],
       ["conv_extra_rules", extraRules],
     ];
 
@@ -93,9 +89,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
     }
     if (branchNaming.trim()) {
       parts.push(`## Branch Naming\n\n${branchNaming.trim()}`);
-    }
-    if (prTemplate.trim()) {
-      parts.push(`## PR Template\n\n${prTemplate.trim()}`);
     }
     if (extraRules.trim()) {
       parts.push(`## Additional Rules\n\n${extraRules.trim()}`);
@@ -201,17 +194,6 @@ export function GitHubConventionsContent({ projectId }: { projectId: string }) {
               rows={3}
               className="mt-1 font-mono resize-none"
               placeholder={"e.g. feature/<ticket>-<short-description>\n    fix/<ticket>-<short-description>"}
-            />
-          </div>
-
-          <div>
-            <Label className="text-sm font-semibold">PR Description Template</Label>
-            <Textarea
-              value={prTemplate}
-              onChange={(e) => setPrTemplate(e.target.value)}
-              rows={4}
-              className="mt-1 font-mono resize-none"
-              placeholder={"e.g.\n## Summary\n\n## Changes\n\n## Testing"}
             />
           </div>
 

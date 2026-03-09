@@ -1,10 +1,10 @@
 export function formatDate(iso: string): string {
   const date = new Date(iso);
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }) + " at " + date.toLocaleTimeString("en-US", {
+  }) + " at " + date.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });

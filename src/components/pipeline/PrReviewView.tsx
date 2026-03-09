@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { usePersistedState } from "../../hooks/usePersistedState";
 import { useProcessStore, stageKey } from "../../stores/processStore";
 import { useStageExecution } from "../../hooks/useStageExecution";
 import { useProcessHealthCheck } from "../../hooks/useProcessHealthCheck";
@@ -29,7 +30,7 @@ export function PrReviewView({ stage, task }: PrReviewViewProps) {
   useProcessHealthCheck(sid);
   const prReview = usePrReview(stage, task);
 
-  const [commitMessage, setCommitMessage] = useState("");
+  const [commitMessage, setCommitMessage] = usePersistedState(`pr_commit:${sk}`);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 

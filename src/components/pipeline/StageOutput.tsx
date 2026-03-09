@@ -17,7 +17,7 @@ interface StageOutputProps {
   onApprove: (decision?: string, branchName?: string, baseBranch?: string) => void;
   onApproveWithStages?: (selectedStageIds: string[], branchName?: string, baseBranch?: string) => void;
   onSubmitAnswers?: (answers: string) => void;
-  onSplitTask?: (tasks: { title: string; initialInput?: string }[]) => void;
+  onSplitTask?: (tasks: { title: string; description?: string; initialInput?: string }[]) => void;
   isApproved: boolean;
   stageTemplates?: StageTemplate[];
   approving?: boolean;

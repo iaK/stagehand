@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { pipelineColors } from "../../lib/taskStatus";
 import { ChevronDown } from "lucide-react";
-import { formatRelativeTime, formatTokenCount, formatDuration, formatCost } from "../../lib/format";
+import { formatRelativeTime, formatTokenCount, formatDuration } from "../../lib/format";
 import { gitDiffShortStatBranch } from "../../lib/git";
 import { getTaskWorkingDir } from "../../lib/worktree";
 import type { Task } from "../../lib/types";
@@ -131,7 +131,7 @@ export function ProjectOverview() {
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <StatCard
           label="Active Tasks"
           value={String(tasks.length)}
@@ -142,14 +142,8 @@ export function ProjectOverview() {
           loading={loading}
         />
         <StatCard
-          label="Total Cost"
-          value={loading ? undefined : tokenUsage ? formatCost(tokenUsage.total_cost_usd) : "$0.00"}
-          loading={loading}
-        />
-        <StatCard
           label="Today"
           value={loading ? undefined : tokenUsageToday ? formatTokenCount(tokenUsageToday.input_tokens + tokenUsageToday.output_tokens) + " tokens" : "0 tokens"}
-          sub={loading ? undefined : tokenUsageToday ? formatCost(tokenUsageToday.total_cost_usd) : undefined}
           loading={loading}
         />
       </div>
@@ -238,6 +232,7 @@ export function ProjectOverview() {
                 <TaskRow
                   key={task.id}
                   title={task.title}
+                  description={task.description}
                   updatedAt={task.updated_at}
                   dotClass={pipelineColors[taskExecStatuses[task.id]] ?? "bg-zinc-400"}
                   status={taskExecStatuses[task.id]}
@@ -338,7 +333,7 @@ export function ProjectOverview() {
             <CardTitle className="text-base">Token Usage</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <span className="text-xs text-muted-foreground">Input Tokens</span>
                 <p className="text-sm font-medium">{formatTokenCount(tokenUsage.input_tokens)}</p>
@@ -346,6 +341,10 @@ export function ProjectOverview() {
               <div>
                 <span className="text-xs text-muted-foreground">Output Tokens</span>
                 <p className="text-sm font-medium">{formatTokenCount(tokenUsage.output_tokens)}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Executions</span>
+                <p className="text-sm font-medium">{tokenUsage.execution_count.toLocaleString()}</p>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground">Cache Read</span>
@@ -356,20 +355,12 @@ export function ProjectOverview() {
                 <p className="text-sm font-medium">{formatTokenCount(tokenUsage.cache_creation_input_tokens)}</p>
               </div>
               <div>
-                <span className="text-xs text-muted-foreground">Total Cost</span>
-                <p className="text-sm font-medium">{formatCost(tokenUsage.total_cost_usd)}</p>
-              </div>
-              <div>
                 <span className="text-xs text-muted-foreground">Total Duration</span>
                 <p className="text-sm font-medium">{formatDuration(tokenUsage.duration_ms)}</p>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground">Total Turns</span>
                 <p className="text-sm font-medium">{tokenUsage.num_turns.toLocaleString()}</p>
-              </div>
-              <div>
-                <span className="text-xs text-muted-foreground">Executions</span>
-                <p className="text-sm font-medium">{tokenUsage.execution_count.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -397,6 +388,7 @@ function StatCard({ label, value, sub, loading }: { label: string; value?: strin
 
 function TaskRow({
   title,
+  description,
   updatedAt,
   dotClass,
   status,
@@ -408,6 +400,7 @@ function TaskRow({
   action,
 }: {
   title: string;
+  description?: string | null;
   updatedAt: string;
   dotClass: string;
   status?: string;
@@ -424,16 +417,21 @@ function TaskRow({
       disabled={disabled}
       className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${muted ? "opacity-60" : ""} ${disabled ? "cursor-default" : "hover:bg-accent"}`}
     >
-      <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
-      <span className="text-sm truncate">{title}</span>
+      <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass} ${description ? "mt-0.5 self-start" : ""}`} />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm truncate block">{title}</span>
+        {description && (
+          <span className="text-xs text-muted-foreground truncate block">{description}</span>
+        )}
+      </div>
       {insertions != null && (
-        <span className="ml-auto text-xs font-mono shrink-0">
+        <span className="text-xs font-mono shrink-0">
           <span className="text-green-600 dark:text-green-400">+{insertions}</span>
           {" "}
           <span className="text-red-600 dark:text-red-400">-{deletions}</span>
         </span>
       )}
-      <span className={`text-xs text-muted-foreground shrink-0 ${insertions == null ? "ml-auto" : ""}`}>
+      <span className="text-xs text-muted-foreground shrink-0">
         {formatRelativeTime(updatedAt)}
       </span>
       {status && (

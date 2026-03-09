@@ -228,6 +228,9 @@ export async function initProjectSchema(db: Database): Promise<void> {
   // Add lifecycle column (replaces archived boolean)
   await db.execute(`ALTER TABLE tasks ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'active'`).catch(() => {});
 
+  // Add description column to tasks
+  await db.execute(`ALTER TABLE tasks ADD COLUMN description TEXT`).catch(() => {});
+
   // Run version-tracked migrations
   await runPendingMigrations(db);
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { usePersistedState } from "../../hooks/usePersistedState";
 import { useProjectStore } from "../../stores/projectStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useProcessStore, stageKey } from "../../stores/processStore";
@@ -57,14 +58,14 @@ export function StageView({ stage, taskId }: StageViewProps) {
   const { runStage, approveStage, suggestNextStage, chooseNextStage, redoStage, killCurrent } =
     useStageExecution();
   useProcessHealthCheck(sid, taskId);
-  const [userInput, setUserInput] = useState("");
+  const [userInput, setUserInput] = usePersistedState(`stage_input:${sk}`);
   // Tracks whether the user has manually edited the textarea since this StageView
   // mounted. Used by the pre-fill effect to avoid overwriting intentional edits.
   const hasUserEdited = useRef(false);
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = usePersistedState(`stage_feedback:${sk}`);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
+  const [commitMessage, setCommitMessage] = usePersistedState(`stage_commit:${sk}`);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -442,7 +443,7 @@ Investigate the error (read files, run checks) and fix the issue. Do NOT run git
   };
 
 
-  const handleSplitTask = async (subtasks: { title: string; initialInput?: string }[]) => {
+  const handleSplitTask = async (subtasks: { title: string; description?: string; initialInput?: string }[]) => {
     if (!activeProject || !task) return;
     setApproving(true);
     setStageError(null);

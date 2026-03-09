@@ -61,6 +61,7 @@ export interface Task {
   id: string;
   project_id: string;
   title: string;
+  description: string | null;
   /** After migration v18 this stores task_stage_id (not stage_template_id). */
   current_stage_id: string | null;
   status: TaskStatus;
